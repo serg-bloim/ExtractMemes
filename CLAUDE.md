@@ -11,14 +11,17 @@ ExtractMemes takes a YouTube video that is known to contain meme images (e.g. a 
 reaction video) and extracts those meme images as standalone files. The pipeline, at a high
 level:
 
-1. **Download** the source video from a given YouTube URL.
-2. **Extract frames** from the downloaded video.
-3. **Classify** each frame — is it a meme image or not? This requires an ML model for frame
-   classification (exact model/approach TBD).
-4. **Save** frames classified as memes as separate image files.
+1. **Download** the source video at *worst* quality (yt-dlp; a local file path skips downloading).
+2. **Scan**: sample frames (default ~2 fps), save each one, and ask Claude through the `claude`
+   CLI whether it's a "glitch-framed meme card". Flagged frames are saved right away as
+   scan-quality thumbnails.
+3. **Download** the same video again at *best* quality, but only if something was flagged.
+4. **Extract**: read the frame at each flagged timestamp from the best-quality copy and save it as
+   the final meme image under `.runtime/<run-name>/saved/`.
 
-Frame classification requires an ML model or heuristic capable of distinguishing meme images
-from regular video frames.
+The design is in ADRs 004–006. The specs in `specs/features/` are the source of truth. The code is
+being rebuilt from them; see [ADR 007](decisions/007-documentation-consolidation-for-rebuild.md)
+for the rebuild order and the issue register (every known pitfall and its resolution).
 
 ---
 
@@ -51,23 +54,37 @@ Every feature, behavior change, or user-facing fix goes through this cycle:
 ```
 ExtractMemes/
 ├── CLAUDE.md                     ← You are here. Read every session.
-├── pyproject.toml                ← Project metadata, dependencies, console script
+├── JOURNAL.md                    ← One-line-per-change index linking to spec changelogs / ADRs
+├── pyproject.toml                ← Project metadata, dependencies, console script, pytest markers
 ├── src/
 │   └── extract_memes/            ← The installable package
 │       ├── __init__.py
-│       └── __main__.py           ← CLI entrypoint (argparse)
+│       ├── __main__.py           ← CLI entrypoint (argparse)
+│       ├── downloader.py         ← Fetches a source video at worst/best quality (yt-dlp)
+│       ├── frame_extractor.py    ← Samples frames / reads a frame at a timestamp (opencv)
+│       ├── classifier.py         ← FrameClassifier interface + ClaudeCliClassifier
+│       └── pipeline.py           ← Orchestrates download → scan → classify → extract → save
 ├── tests/                        ← pytest suite, mirrors src/extract_memes/ modules
-├── downloads/                    ← Downloaded source videos (gitignored)
-├── output/                       ← Extracted meme images (gitignored)
+├── playground/
+│   └── playground.py             ← Manual IDE entry points (not collected by pytest)
+├── run_real_video.py             ← Manual runner: real URL, real or fake classifier
+├── sample/                       ← Local video fixtures, supplied by hand (gitignored)
+├── downloads/                    ← CLI downloads: <video-id>_worst.mp4, <video-id>_best.mp4 (gitignored)
+├── .runtime/                     ← Per-run artifacts (gitignored):
+│   ├── <run-name>/
+│   │   ├── frames/                   ← Every sampled frame: frame_<idx:06d>_<ts>s.jpg (never deleted)
+│   │   └── saved/                    ← thumb_frame_<idx>_<ts>s.jpg (scan quality, written when
+│   │                                   flagged) + frame_<idx>_<ts>s.jpg (best quality, final)
+│   ├── downloads/                    ← Downloads made by run_real_video.py
+│   ├── _playground/                  ← Output of playground/playground.py
+│   └── experiment/{positive,negative}/ ← Labeled classifier eval frames — do NOT delete
 ├── specs/
 │   ├── _TEMPLATE.md              ← Spec template — copy this for new specs
 │   └── features/                 ← One file per feature
 │       └── <feature-name>.md
-├── decisions/
-│   ├── README.md                 ← What ADRs are and when to write them
-│   └── 001-spec-driven-workflow.md
-└── .claude/
-    └── settings.json             ← Claude Code permissions and settings
+└── decisions/
+    ├── README.md                 ← What ADRs are, when to write them, and the ADR index
+    └── NNN-<title>.md            ← One file per decision
 ```
 
 ---
@@ -143,14 +160,31 @@ When asked to write a spec, produce a complete file following `specs/_TEMPLATE.m
   `dev` optional dependency group.
 - **Install:** `pip install -e ".[dev]"` from the project root (editable install, includes dev
   tools).
-- **Run:** `extract-memes --help` (console script) or `python -m extract_memes --help`
-  (module invocation). Both are backed by `src/extract_memes/__main__.py`.
-- **Test:** `pytest` from the project root. Each module under `src/extract_memes/` gets a
-  matching test file under `tests/`.
-- **Package layout:** `src/` layout (`src/extract_memes/`), installed in editable mode so
-  pytest and the console scripts resolve it without extra path configuration.
+- **Run:** `extract-memes <youtube-url-or-local-path>` (console script) or
+  `python -m extract_memes …` (module invocation), from the project root. Default paths are
+  relative to the cwd. Both are backed by `src/extract_memes/__main__.py`. Run `--help` for the
+  options.
+- **External prerequisites** (not pip-installable):
+  - the `claude` CLI, installed and authenticated, for real classification;
+  - Node.js on `PATH`, for YouTube URLs.
+
+  No system `ffmpeg` is needed: OpenCV bundles a decoder, and `static-ffmpeg` supplies ffmpeg to
+  yt-dlp. See ADR 006.
+- **Test:** each module under `src/extract_memes/` gets a matching test file under `tests/`.
+  - `pytest -m "not slow"`: the offline suite. It must pass without network or `claude`.
+  - `pytest -m slow`: real YouTube downloads.
+  - Plain `pytest` runs both.
+
+  Tests that need `sample/*.mp4` skip when the fixture is absent. Tests never spawn the real
+  `claude` CLI.
+- **No import-time side effects:** importing any package module must not touch the network, change
+  `PATH`, or write files. Keep heavy or side-effecting setup (e.g. `static_ffmpeg.add_paths()`)
+  inside the function that needs it.
+- **Package layout:** `src/` layout (`src/extract_memes/`), installed in editable mode so pytest
+  and the console scripts resolve it without extra path configuration. Import it as
+  `extract_memes`, never `src.extract_memes`.
 - **Gitignore:** `.venv/`, `.idea/`, Python bytecode caches, `.pytest_cache/`, `*.egg-info/`,
-  `downloads/`, and `output/` are all ignored.
+  `downloads/`, `.runtime/`, and `/sample/` are all ignored.
 
 ---
 

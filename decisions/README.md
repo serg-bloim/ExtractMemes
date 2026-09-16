@@ -1,4 +1,4 @@
-4# Architecture Decision Records
+# Architecture Decision Records
 
 This directory contains Architecture Decision Records (ADRs) for ExtractMemes.
 
@@ -69,5 +69,9 @@ Links to related specs, external resources, or prior discussions.
 | # | Title | Status | Date |
 |---|-------|--------|------|
 | 001 | [Spec-Driven Development Workflow](001-spec-driven-workflow.md) | Accepted | 2026-09-16 |
-| 002 | [Meme Extraction Pipeline: Walking-Skeleton Rollout Plan](002-meme-extraction-pipeline-rollout-plan.md) | Accepted | 2026-09-16 |
+| 002 | [Meme Extraction Pipeline: Walking-Skeleton Rollout Plan](002-meme-extraction-pipeline-rollout-plan.md) | Partially superseded by 004, 005, 006 | 2026-09-16 |
 | 003 | [Split JOURNAL.md Into a Flat Index With Detail Moved to Spec Changelogs](003-journal-changelog-split.md) | Accepted | 2026-09-16 |
+| 004 | [Classify with Claude Code Now; Scan Low-Res, Extract High-Res](004-claude-classifier-and-dual-resolution-download.md) | Accepted; partially superseded by 006 | 2026-09-16 |
+| 005 | [Checkpoint: Runtime Layout, 2fps Default, Meme-Reveal Prompt](005-runtime-layout-and-classifier-checkpoint.md) | Accepted | 2026-09-16 |
+| 006 | [YouTube Downloads: Video-Only Formats, Node.js JS Runtime, Bundled ffmpeg](006-youtube-video-only-formats-and-download-toolchain.md) | Accepted (recorded retroactively) | 2026-09-16 |
+| 007 | [Consolidate Specs and ADRs as the Source of Truth for a From-Scratch Rebuild](007-documentation-consolidation-for-rebuild.md) | Accepted | 2026-09-16 |

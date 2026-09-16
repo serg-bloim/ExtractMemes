@@ -1,7 +1,14 @@
 # 002 — Meme Extraction Pipeline: Walking-Skeleton Rollout Plan
 
 **Date:** 2026-09-16
-**Status:** Accepted
+**Status:** Partially superseded by [004](004-claude-classifier-and-dual-resolution-download.md) —
+M1, M3, M4, and M6 were folded into one Claude-based classifier + dual-resolution download design.
+M0, M5, and M7 are unaffected. M2's 1 fps default was raised to 2 fps by
+[005](005-runtime-layout-and-classifier-checkpoint.md), and M2 uses `opencv-python-headless`
+instead of `opencv-python`. The "no system `ffmpeg`" goal still holds for frame reading, but
+downloads now use ffmpeg bundled via `static-ffmpeg` — see
+[006](006-youtube-video-only-formats-and-download-toolchain.md). M4's `output/` directory was
+replaced by `.runtime/<run-name>/` in 005.
 
 ---
 

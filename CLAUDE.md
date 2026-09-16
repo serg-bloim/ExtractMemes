@@ -7,8 +7,18 @@ what the source of truth is, and how to behave when building, validating, or evo
 
 ## Project Overview
 
-(TODO: describe what this project does, who it's for, and any key constraints. Optional: if you
-keep a separate product vision document, e.g. `PRODUCT.md`, link it here.)
+ExtractMemes takes a YouTube video that is known to contain meme images (e.g. a compilation or
+reaction video) and extracts those meme images as standalone files. The pipeline, at a high
+level:
+
+1. **Download** the source video from a given YouTube URL.
+2. **Extract frames** from the downloaded video.
+3. **Classify** each frame — is it a meme image or not? This requires an ML model for frame
+   classification (exact model/approach TBD).
+4. **Save** frames classified as memes as separate image files.
+
+Frame classification requires an ML model or heuristic capable of distinguishing meme images
+from regular video frames.
 
 ---
 

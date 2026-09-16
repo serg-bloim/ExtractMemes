@@ -1,4 +1,4 @@
-# Architecture Decision Records
+4# Architecture Decision Records
 
 This directory contains Architecture Decision Records (ADRs) for ExtractMemes.
 
@@ -69,3 +69,4 @@ Links to related specs, external resources, or prior discussions.
 | # | Title | Status | Date |
 |---|-------|--------|------|
 | 001 | [Spec-Driven Development Workflow](001-spec-driven-workflow.md) | Accepted | 2026-09-16 |
+| 002 | [Meme Extraction Pipeline: Walking-Skeleton Rollout Plan](002-meme-extraction-pipeline-rollout-plan.md) | Accepted | 2026-09-16 |

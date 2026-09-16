@@ -46,3 +46,14 @@ both `--help` commands, a passing `tests/` suite, updated `.gitignore` entries) 
 and setuptools as new dependencies. Moved the spec back to `draft` because its criteria changed.
 Updated ADR 002: M0 description, `src/` module paths for M1–M4, `extract-memes <url>` in M4, and
 tests added alongside each module.
+
+**Request:** "implement the project setup"
+
+**Action:** Implemented M0 per `specs/features/project-setup.md`: added `pyproject.toml`
+(Python 3.14, setuptools backend, `pytest` in a `dev` extra, `extract-memes` console script),
+`src/extract_memes/__init__.py` and `__main__.py` (argparse-based CLI), `tests/test_package.py`
+and `tests/test_cli.py`, and a `.gitignore` covering `.venv/`, `.idea/`, caches, `downloads/`,
+and `output/`. Verified with `pip install -e ".[dev]"`, both `--help` invocations, `pytest`
+(3 passed), and `git status` after placing dummy files in `downloads/`/`output/`. Filled in
+CLAUDE.md's "Code Conventions" and "Directory Structure" sections. Checked off all seven
+acceptance criteria and moved the spec to `implemented`.

@@ -1,6 +1,6 @@
 ---
 title: "Project Setup"
-status: ready
+status: implemented
 created: 2026-09-16
 updated: 2026-09-16
 author: ""
@@ -27,26 +27,26 @@ place without deciding the project structure again.
 
 ## Acceptance Criteria
 
-- [ ] AC1: A `pyproject.toml` at the project root declares the project, requires Python 3.14,
+- [x] AC1: A `pyproject.toml` at the project root declares the project, requires Python 3.14,
       has no runtime dependencies yet, and has a `dev` optional dependency group containing
       pytest. `pip install -e ".[dev]"` succeeds in a fresh Python 3.14 virtualenv. There is no
       `requirements.txt`.
-- [ ] AC2: The package lives at `src/extract_memes/` and has no pipeline modules yet. After the
+- [x] AC2: The package lives at `src/extract_memes/` and has no pipeline modules yet. After the
       editable install, `python -c "import extract_memes"` succeeds from any directory.
-- [ ] AC3: After the editable install, both `extract-memes --help` and
+- [x] AC3: After the editable install, both `extract-memes --help` and
       `python -m extract_memes --help` exit with code 0 and print usage text that describes the
       tool's purpose. There is no `main.py` at the project root.
-- [ ] AC4: A `tests/` folder exists at the project root. Running `pytest` from the project root
+- [x] AC4: A `tests/` folder exists at the project root. Running `pytest` from the project root
       passes, and the tests cover AC2 (the package imports) and AC3 (both `--help` commands).
-- [ ] AC5: A `.gitignore` exists. After installing, running the tool, running the tests, and
+- [x] AC5: A `.gitignore` exists. After installing, running the tool, running the tests, and
       placing a dummy file in `downloads/` and `output/`, `git status` shows none of the
       following as untracked: `.venv/`, `.idea/`, Python bytecode caches, `.pytest_cache/`,
       `*.egg-info/`, `downloads/`, or `output/`.
-- [ ] AC6: The "Code Conventions" section of `CLAUDE.md` is filled in with: the language and
+- [x] AC6: The "Code Conventions" section of `CLAUDE.md` is filled in with: the language and
       version (Python 3.14), where dependencies are declared (`pyproject.toml`) and how to install
       them, how to run the tool, how to run the tests, and the convention that each module gets
       matching tests under `tests/`.
-- [ ] AC7: The "Directory Structure" tree in `CLAUDE.md` shows `pyproject.toml`,
+- [x] AC7: The "Directory Structure" tree in `CLAUDE.md` shows `pyproject.toml`,
       `src/extract_memes/`, `tests/`, `downloads/`, and `output/`.
 
 ## Out of Scope

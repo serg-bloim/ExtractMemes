@@ -51,6 +51,14 @@ Every feature, behavior change, or user-facing fix goes through this cycle:
 ```
 ExtractMemes/
 ├── CLAUDE.md                     ← You are here. Read every session.
+├── pyproject.toml                ← Project metadata, dependencies, console script
+├── src/
+│   └── extract_memes/            ← The installable package
+│       ├── __init__.py
+│       └── __main__.py           ← CLI entrypoint (argparse)
+├── tests/                        ← pytest suite, mirrors src/extract_memes/ modules
+├── downloads/                    ← Downloaded source videos (gitignored)
+├── output/                       ← Extracted meme images (gitignored)
 ├── specs/
 │   ├── _TEMPLATE.md              ← Spec template — copy this for new specs
 │   └── features/                 ← One file per feature
@@ -61,9 +69,6 @@ ExtractMemes/
 └── .claude/
     └── settings.json             ← Claude Code permissions and settings
 ```
-
-(TODO: extend this tree with the project's actual source layout — e.g. where source code, tests,
-and build output live once a tech stack is chosen.)
 
 ---
 
@@ -132,8 +137,20 @@ When asked to write a spec, produce a complete file following `specs/_TEMPLATE.m
 
 ## Code Conventions
 
-(TODO: fill in once the tech stack is chosen — language, framework, build tool, test runner,
-linting, package registry quirks, and any `.gitignore` requirements.)
+- **Language:** Python 3.14, targeting the `.venv` at the project root.
+- **Dependencies:** Declared in `pyproject.toml` only — no `requirements.txt`. Runtime
+  dependencies go under `[project.dependencies]`; dev-only tools (e.g. `pytest`) go under the
+  `dev` optional dependency group.
+- **Install:** `pip install -e ".[dev]"` from the project root (editable install, includes dev
+  tools).
+- **Run:** `extract-memes --help` (console script) or `python -m extract_memes --help`
+  (module invocation). Both are backed by `src/extract_memes/__main__.py`.
+- **Test:** `pytest` from the project root. Each module under `src/extract_memes/` gets a
+  matching test file under `tests/`.
+- **Package layout:** `src/` layout (`src/extract_memes/`), installed in editable mode so
+  pytest and the console scripts resolve it without extra path configuration.
+- **Gitignore:** `.venv/`, `.idea/`, Python bytecode caches, `.pytest_cache/`, `*.egg-info/`,
+  `downloads/`, and `output/` are all ignored.
 
 ---
 

@@ -29,29 +29,38 @@ candidate approaches against.
 
 Milestones, in order:
 
-1. **M0 — Project setup**: `requirements.txt`, package layout (`extract_memes/` with
-   `downloader.py`, `frame_extractor.py`, `classifier.py`, `pipeline.py`, plus `main.py` as CLI
-   entrypoint), `.gitignore` updates, fill in CLAUDE.md's Code Conventions section.
-2. **M1 — Video download**: `yt-dlp` downloads a YouTube URL to a local file.
-3. **M2 — Frame extraction**: `opencv-python` (`cv2.VideoCapture`, bundled FFmpeg backend —
-   no separate system `ffmpeg` install needed) samples frames at a default of 1 fps.
-4. **M3 — Classifier interface (stub only)**: the `FrameClassifier` interface, with a stub
-   implementation (e.g. always-true, or an interactive y/n prompt) — no ML yet.
-5. **M4 — Save output + CLI wiring**: orchestrate M1→M2→M3, write flagged frames to an output
-   directory, expose it all via `python main.py <youtube_url>`. First fully runnable milestone.
-6. **M5 — Spec checkpoint**: with real output in hand, resolve Q3 (sampling rate) and decide
-   Q2 (dedup) or explicitly defer it; update the spec's acceptance criteria.
+1. **M0 — Project setup**: a `src/` layout with the package at `src/extract_memes/`. All
+   dependencies are declared in `pyproject.toml` (dev tools in a `dev` optional group; no
+   `requirements.txt`), installed with `pip install -e ".[dev]"`. The tool runs as an
+   `extract-memes` console command or `python -m extract_memes`, with no root `main.py`. Tests
+   live in a top-level `tests/` folder and run with pytest. A `.gitignore` covers `.venv/`,
+   `.idea/`, Python and pytest caches, build metadata, `downloads/`, and `output/`. Fill in
+   CLAUDE.md's Code Conventions and Directory Structure sections. Python 3.14 only. M0 creates
+   only the package itself; each pipeline module is added by the milestone that implements it.
+   No linter or formatter yet.
+2. **M1 — Video download**: `src/extract_memes/downloader.py` uses `yt-dlp` to download a
+   YouTube URL into `downloads/`.
+3. **M2 — Frame extraction**: `src/extract_memes/frame_extractor.py` uses `opencv-python`
+   (`cv2.VideoCapture`, bundled FFmpeg backend — no separate system `ffmpeg` install needed) to
+   sample frames at a default of 1 fps.
+4. **M3 — Classifier interface (stub only)**: `src/extract_memes/classifier.py` defines the
+   `FrameClassifier` interface, with a stub implementation (e.g. always-true, or an interactive
+   y/n prompt) — no ML yet.
+5. **M4 — Save output + CLI wiring**: `src/extract_memes/pipeline.py` orchestrates M1→M2→M3
+   and writes flagged frames to `output/`; `extract-memes <youtube_url>` runs it all. First
+   fully runnable milestone.
+6. **M5 — Checkpoint**: with real output in hand, confirm or adjust the sampling rate, and
+   decide whether dedup is needed now or can wait until M7.
 7. **M6 — Real classifier**: pick the classification approach using real sample
    frames as evaluation data; replace the M3 stub behind the same interface. Gets its own ADR and spec.
 8. **M7 — Dedup** (if deferred from M5): near-duplicate frame suppression, e.g. perceptual
    hashing via `imagehash`.
 
-Dev process: solo project on `main`, no CI for now. Validate each milestone by actually running
-it against one real short YouTube video rather than mocking/unit-testing the early I/O-heavy
-milestones; add unit tests once there's pure logic worth isolating (e.g. M7's hashing). Spec
-status stays `draft` through M0–M4 (an explicit prototype spike, per CLAUDE.md's prototyping
-exception to "spec before code"), moves to `ready` at the M5 checkpoint, and to `implemented`
-only once the real classifier (M6) meets every acceptance criterion.
+Dev process: solo project on `main`, no CI for now. Each milestone adds its module and matching
+tests under `tests/` together, and is also validated by running it against one real short
+YouTube video. How to handle tests that need network access is decided in the M1 spec. Each
+milestone follows the normal spec-driven workflow: it gets its own spec in `specs/features/`,
+which must reach `ready` before implementation starts.
 
 ---
 
@@ -97,12 +106,12 @@ by an actual run rather than in isolation.
 **Negative / costs:**
 - The stub classifier in M3–M5 means early runs "save everything," which is not the real
   feature — this is intentional scaffolding, not a shortcut on the final acceptance criteria.
-- Milestones M0–M4 are built without prior specs (a deliberate, explicit exception to the normal
-  spec-before-code rule), justified by CLAUDE.md's own prototyping allowance. Specs for
-  individual milestones are written as each becomes `ready` to implement.
+- Writing a spec for every milestone, including small ones like M0, adds some overhead before
+  each step. We accept that cost to keep the spec-driven workflow consistent.
 
 ---
 
 ## References
 
-- `CLAUDE.md` — Project Overview (pipeline description), "What Claude Should Never Do" (prototyping exception)
+- `CLAUDE.md` — Project Overview (pipeline description)
+- `specs/features/project-setup.md` — M0 spec

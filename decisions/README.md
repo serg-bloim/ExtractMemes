@@ -70,3 +70,4 @@ Links to related specs, external resources, or prior discussions.
 |---|-------|--------|------|
 | 001 | [Spec-Driven Development Workflow](001-spec-driven-workflow.md) | Accepted | 2026-09-16 |
 | 002 | [Meme Extraction Pipeline: Walking-Skeleton Rollout Plan](002-meme-extraction-pipeline-rollout-plan.md) | Accepted | 2026-09-16 |
+| 003 | [Split JOURNAL.md Into a Flat Index With Detail Moved to Spec Changelogs](003-journal-changelog-split.md) | Accepted | 2026-09-16 |

@@ -54,3 +54,11 @@ _Questions that must be resolved before this spec moves to `ready`. Once resolve
 the answer here and remove the checkbox — or move it to a decision record._
 
 - [ ] Q1: ...
+
+## Changelog
+
+_Dated log of requests and actions taken against this spec, most recent last. This is where
+detail lives — `JOURNAL.md` only links here. One entry per meaningful change: what was asked,
+what was decided or done._
+
+- YYYY-MM-DD: ...

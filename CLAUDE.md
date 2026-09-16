@@ -186,12 +186,21 @@ When Claude makes an architectural decision during implementation:
 
 ## Project Journal
 
-`JOURNAL.md` in the project root is a chronological log of user requests and actions taken.
-After every meaningful change — new feature, structural decision, tooling addition — append an
-entry with the user's request and a one-line summary of what was done.
+`JOURNAL.md` in the project root is a flat, one-line-per-entry index — not a narrative log.
+Each line is: `- YYYY-MM-DD: <one-sentence summary> — <link to the spec or ADR with details>`.
+No multi-line entries, no request/action detail in JOURNAL.md itself.
+
+The detail (what was requested, decisions made, open questions resolved, how it was
+implemented) goes in the **Changelog** section of the relevant `specs/features/<feature>.md`
+file. If the change isn't tied to a specific feature spec (e.g. a workflow or structural
+decision), link to the relevant ADR in `decisions/` instead, and put the detail there.
+
+After every meaningful change — new feature, structural decision, tooling addition — do both:
+1. Append a dated entry to the spec's (or ADR's) Changelog.
+2. Append the one-line index entry to `JOURNAL.md` linking to it.
 
 This rule applies even in multi-step operations that involve prompting the user mid-task.
-Always append to `JOURNAL.md` at the end of the operation, after all prompts are resolved.
+Always append both at the end of the operation, after all prompts are resolved.
 
 ---
 

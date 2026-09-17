@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from extract_memes.classifier import ClaudeCliClassifier, FrameClassifier
 from extract_memes.downloader import download
-from extract_memes.frame_extractor import frame_at, sample_frames
+from extract_memes.frame_extractor import frames_from, sample_frames
 from extract_memes.heuristic_classifier import HeuristicClassifier
 
 
@@ -39,6 +39,23 @@ def _write_image(path: Path, frame: np.ndarray) -> None:
         raise RuntimeError(f"Could not write image: {path}")
 
 
+def _native_fps(video_path: Path) -> float:
+    """Return the video's frame rate, or 25.0 when the file doesn't report one."""
+    cap = cv2.VideoCapture(str(video_path))
+    try:
+        return cap.get(cv2.CAP_PROP_FPS) or 25.0
+    finally:
+        cap.release()
+
+
+def _to_scan_size(frame: np.ndarray, scan_shape: tuple[int, int]) -> np.ndarray:
+    """Downscale a best-quality frame to the scan resolution the classifier was given."""
+    if frame.shape[:2] == scan_shape:
+        return frame
+    height, width = scan_shape
+    return cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
+
+
 def run(
     source: str,
     downloads_dir: Path = Path("downloads"),
@@ -51,12 +68,17 @@ def run(
     classifier_type: Literal["heuristic", "claude"] = "heuristic",
     save_frames: bool = False,
     save_low_res: bool = False,
+    window_seconds: float = 1.0,
 ) -> list[Path]:
     """Extract the memes in `source` and return the best-quality image paths, in video order.
 
     Sampled frames are kept in memory. With `save_frames=True`, they are written to
     `<runtime_dir>/<run_name>/frames/`. Flagged frames are written to `low-res/` when
-    `save_low_res=True`, and always to `high-res/` at the end as best-quality `frame_*` files.
+    `save_low_res=True`.
+
+    Each flagged timestamp becomes one batch under `high-res/meme_<n:03d>/`: every best-quality
+    frame within `window_seconds` either side of it is downscaled to the scan resolution, given to
+    the classifier, and saved at full quality if it too looks like a meme.
     """
     if classifier is None:
         if classifier_type == "heuristic":
@@ -77,7 +99,9 @@ def run(
 
     scan_path = download(source, "worst", downloads_dir)
     flagged: list[tuple[int, float]] = []
+    scan_shape = (0, 0)
     for index, timestamp, frame in tqdm(sample_frames(scan_path, fps=fps), desc="Scanning frames"):
+        scan_shape = frame.shape[:2]
         if save_frames:
             frame_path = frames_dir / _frame_name(index, timestamp)
             _write_image(frame_path, frame)
@@ -91,9 +115,16 @@ def run(
         return []
 
     extract_path = download(source, "best", downloads_dir)
+    count = round(2 * window_seconds * _native_fps(extract_path)) + 1
     saved: list[Path] = []
-    for index, timestamp in tqdm(flagged, desc="Extracting memes"):
-        meme_path = high_res_dir / _frame_name(index, timestamp)
-        _write_image(meme_path, frame_at(extract_path, timestamp))
-        saved.append(meme_path)
+    for meme_number, (_, timestamp) in enumerate(tqdm(flagged, desc="Extracting memes"), start=1):
+        meme_dir = high_res_dir / f"meme_{meme_number:03d}"
+        meme_dir.mkdir(parents=True, exist_ok=True)
+        start = max(0.0, timestamp - window_seconds)
+        for index, frame_timestamp, frame in frames_from(extract_path, start, count):
+            if not classifier.is_meme_frame(_to_scan_size(frame, scan_shape)):
+                continue
+            meme_path = meme_dir / _frame_name(index, frame_timestamp)
+            _write_image(meme_path, frame)
+            saved.append(meme_path)
     return saved

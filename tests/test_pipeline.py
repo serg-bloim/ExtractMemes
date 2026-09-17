@@ -13,6 +13,7 @@ from extract_memes.pipeline import default_run_name, run
 
 TEST_VIDEO_URL = "https://youtu.be/AElGyY97k_0"
 MEME_NAME = re.compile(r"^frame_\d{6}_\d+\.\d{2}s\.jpg$")
+BATCH_NAME = re.compile(r"^meme_\d{3}$")
 
 
 class EveryNth(FrameClassifier):
@@ -61,6 +62,11 @@ def names(folder: Path) -> list[str]:
     return sorted(path.name for path in folder.iterdir())
 
 
+def batches(run_dir: Path) -> list[Path]:
+    """The `high-res/meme_<n>/` batch folders of a run, in meme order."""
+    return sorted((run_dir / "high-res").iterdir())
+
+
 def test_local_run(short_video, tmp_path):
     classifier = EveryNth(10)
     runtime_dir = tmp_path / ".runtime"
@@ -78,15 +84,18 @@ def test_local_run(short_video, tmp_path):
         )
 
     run_dir = runtime_dir / "short"
-    assert len(saved) == 8
+    # Eight scan hits, so eight batch folders; every saved frame lives in one of them.
+    assert [path.name for path in batches(run_dir)] == [f"meme_{n:03d}" for n in range(1, 9)]
     for path in saved:
         assert path.is_file()
-        assert path.parent == run_dir / "high-res"
+        assert BATCH_NAME.match(path.parent.name)
+        assert path.parent.parent == run_dir / "high-res"
         assert MEME_NAME.match(path.name)
         assert cv2.imread(str(path)).shape[:2] == (144, 256)
-    # The classifier gets every sample as a decoded array, and by default nothing but the memes is
-    # written: no frames/, low-res/, or saved/.
-    assert len(classifier.frames) == 79
+    assert sorted(saved) == sorted(path for batch in batches(run_dir) for path in batch.iterdir())
+    # The classifier gets every sample as a decoded array during the scan, then every frame of
+    # each batch. By default nothing but the memes is written: no frames/, low-res/, or saved/.
+    assert len(classifier.frames) > 79
     assert all(frame.shape == (144, 256, 3) for frame in classifier.frames)
     assert names(run_dir) == ["high-res"]
 
@@ -96,8 +105,9 @@ def test_save_frames_writes_every_sampled_frame(short_video, tmp_path):
 
     run(str(short_video), runtime_dir=tmp_path, fps=1.0, classifier=classifier, save_frames=True)
 
+    # One file per sampled frame; the classifier is called more often, once per batch frame too.
     frames = names(tmp_path / "short" / "frames")
-    assert len(frames) == len(classifier.frames) == 79
+    assert len(frames) == 79
     assert all(MEME_NAME.match(name) for name in frames)
     assert frames[:2] == ["frame_000000_0.00s.jpg", "frame_000025_1.00s.jpg"]
 
@@ -110,7 +120,7 @@ def test_save_frames_does_not_change_what_the_classifier_sees(short_video, tmp_p
     with_frames = run(str(short_video), run_name="with", classifier=on_disk, save_frames=True, **kwargs)
 
     assert [path.name for path in without] == [path.name for path in with_frames]
-    assert len(in_memory.frames) == len(on_disk.frames) == 79
+    assert len(in_memory.frames) == len(on_disk.frames) > 79
     assert all(np.array_equal(a, b) for a, b in zip(in_memory.frames, on_disk.frames))
 
 
@@ -121,8 +131,10 @@ def test_classifier_reading_files_leaves_no_temporary_files(short_video, tmp_pat
     with pytest.raises(RuntimeError, match="claude failed"):
         run(str(short_video), runtime_dir=tmp_path, run_name="aborted", fps=0.5, classifier=aborted)
 
-    assert len(saved) == 1
-    assert len(complete.paths) == 40
+    # `ReadsFiles` flags only its first call, which is a scan sample, so its one batch (51 frames
+    # around 0.00s, at 25 fps) matches nothing and saves nothing.
+    assert saved == []
+    assert len(complete.paths) == 40 + 51
     assert len(aborted.paths) == 3
     assert all(path.parent.parent == temp_root for path in complete.paths + aborted.paths)
     assert list(temp_root.iterdir()) == []
@@ -142,12 +154,17 @@ def test_file_names_and_order(short_video, tmp_path):
     )
 
     # At 2 fps on 25 fps video the step is 12 frames (0.48 s): calls 0, 11, 22, … are flagged.
+    run_dir = tmp_path / "named"
     expected = [f"frame_{12 * call:06d}_{12 * call / 25:.2f}s.jpg" for call in range(0, 164, 11)]
-    assert [path.name for path in saved] == expected
     assert "frame_000264_10.56s.jpg" in expected
-    assert names(tmp_path / "named" / "high-res") == expected
-    # A low-res copy has exactly the name of its high-res copy, with no `thumb_` prefix.
-    assert names(tmp_path / "named" / "low-res") == expected
+    # One scan-quality copy and one batch folder per scan hit, in the same order.
+    assert names(run_dir / "low-res") == expected
+    assert [path.name for path in batches(run_dir)] == [
+        f"meme_{n:03d}" for n in range(1, len(expected) + 1)
+    ]
+    # Saved frames come back batch by batch, and within a batch in video order.
+    assert saved == [path for batch in batches(run_dir) for path in sorted(batch.iterdir())]
+    assert all(MEME_NAME.match(path.name) for path in saved)
 
 
 def test_save_low_res_writes_a_scan_quality_copy_of_each_meme(short_video, tmp_path):
@@ -157,9 +174,10 @@ def test_save_low_res_writes_a_scan_quality_copy_of_each_meme(short_video, tmp_p
     saved = run(str(short_video), run_name="low", classifier=EveryNth(10), save_low_res=True, **kwargs)
 
     assert [path.name for path in saved] == [path.name for path in default]
-    assert all(path.parent == tmp_path / "low" / "high-res" for path in saved)
+    assert all(path.parent.parent == tmp_path / "low" / "high-res" for path in saved)
+    # One low-res copy per scan hit, so one per batch folder, at scan quality.
     low_res = sorted((tmp_path / "low" / "low-res").iterdir())
-    assert [path.name for path in low_res] == [path.name for path in saved]
+    assert len(low_res) == len(batches(tmp_path / "low"))
     assert all(cv2.imread(str(path)).shape[:2] == (144, 256) for path in low_res)
     assert not (tmp_path / "default" / "low-res").exists()
 
@@ -256,6 +274,7 @@ def test_rerun_overwrites_and_keeps_other_files(short_video, tmp_path):
     run_dir = tmp_path / "again"
     first = run(str(short_video), classifier=EveryNth(10), save_low_res=True, **kwargs)
     first_low_res = names(run_dir / "low-res")
+    first_batches = [path.name for path in batches(run_dir)]
     extra = run_dir / "high-res" / "keep-me.txt"
     extra.write_text("not written by the pipeline")
     # A folder left by a run made before the high-res/low-res layout.
@@ -267,7 +286,11 @@ def test_rerun_overwrites_and_keeps_other_files(short_video, tmp_path):
 
     assert extra.is_file()
     assert all(path.is_file() for path in first)
-    assert set(second) < set(first)
+    # The second run flags fewer memes, so it reuses the lower-numbered batch folders and leaves
+    # the rest of the first run's batches in place. Batch numbers are per run, so `meme_002` now
+    # holds a different meme; nothing from the first run is deleted.
+    assert all(path.is_file() for path in second)
+    assert [path.name for path in batches(run_dir)] == ["keep-me.txt", *first_batches]
     assert old.read_text() == "old layout"
     assert names(run_dir / "saved") == [old.name]
     # A run without save_low_res leaves earlier low-res copies alone.
@@ -342,13 +365,16 @@ def test_default_run_name(source, expected):
 def test_default_run_finds_exactly_the_known_memes(short_video, tmp_path, save_frames):
     saved = run(str(short_video), downloads_dir=tmp_path, runtime_dir=tmp_path, save_frames=save_frames)
 
-    high_res_dir = tmp_path / "short" / "high-res"
-    assert saved == [
-        high_res_dir / "frame_000264_10.56s.jpg",
-        high_res_dir / "frame_000720_28.80s.jpg",
-    ]
+    # The two known cards, each as a batch of the 10 consecutive frames it's on screen for.
+    run_dir = tmp_path / "short"
+    assert [path.name for path in batches(run_dir)] == ["meme_001", "meme_002"]
+    assert names(run_dir / "high-res" / "meme_001")[0] == "frame_000262_10.48s.jpg"
+    assert names(run_dir / "high-res" / "meme_002")[0] == "frame_000716_28.64s.jpg"
+    assert [len(names(batch)) for batch in batches(run_dir)] == [10, 10]
+    assert "frame_000264_10.56s.jpg" in names(run_dir / "high-res" / "meme_001")
+    assert "frame_000720_28.80s.jpg" in names(run_dir / "high-res" / "meme_002")
     assert all(path.is_file() for path in saved)
-    assert (tmp_path / "short" / "frames").is_dir() == save_frames
+    assert (run_dir / "frames").is_dir() == save_frames
 
 
 @pytest.mark.slow
@@ -363,11 +389,12 @@ def test_real_url_mock_classifier_run(tmp_path):
         save_low_res=True,
     )
 
-    assert len(saved) == 6
+    run_dir = tmp_path / ".runtime" / "AElGyY97k_0"
+    assert len(batches(run_dir)) == 6
     for path in saved:
         assert path.is_file()
-        low_res = path.parent.parent / "low-res" / path.name
-        assert image_height(path) > image_height(low_res)
+        assert path.parent.parent == run_dir / "high-res"
+        assert image_height(path) > image_height(sorted((run_dir / "low-res").iterdir())[0])
     downloaded = [path.name for path in downloads_dir.rglob("*")]
     assert sorted(downloaded) == ["AElGyY97k_0_best.mp4", "AElGyY97k_0_worst.mp4"]
     assert not any("*" in name for name in downloaded)
@@ -383,11 +410,12 @@ def test_real_url_real_classifier_run(tmp_path):
         save_low_res=True,
     )
 
-    assert len(saved) == 2
+    run_dir = tmp_path / ".runtime" / "AElGyY97k_0"
+    assert len(batches(run_dir)) == 2
     for path in saved:
         assert path.is_file()
-        low_res = path.parent.parent / "low-res" / path.name
-        assert image_height(path) > image_height(low_res)
+        assert path.parent.parent == run_dir / "high-res"
+        assert image_height(path) > image_height(sorted((run_dir / "low-res").iterdir())[0])
     downloaded = [path.name for path in downloads_dir.rglob("*")]
     assert sorted(downloaded) == ["AElGyY97k_0_best.mp4", "AElGyY97k_0_worst.mp4"]
     assert not any("*" in name for name in downloaded)

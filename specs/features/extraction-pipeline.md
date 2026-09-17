@@ -51,18 +51,35 @@ so that I can check results (and stop early) without waiting for the whole run.
       4. If nothing was flagged, print `No memes found.` to stdout and return `[]`. Don't do the
          best-quality download.
       5. `extract_path = download(source, "best", downloads_dir)`.
-      6. For each flagged `(idx, ts)` in scan order:
-         `frame_at(extract_path, ts)`, write `saved/frame_<idx:06d>_<ts:.2f>s.jpg`, collect the
-         path.
-      7. Return the collected best-quality paths in scan order. Thumbnails aren't included.
+      6. For each flagged `(idx, ts)`, numbered from 1 in scan order as `n`:
+         create the batch folder `high-res/meme_<n:03d>/`; read the frames in
+         `[ts - window_seconds, ts + window_seconds]` with
+         `frames_from(extract_path, max(0, ts - window_seconds), count)`, where
+         `count = round(2 * window_seconds * native_fps) + 1`; downscale each one to the scan
+         resolution and classify it; write every frame the classifier flags to
+         `meme_<n:03d>/frame_<frame_idx:06d>_<frame_ts:.2f>s.jpg` at **full quality**, and collect
+         the path.
+      7. Return the collected paths, batch by batch and in video order within a batch.
 - [x] AC3: File-name format for all three kinds of image:
-      - `idx` is the **scan file's** decoded frame index, zero-padded to 6 digits.
+      - `idx` is the decoded frame index, zero-padded to 6 digits: the **scan file's** index for
+        `frames/` and `low-res/`, and the **best file's** own index (from `frames_from`) for the
+        batch frames under `high-res/meme_<n:03d>/`.
       - `ts` is seconds with exactly two decimals.
       - All images are JPEG, written with `cv2.imwrite` defaults.
 
       For the test video at 2 fps, this gives `frames/frame_000036_1.44s.jpg`,
-      `saved/thumb_frame_000036_1.44s.jpg`, and `saved/frame_000036_1.44s.jpg`. Sorting names
-      lexicographically sorts by position in the video (up to 999,999 frames).
+      `low-res/frame_000036_1.44s.jpg`, and a batch of full-quality frames under
+      `high-res/meme_001/`. Sorting names lexicographically sorts by position in the video (up to
+      999,999 frames), within a batch folder.
+- [x] AC17: `run` takes a trailing keyword parameter `window_seconds: float = 1.0`, the half-width
+      of the batch window in AC2 step 6. The batch is clamped at the start of the video, and
+      `frames_from` stops early at its end, so a meme near either end gets a shorter batch.
+      Every batch folder is created even when no frame in it is flagged, so it can stay empty.
+- [x] AC18: Before classifying a best-quality frame, `run` downscales it to the resolution the
+      scan frames had (`cv2.INTER_AREA`), so the classifier sees the same frame size in both
+      passes. A frame already at that size is passed through unchanged. The **saved** image is
+      always the full-quality frame, never the downscaled one. Scan-pass frames are passed to the
+      classifier unchanged, as before.
 - [x] AC4: Nothing the pipeline writes is ever deleted by it:
       - `frames/` keeps every sampled frame.
       - `thumb_frame_*` (scan quality) and `frame_*` (best quality) for the same timestamp coexist
@@ -87,7 +104,7 @@ so that I can check results (and stop early) without waiting for the whole run.
       in step 3, and `desc="Extracting memes"` wraps the flagged list in step 6.
 - [x] AC7: When `source` is a local file, the whole run makes no network access and uses that one
       file for both passes (per the video-download spec's passthrough).
-- [x] AC8: If `download`, `sample_frames`, `frame_at`, or `classifier.is_meme` raises, the exception
+- [x] AC8: If `download`, `sample_frames`, `frames_from`, or the classifier raises, the exception
       propagates and aborts the run. There's no silent skipping. Files already written (frames,
       thumbnails) stay on disk.
 
@@ -116,10 +133,17 @@ so that I can check results (and stop early) without waiting for the whole run.
 - [x] AC12: Offline integration test (module skipped if `sample/short.mp4` is absent). Run on
       `short.mp4` with `fps=1.0`, `tmp_path` dirs, and a fake classifier that returns `True` on
       every 10th call. Assert:
-      - the returned paths are non-empty, all exist, live in `tmp_path/.runtime/short/saved/`,
-        match `^frame_\d{6}_\d+\.\d{2}s\.jpg$`, and decode to shape `(144, 256)`;
-      - `frames/` holds exactly one `.jpg` per classifier call;
-      - `saved/` holds exactly as many `thumb_frame_*.jpg` files as there are returned paths.
+      - `high-res/` holds one `meme_<n:03d>/` folder per scan hit, numbered from 1 with no gaps;
+      - the returned paths all exist, live in one of those batch folders, match
+        `^frame_\d{6}_\d+\.\d{2}s\.jpg$`, decode to shape `(144, 256)`, and are exactly the files
+        in the batch folders;
+      - the returned paths are ordered batch by batch, and in video order within a batch;
+      - the fake is called once per sample and then once per batch frame.
+- [x] AC19: Batch-content test with the real default classifier (also covering
+      heuristic-classifier AC11): a default run on `short.mp4` produces `meme_001/` and `meme_002/`
+      holding 10 consecutive frames each, starting at `frame_000262_10.48s.jpg` and
+      `frame_000716_28.64s.jpg`, and containing the two known cards `frame_000264_10.56s.jpg` and
+      `frame_000720_28.80s.jpg`. (Measured: each card is on screen for exactly 10 frames, ADR 008.)
 - [x] AC13: No-memes test, on `sample/short.mp4` (**not** `full.mp4`) with a never-meme fake: `run`
       returns `[]`, prints `No memes found.` (captured with `capsys`), and `download` (patched as a
       spy around the real function) is called only with `"worst"`.
@@ -128,12 +152,16 @@ so that I can check results (and stop early) without waiting for the whole run.
       with no arguments exits 0 and prints usage.
 - [x] AC16: One real-network test, marked `@pytest.mark.slow`: `run("https://youtu.be/AElGyY97k_0", …)`
       with **`tmp_path`** for `downloads_dir` and `runtime_dir` (never the project's own
-      `downloads/`/`.runtime/`) and a fake classifier flagging every 5th call. Assert the returned
-      paths exist, the best-quality frames are larger than the thumbnails in pixel height, and no
-      file under `downloads_dir` contains `*`. It asserts rather than returning a value.
+      `downloads/`/`.runtime/`) and a fake classifier flagging every 5th call. Assert there are 6
+      batch folders, the returned paths exist and sit in them, every saved frame is taller in
+      pixels than the scan-quality copies in `low-res/`, and no file under `downloads_dir`
+      contains `*`. It asserts rather than returning a value.
 
 ## Out of Scope
 
+- **Refining a batch into one resulting image** (picking the sharpest or most complete frame,
+  merging them). The batches are saved whole for now; this is the intended next step.
+- **A CLI flag for `window_seconds`.** It's available from Python only, like `classifier_effort=None`.
 - Deduplicating a meme that appears in several consecutive samples (ADR 002 M7, still deferred).
   With the v3 prompt at 2 fps, each glitch card in `short.mp4` was flagged once, but that isn't
   guaranteed.
@@ -151,8 +179,19 @@ so that I can check results (and stop early) without waiting for the whole run.
 - **Runtime dependency introduced by this spec:** `tqdm` (known-good 4.70.1).
 - All default paths (`downloads`, `.runtime`) are **relative to the current working directory**,
   not the project root. Run the CLI from the project root to keep artifacts inside the project.
-- The best-quality frame is chosen by seeking to the scan timestamp. The file name keeps the scan
-  file's index even though it's taken from the best file (see frame-extraction Technical Notes).
+- **Why batches instead of one frame per meme:** the scan samples at 2 fps, so it flags one frame
+  of a card that is on screen for ~0.4 s (exactly 10 frames in `sample/short.mp4` and `full.mp4`,
+  ADR 008). The flagged sample isn't necessarily the best of them — it can catch a transition or a
+  partly drawn card. Keeping every frame of the card lets a later step choose or merge.
+- **Cost of the batch pass:** it classifies `2 * window_seconds * native_fps + 1` frames per meme
+  (51 at 25 fps), instead of none. That's negligible for `HeuristicClassifier` (~9 ms per frame at
+  1080p) but would make `--classifier claude` roughly 50x more expensive per meme, at 8–16 s per
+  frame. Worth revisiting before running a Claude scan end to end.
+- **`frames_from`, not `frame_at`:** one open-and-seek per meme instead of one per frame (~10x
+  faster; measurements in the frame-extraction spec).
+- The batch is read by seeking the best file to the scan timestamp, so the batch frames carry the
+  best file's own indices and timestamps, while `frames/` and `low-res/` names carry the scan
+  file's (see frame-extraction Technical Notes on cross-file timestamps).
 - The classifier gets the JPEG written to `frames/`, so it sees a JPEG-compressed, scan-quality
   frame (typically 256x144).
 - `run` prints `No memes found.` itself. The library does this intentionally; the CLI adds nothing
@@ -187,6 +226,21 @@ All resolved:
 
 ## Changelog
 
+- 2026-09-17: The user asked to process each flagged timestamp as a batch instead of a single
+  frame: read the best-quality frames within ±1 s with `frames_from`, downscale each and re-check
+  it with the classifier, save every match at full quality, and group the files by meme so batches
+  are easy to tell apart. Refining a batch into one image is explicitly deferred.
+  - Added AC17 (`window_seconds`, clamping, empty batches kept), AC18 (downscale before
+    classifying, save full quality), AC19 (batch contents with the real classifier), and rewrote
+    AC2 step 6–7, AC3, AC8, AC12, and AC16.
+  - `pipeline.run` now uses `frames_from` and no longer calls `frame_at`; output moved from
+    `high-res/frame_*.jpg` to `high-res/meme_<n:03d>/frame_*.jpg`.
+  - Interpretation, flagged for review: "downscale the frame" is done **in the pipeline**, to the
+    scan resolution, so it works for any classifier. `HeuristicClassifier` would have resized
+    internally anyway, but `ClaudeCliClassifier` would otherwise have sent full-resolution JPEGs.
+  - Verified: `run("sample/short.mp4")` gives `meme_001/` and `meme_002/` with 10 frames each,
+    covering the two known cards. `pytest -m "not slow"` (98 passed) and `pytest -m slow`
+    (5 passed).
 - 2026-09-16: Implemented as the final piece of "implement the whole project," wiring
   `downloader`, `frame_extractor`, and `classifier` into `pipeline.run` and extending the CLI.
   Validated end-to-end against `sample/short.mp4` with the real `ClaudeCliClassifier`.

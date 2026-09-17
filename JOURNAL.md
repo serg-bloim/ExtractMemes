@@ -60,3 +60,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   [specs/features/in-memory-frames.md](specs/features/in-memory-frames.md),
   [specs/features/resolution-output-folders.md](specs/features/resolution-output-folders.md).
 - 2026-09-17: Added `frames_from` for reading a run of consecutive frames from one open-and-seek — [specs/features/frame-extraction.md](specs/features/frame-extraction.md).
+- 2026-09-17: Extraction now saves a ±1s batch of re-classified full-quality frames per meme, grouped in `high-res/meme_<n>/` — [specs/features/extraction-pipeline.md](specs/features/extraction-pipeline.md).

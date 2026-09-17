@@ -55,6 +55,16 @@ def build_parser() -> argparse.ArgumentParser:
         default="low",
         help="Claude effort level used to classify frames; only applies to --classifier claude (default: %(default)s)",
     )
+    parser.add_argument(
+        "--save-frames",
+        action="store_true",
+        help="write every sampled frame to <runtime-dir>/<run-name>/frames/ for inspection",
+    )
+    parser.add_argument(
+        "--save-low-res",
+        action="store_true",
+        help="write scan-quality copies to <runtime-dir>/<run-name>/low-res/ as memes are found",
+    )
     return parser
 
 
@@ -74,6 +84,8 @@ def main(argv: list[str] | None = None) -> None:
         classifier_type=args.classifier,
         classifier_model=args.classifier_model,
         classifier_effort=args.classifier_effort,
+        save_frames=args.save_frames,
+        save_low_res=args.save_low_res,
     )
     for path in saved:
         print(path)

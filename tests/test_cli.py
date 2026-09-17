@@ -41,12 +41,14 @@ def test_defaults_are_passed_to_pipeline(capsys):
         classifier_type="heuristic",
         classifier_model="claude-haiku-4-5-20251001",
         classifier_effort="low",
+        save_frames=False,
+        save_low_res=False,
     )
     assert capsys.readouterr().out == ""
 
 
 def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
-    saved = [Path("out/saved/frame_000264_10.56s.jpg"), Path("out/saved/frame_000720_28.80s.jpg")]
+    saved = [Path("out/demo/high-res/frame_000264_10.56s.jpg"), Path("out/demo/high-res/frame_000720_28.80s.jpg")]
     with mock.patch("extract_memes.pipeline.run", return_value=saved) as run:
         main([
             "https://youtu.be/AElGyY97k_0",
@@ -57,6 +59,8 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
             "--classifier", "claude",
             "--classifier-model", "claude-sonnet-5",
             "--classifier-effort", "xhigh",
+            "--save-frames",
+            "--save-low-res",
         ])  # fmt: skip
 
     run.assert_called_once_with(
@@ -68,6 +72,8 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         classifier_type="claude",
         classifier_model="claude-sonnet-5",
         classifier_effort="xhigh",
+        save_frames=True,
+        save_low_res=True,
     )
     assert capsys.readouterr().out.splitlines() == [str(path) for path in saved]
 

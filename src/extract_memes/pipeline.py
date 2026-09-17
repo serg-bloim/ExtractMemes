@@ -49,12 +49,14 @@ def run(
     classifier_model: str = "claude-haiku-4-5-20251001",
     classifier_effort: str | None = "low",
     classifier_type: Literal["heuristic", "claude"] = "heuristic",
+    save_frames: bool = False,
+    save_low_res: bool = False,
 ) -> list[Path]:
     """Extract the memes in `source` and return the best-quality image paths, in video order.
 
-    Every sampled frame is kept in `<runtime_dir>/<run_name>/frames/`. Flagged frames are written
-    to `saved/` right away as scan-quality `thumb_frame_*` files, and at the end as best-quality
-    `frame_*` files.
+    Sampled frames are kept in memory. With `save_frames=True`, they are written to
+    `<runtime_dir>/<run_name>/frames/`. Flagged frames are written to `low-res/` when
+    `save_low_res=True`, and always to `high-res/` at the end as best-quality `frame_*` files.
     """
     if classifier is None:
         if classifier_type == "heuristic":
@@ -65,18 +67,24 @@ def run(
             raise ValueError(f"classifier_type must be 'heuristic' or 'claude', not {classifier_type!r}")
     run_dir = runtime_dir / (run_name or default_run_name(source))
     frames_dir = run_dir / "frames"
-    saved_dir = run_dir / "saved"
-    frames_dir.mkdir(parents=True, exist_ok=True)
-    saved_dir.mkdir(parents=True, exist_ok=True)
+    high_res_dir = run_dir / "high-res"
+    low_res_dir = run_dir / "low-res"
+    if save_frames:
+        frames_dir.mkdir(parents=True, exist_ok=True)
+    high_res_dir.mkdir(parents=True, exist_ok=True)
+    if save_low_res:
+        low_res_dir.mkdir(parents=True, exist_ok=True)
 
     scan_path = download(source, "worst", downloads_dir)
     flagged: list[tuple[int, float]] = []
     for index, timestamp, frame in tqdm(sample_frames(scan_path, fps=fps), desc="Scanning frames"):
-        frame_path = frames_dir / _frame_name(index, timestamp)
-        _write_image(frame_path, frame)
-        if classifier.is_meme(frame_path):
+        if save_frames:
+            frame_path = frames_dir / _frame_name(index, timestamp)
+            _write_image(frame_path, frame)
+        if classifier.is_meme_frame(frame):
             flagged.append((index, timestamp))
-            _write_image(saved_dir / f"thumb_{frame_path.name}", frame)
+            if save_low_res:
+                _write_image(low_res_dir / _frame_name(index, timestamp), frame)
 
     if not flagged:
         print("No memes found.")
@@ -85,7 +93,7 @@ def run(
     extract_path = download(source, "best", downloads_dir)
     saved: list[Path] = []
     for index, timestamp in tqdm(flagged, desc="Extracting memes"):
-        meme_path = saved_dir / _frame_name(index, timestamp)
+        meme_path = high_res_dir / _frame_name(index, timestamp)
         _write_image(meme_path, frame_at(extract_path, timestamp))
         saved.append(meme_path)
     return saved

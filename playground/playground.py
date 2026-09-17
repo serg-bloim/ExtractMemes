@@ -54,7 +54,7 @@ def _run(source: Path, run_name: str, **kwargs) -> None:
         run_name=run_name,
         **kwargs,
     )
-    print(f"Saved {len(saved)} memes to {PLAYGROUND_DIR / run_name / 'saved'}:")
+    print(f"Saved {len(saved)} memes to {PLAYGROUND_DIR / run_name / 'high-res'}:")
     for path in saved:
         print(f"  {path}")
 

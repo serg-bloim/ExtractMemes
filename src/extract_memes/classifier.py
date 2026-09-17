@@ -3,8 +3,12 @@
 import json
 import re
 import subprocess
+import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
+
+import cv2
+import numpy as np
 
 # The user-authored "glitch-framed meme card" rubric, verbatim from the meme-classifier spec.
 # `{filename}` is the only substitution. Any change to this text is a spec change.
@@ -39,6 +43,22 @@ class FrameClassifier(ABC):
     @abstractmethod
     def is_meme(self, image_path: Path) -> bool:
         """Return whether the image at `image_path` is a meme."""
+
+    def is_meme_frame(self, frame: np.ndarray) -> bool:
+        """Classify a decoded video frame (BGR uint8 array).
+
+        By default, writes the frame to a temporary file and calls is_meme.
+        Subclasses may override to classify in-memory. The temporary file is
+        always cleaned up, even if is_meme raises.
+        """
+        tmpdir = tempfile.TemporaryDirectory()
+        try:
+            tmp_path = Path(tmpdir.name) / "frame.jpg"
+            if not cv2.imwrite(str(tmp_path), frame):
+                raise RuntimeError(f"Could not write image: {tmp_path}")
+            return self.is_meme(tmp_path)
+        finally:
+            tmpdir.cleanup()
 
 
 class ClaudeCliClassifier(FrameClassifier):

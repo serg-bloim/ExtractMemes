@@ -28,3 +28,5 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   strict error handling — [specs/features/meme-classifier.md](specs/features/meme-classifier.md).
 - 2026-09-16: Rebuild step 5: implemented `pipeline.run`, run-name derivation, and the full
   `extract-memes` CLI — [specs/features/extraction-pipeline.md](specs/features/extraction-pipeline.md).
+- 2026-09-16: Completed project setup: full dependency set and all six test modules, verified with
+  a fresh-virtualenv install — [specs/features/project-setup.md](specs/features/project-setup.md).

@@ -1,6 +1,6 @@
 ---
 title: "Project Setup"
-status: in-progress
+status: implemented
 created: 2026-09-16
 updated: 2026-09-16
 author: ""
@@ -27,7 +27,7 @@ place without deciding the project structure again.
 
 ## Acceptance Criteria
 
-- [ ] AC1: A `pyproject.toml` at the project root declares:
+- [x] AC1: A `pyproject.toml` at the project root declares:
       - project `extract-memes`, version `0.1.0`, `requires-python = ">=3.14"`;
       - build backend `setuptools.build_meta` (`setuptools>=68`), with packages found under
         `src`;
@@ -45,7 +45,7 @@ place without deciding the project structure again.
       After the install, both `extract-memes --help` and `python -m extract_memes --help` exit 0
       and print usage text that describes the tool's purpose. There is no `main.py` at the project
       root.
-- [ ] AC4: A top-level `tests/` folder holds one test module per source module
+- [x] AC4: A top-level `tests/` folder holds one test module per source module
       (`test_package.py`, `test_cli.py`, `test_downloader.py`, `test_frame_extractor.py`,
       `test_classifier.py`, `test_pipeline.py`). `pyproject.toml` registers a `slow` marker under
       `[tool.pytest.ini_options]`:
@@ -190,3 +190,10 @@ All resolved:
   that dummy files in `downloads/`, `.runtime/x/`, and `sample/` stay out of `git status`. Checked
   AC2, AC3, AC5, AC6, and AC7. AC1 (runtime dependencies) and AC4 (one test module per source
   module) depend on the feature specs that come next, so status is `in-progress`.
+- 2026-09-16: Completed the rebuild's project setup once the four feature modules existed.
+  `pyproject.toml` now declares exactly `yt-dlp`, `static-ffmpeg`, `opencv-python-headless`,
+  `numpy`, and `tqdm`, and `tests/` has all six test modules plus a shared `conftest.py` (the
+  `short_video` fixture, which skips with a reason when `sample/short.mp4` is absent).
+  Verified `pip install -e ".[dev]"` in a fresh CPython 3.14.7 virtualenv: it installed the
+  known-good versions from Technical Notes, and `pytest -m "not slow"` passed there (60 passed)
+  with no `claude` or `node` on `PATH`. Checked AC1 and AC4; status `implemented`.

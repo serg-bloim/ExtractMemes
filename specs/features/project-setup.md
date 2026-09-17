@@ -1,6 +1,6 @@
 ---
 title: "Project Setup"
-status: ready
+status: in-progress
 created: 2026-09-16
 updated: 2026-09-16
 author: ""
@@ -37,11 +37,11 @@ place without deciding the project structure again.
 
       `pip install -e ".[dev]"` succeeds in a fresh Python 3.14 virtualenv. There is no
       `requirements.txt`.
-- [ ] AC2: The package lives at `src/extract_memes/`, and `__init__.py` has a one-line docstring.
+- [x] AC2: The package lives at `src/extract_memes/`, and `__init__.py` has a one-line docstring.
       After the editable install, `python -c "import extract_memes"` succeeds from any directory.
       Importing any module of the package has no side effects: no network access, no `PATH`
       changes, no files written.
-- [ ] AC3: `pyproject.toml` declares the console script `extract-memes = "extract_memes.__main__:main"`.
+- [x] AC3: `pyproject.toml` declares the console script `extract-memes = "extract_memes.__main__:main"`.
       After the install, both `extract-memes --help` and `python -m extract_memes --help` exit 0
       and print usage text that describes the tool's purpose. There is no `main.py` at the project
       root.
@@ -57,18 +57,18 @@ place without deciding the project structure again.
          excluded with `-m "not slow"`.
 
       `pytest -m "not slow"` passes with no network and no `claude` binary on `PATH`.
-- [ ] AC5: `.gitignore` contains exactly these entries: `.venv/`, `.idea/`, `__pycache__/`,
+- [x] AC5: `.gitignore` contains exactly these entries: `.venv/`, `.idea/`, `__pycache__/`,
       `*.py[cod]`, `.pytest_cache/`, `*.egg-info/`, `downloads/`, `.runtime/`, `/sample/`. After
       installing, running the tool and tests, and placing dummy files in `downloads/`,
       `.runtime/x/`, and `sample/`, `git status` shows none of them as untracked.
-- [ ] AC6: The "Code Conventions" section of `CLAUDE.md` covers:
+- [x] AC6: The "Code Conventions" section of `CLAUDE.md` covers:
       - the language and version (Python 3.14);
       - where dependencies are declared (`pyproject.toml`) and how to install them;
       - how to run the tool;
       - how to run the tests, including the `slow` tier;
       - the external runtime prerequisites (see Technical Notes);
       - the convention that each module gets matching tests under `tests/`.
-- [ ] AC7: The "Directory Structure" tree in `CLAUDE.md` shows `pyproject.toml`,
+- [x] AC7: The "Directory Structure" tree in `CLAUDE.md` shows `pyproject.toml`,
       `src/extract_memes/` (with its modules), `tests/`, `playground/`, `run_real_video.py`,
       `sample/`, `downloads/`, and `.runtime/<run-name>/{frames,saved}/`.
 
@@ -180,3 +180,13 @@ All resolved:
   the external prerequisites (`claude`, Node.js), the fixture inventory, and the permanent test
   video. Also declared `numpy` explicitly. Reset status to `ready` with unchecked ACs because the
   implementation will be erased and rebuilt.
+- 2026-09-16: "Implement the project according to the docs in it. Commit each feature
+  individually." Rebuild step 1 of [ADR 007](../../decisions/007-documentation-consolidation-for-rebuild.md).
+  The M0 skeleton (`pyproject.toml`, `src/extract_memes/`, argparse `__main__.py`, `tests/`,
+  `.gitignore`, CLAUDE.md sections) was already in place. Registered the `slow` marker under
+  `[tool.pytest.ini_options]` (AC4). Added a test that imports every package module in a fresh
+  interpreter, with a temporary cwd, and asserts `PATH` is unchanged and no files are written
+  (AC2). Verified the editable install, both `--help` invocations, `pytest -m "not slow"`, and
+  that dummy files in `downloads/`, `.runtime/x/`, and `sample/` stay out of `git status`. Checked
+  AC2, AC3, AC5, AC6, and AC7. AC1 (runtime dependencies) and AC4 (one test module per source
+  module) depend on the feature specs that come next, so status is `in-progress`.

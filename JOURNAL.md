@@ -16,3 +16,6 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   [specs/features/project-setup.md](specs/features/project-setup.md).
 - 2026-09-16: Switched JOURNAL.md to a one-line index; moved per-change detail into each spec's
   new Changelog section — [ADR 003](decisions/003-journal-changelog-split.md).
+- 2026-09-16: Rebuild step 1: registered the `slow` pytest marker and an import side-effect test;
+  project setup is `in-progress` until the feature modules exist —
+  [specs/features/project-setup.md](specs/features/project-setup.md).

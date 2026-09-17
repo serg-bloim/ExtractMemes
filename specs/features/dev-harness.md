@@ -1,6 +1,6 @@
 ---
 title: "Developer Run Harness"
-status: ready
+status: implemented
 created: 2026-09-16
 updated: 2026-09-16
 author: ""
@@ -35,7 +35,7 @@ so that I can try one variation from my IDE without editing code.
 
 ### `run_real_video.py` (project root)
 
-- [ ] AC1: `python run_real_video.py [url] [options]` accepts:
+- [x] AC1: `python run_real_video.py [url] [options]` accepts:
       - `url` (optional, default `https://youtu.be/AElGyY97k_0`);
       - `--fps` (float, default 2.0);
       - `--mock-type {every-n,random,claude}` (default: omitted, which means the real
@@ -43,7 +43,7 @@ so that I can try one variation from my IDE without editing code.
       - `--every-n` (int, default 5);
       - `--probability` (float, default 0.2);
       - `--run-name` (default: derived by the pipeline).
-- [ ] AC2: Classifiers:
+- [x] AC2: Classifiers:
       - real: `ClaudeCliClassifier()` with its defaults;
       - `every-n`: a `FrameClassifier` fake returning `True` on calls 0, n, 2n, … (the first sampled
         frame is always flagged);
@@ -51,16 +51,16 @@ so that I can try one variation from my IDE without editing code.
 
       Before running, it prints which classifier is used (for the real one, its `model` and
       `effort`), the source, and the fps.
-- [ ] AC3: It calls `pipeline.run(url, downloads_dir=Path(".runtime") / "downloads", runtime_dir=Path(".runtime"), run_name=…, fps=…, classifier=…)`.
+- [x] AC3: It calls `pipeline.run(url, downloads_dir=Path(".runtime") / "downloads", runtime_dir=Path(".runtime"), run_name=…, fps=…, classifier=…)`.
       Downloads for dev runs deliberately live under `.runtime/downloads/`, not the CLI's
       `downloads/`. Afterwards it prints `✓ Extracted N memes:` followed by the paths, or
       `No memes extracted.`.
-- [ ] AC4: It imports from the installed package (`from extract_memes.classifier import …`,
+- [x] AC4: It imports from the installed package (`from extract_memes.classifier import …`,
       `from extract_memes.pipeline import run`), **never** `from src.extract_memes …`.
 
 ### `playground/playground.py`
 
-- [ ] AC5: The module defines these entry points. Each writes under
+- [x] AC5: The module defines these entry points. Each writes under
       `.runtime/_playground/<run_name>/`, with downloads in `.runtime/_playground/downloads/`
       (paths resolved from the file's location, not the cwd), and prints what it saved:
       | Function | What it runs |
@@ -71,11 +71,11 @@ so that I can try one variation from my IDE without editing code.
       | `test_full_video_run` | `sample/full.mp4`, `fps=0.5`, run name `full_video` |
       | `test_classify_one_frame` | `frame_at(short.mp4, 10.56)` (a known glitch card), saved to `.runtime/_playground/single_frame.jpg`, classified with `ClaudeCliClassifier()`, prints `YES`/`NO` |
       | `test_progress_bars_demo` | `short.mp4`, `fps=2.0`, a fake flagging every 5th call with a 0.1 s sleep per call, run name `progress_bars_demo`; no Claude usage |
-- [ ] AC6: The functions are named `test_*` only so IDE pytest integrations show a run icon for each
+- [x] AC6: The functions are named `test_*` only so IDE pytest integrations show a run icon for each
       one. The file name doesn't match pytest's `test_*.py` / `*_test.py` collection patterns, so
       running `pytest` from the project root collects nothing from `playground/` or
       `run_real_video.py`. The module docstring explains this.
-- [ ] AC7: `python playground/playground.py` runs `test_progress_bars_demo()`. This replaces the
+- [x] AC7: `python playground/playground.py` runs `test_progress_bars_demo()`. This replaces the
       former `playground/pb.py` wrapper, which only worked when the cwd was `playground/`.
 
 ## Out of Scope
@@ -120,3 +120,19 @@ All resolved:
   ([ADR 007](../../decisions/007-documentation-consolidation-for-rebuild.md)). Wrote this spec
   retroactively from the existing scripts, and fixed the `src.` import and the `pb.py` cwd
   dependency. Status `ready`.
+- 2026-09-16: "Implement the project according to the docs in it. Commit each feature
+  individually." Rebuild step 6 of [ADR 007](../../decisions/007-documentation-consolidation-for-rebuild.md).
+  Added `run_real_video.py` (argparse runner with `EveryNthClassifier` and `RandomClassifier`
+  fakes, importing from the installed `extract_memes` package) and `playground/playground.py`
+  (the six AC5 entry points, a `SlowEveryNthClassifier` for the progress demo, paths resolved from
+  the file's location, and a docstring explaining the `test_*` names). Verified:
+  `pytest --collect-only` from the project root collects only the 64 tests under `tests/`;
+  `run_real_video.py --mock-type every-n` extracted 6 memes from the test video (calls 0, 5, …,
+  25) into `.runtime/<run-name>/saved/` with downloads in `.runtime/downloads/`;
+  `--mock-type random --probability 0` printed `No memes extracted.`;
+  `python playground/playground.py` run from an unrelated cwd scanned 164 frames and saved 33
+  under `.runtime/_playground/progress_bars_demo/`; and
+  `pytest playground/playground.py::test_classify_one_frame -s` printed `YES`. The long real runs
+  (`test_default_run`, `test_custom_model_and_effort`, `test_different_fps`,
+  `test_full_video_run`) weren't run, because they only combine `pipeline.run` options that are
+  already tested. All ACs checked; status `implemented`.

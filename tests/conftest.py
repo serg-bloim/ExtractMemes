@@ -1,9 +1,19 @@
+import tempfile
 from pathlib import Path
 
 import pytest
 
 SAMPLE_DIR = Path(__file__).resolve().parent.parent / "sample"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+
+@pytest.fixture
+def temp_root(tmp_path, monkeypatch) -> Path:
+    """An empty folder that `tempfile` uses for the test, so it can check nothing is left in it."""
+    root = tmp_path / "tmp"
+    root.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(root))
+    return root
 
 
 @pytest.fixture(scope="session")

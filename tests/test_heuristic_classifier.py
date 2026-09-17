@@ -54,6 +54,14 @@ def test_thresholds_are_configurable():
     assert not classifier.is_meme_frame(glitch_card())
 
 
+def test_is_meme_frame_writes_no_file():
+    with (
+        mock.patch("tempfile.TemporaryDirectory", side_effect=AssertionError("temporary directory created")),
+        mock.patch("cv2.imwrite", side_effect=AssertionError("image written")),
+    ):
+        assert HeuristicClassifier().is_meme_frame(glitch_card())
+
+
 def test_is_meme_reads_the_file_without_a_subprocess(tmp_path):
     path = tmp_path / "card.png"
     cv2.imwrite(str(path), glitch_card())

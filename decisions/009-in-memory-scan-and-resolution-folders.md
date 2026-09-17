@@ -117,7 +117,7 @@ resolution-output-folders spec once implemented.
 | 64 | Every sampled frame is written to `frames/` and read back only so the classifier gets a file; the frames were needed only for inspection. | Classify in memory; `--save-frames` writes them on request. | Iteration 3 | in-memory-frames AC2–AC5 |
 | 65 | `ClaudeCliClassifier` can only classify a file on disk. | `FrameClassifier.is_meme_frame` defaults to a temporary-file round trip. | Iteration 3 | in-memory-frames AC1 |
 | 66 | Scan-quality `thumb_frame_*` and best-quality `frame_*` files are mixed in `saved/`, and the thumbnails are always written. | `high-res/` and `low-res/` folders with identical names; low-res only with `--save-low-res`. | Iteration 3 | resolution-output-folders AC1–AC6 |
-| 67 | Commit `8651a9e` inserted `test_default_run_finds_exactly_the_known_memes` between `@pytest.mark.slow` and `test_real_url_run`. The real-network test now runs in `pytest -m "not slow"`, and the offline end-to-end check (heuristic-classifier AC11) runs only with `-m slow`. | Regression: move the decorator back onto `test_real_url_run`. No spec change. | Open | `tests/test_pipeline.py` |
+| 67 | Commit `8651a9e` inserted `test_default_run_finds_exactly_the_known_memes` between `@pytest.mark.slow` and `test_real_url_run`. The real-network test now runs in `pytest -m "not slow"`, and the offline end-to-end check (heuristic-classifier AC11) runs only with `-m slow`. | Regression: move the decorator back onto `test_real_url_run`. No spec change. Fixed in commit `44add50`. | Resolved | `tests/test_pipeline.py` |
 
 ## References
 

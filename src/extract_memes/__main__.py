@@ -12,7 +12,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Extract meme images from a video known to contain them: scan for glitch-framed "
             "meme cards and save those frames from a best-quality copy under "
-            "<runtime-dir>/<run-name>/saved/."
+            "<runtime-dir>/<run-name>/high-res/."
         ),
     )
     parser.add_argument("source", nargs="?", help="YouTube URL or local video file path")

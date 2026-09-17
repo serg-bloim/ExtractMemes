@@ -78,6 +78,33 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
     assert capsys.readouterr().out.splitlines() == [str(path) for path in saved]
 
 
+@pytest.mark.parametrize(
+    ("flag", "expected"),
+    [
+        ("--save-frames", {"save_frames": True, "save_low_res": False}),
+        ("--save-low-res", {"save_frames": False, "save_low_res": True}),
+    ],
+)
+def test_each_save_flag_sets_only_its_option(flag, expected):
+    with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
+        main(["sample/short.mp4", flag])
+
+    assert {key: run.call_args.kwargs[key] for key in expected} == expected
+
+
+def test_help_describes_the_output_folders(capsys, monkeypatch):
+    # argparse wraps to the terminal width and may break a line at the hyphen in `<run-name>`.
+    monkeypatch.setenv("COLUMNS", "1000")
+    with pytest.raises(SystemExit):
+        main(["--help"])
+
+    help_text = capsys.readouterr().out
+    assert "<runtime-dir>/<run-name>/high-res/" in help_text
+    assert "saved/" not in help_text
+    assert "<runtime-dir>/<run-name>/frames/" in help_text
+    assert "<runtime-dir>/<run-name>/low-res/" in help_text
+
+
 def test_invalid_effort_is_rejected():
     with pytest.raises(SystemExit) as excinfo:
         main(["sample/short.mp4", "--classifier-effort", "extreme"])

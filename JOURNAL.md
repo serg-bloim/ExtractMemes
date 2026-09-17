@@ -55,3 +55,7 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   folders —
   [specs/features/in-memory-frames.md](specs/features/in-memory-frames.md),
   [specs/features/resolution-output-folders.md](specs/features/resolution-output-folders.md).
+- 2026-09-17: Added the missing iteration 3 tests, fixed the CLI description, and corrected
+  overstated changelog claims —
+  [specs/features/in-memory-frames.md](specs/features/in-memory-frames.md),
+  [specs/features/resolution-output-folders.md](specs/features/resolution-output-folders.md).

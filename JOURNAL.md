@@ -51,3 +51,7 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   Claude classifier) — [specs/features/in-memory-frames.md](specs/features/in-memory-frames.md).
 - 2026-09-17: Drafted the resolution output folders spec (`high-res/`, `--save-low-res`) —
   [specs/features/resolution-output-folders.md](specs/features/resolution-output-folders.md).
+- 2026-09-17: Implemented iteration 3: frames in memory, `high-res/` and `--save-low-res` output
+  folders —
+  [specs/features/in-memory-frames.md](specs/features/in-memory-frames.md),
+  [specs/features/resolution-output-folders.md](specs/features/resolution-output-folders.md).

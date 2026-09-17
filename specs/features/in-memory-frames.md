@@ -1,6 +1,6 @@
 ---
 title: "In-Memory Scan Frames (Iteration 3)"
-status: draft
+status: in-progress
 created: 2026-09-17
 updated: 2026-09-17
 author: ""
@@ -230,4 +230,17 @@ Open, with a proposed answer:
   - Found while drafting: the `slow` marker in `tests/test_pipeline.py` is on the wrong test (ADR 009
     register 67).
 
-  Status `draft`, pending review and Q5–Q6.
+  Status `in-progress`. Q5–Q6 answered by the user (2026-09-17): yes to both proposed answers.
+- 2026-09-17: Implemented as part of "implement the new specs" request (commit `44add50`).
+  - **Classifier:** added `is_meme_frame(frame)` to `FrameClassifier`, a concrete method that writes
+    the frame to a temporary file, calls `is_meme`, and cleans up. `HeuristicClassifier` overrides it
+    to classify in-memory without writing.
+  - **Pipeline:** added `save_frames` parameter (default False); when False, no `frames/` directory
+    is created and frames are classified in-memory. When True, every frame is written.
+  - **CLI:** added `--save-frames` flag.
+  - **Tests:** all 80 tests pass offline and with real YouTube downloads. Fixed the regression where
+    `@pytest.mark.slow` was on the wrong test.
+  - Verified: `extract-memes sample/short.mp4` returns exactly the two known memes with no `frames/`
+    or `low-res/` folders. With `--save-frames --save-low-res`, all three folders exist. Raw frames
+    and JPEG-decoded frames give identical classification results (measured at drafting time).
+  All ACs checked; status `in-progress`.

@@ -1,6 +1,6 @@
 ---
 title: "Low-Res and High-Res Output Folders (Iteration 3)"
-status: draft
+status: in-progress
 created: 2026-09-17
 updated: 2026-09-17
 author: ""
@@ -182,4 +182,17 @@ Open, with a proposed answer:
   - Drafted this spec and [ADR 009](../../decisions/009-in-memory-scan-and-resolution-folders.md)
     together with [in-memory-frames](in-memory-frames.md), which it builds on.
 
-  Status `draft`, pending review and Q4–Q5.
+  Status `in-progress`. Q4–Q5 answered by the user (2026-09-17): yes to both proposed answers.
+- 2026-09-17: Implemented as part of "implement the new specs" request (commit `44add50`).
+  - **Pipeline:** added `save_low_res` parameter (default False); creates `high-res/` always and
+    `low-res/` only when set. Flagged frames are written to `low-res/` immediately when enabled.
+    All best-quality frames go to `high-res/`.
+  - **CLI:** added `--save-low-res` flag.
+  - **Playground:** updated `_run` to print the `high-res/` folder instead of `saved/`.
+  - **Tests:** updated all tests to check for `high-res/` instead of `saved/`, removed checks for
+    `thumb_` prefixes. `test_real_url_run` now compares high-res and low-res files directly. All
+    tests pass.
+  - Verified: `extract-memes sample/short.mp4` returns files in `high-res/` only. With
+    `--save-low-res`, both `high-res/` and `low-res/` hold files with matching names. Old `saved/`
+    folders are left untouched by new runs.
+  All ACs checked; status `in-progress`.

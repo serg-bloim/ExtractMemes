@@ -69,6 +69,9 @@ ExtractMemes/
 │   └── playground.py             ← Manual IDE entry points (not collected by pytest)
 ├── run_real_video.py             ← Manual runner: real URL, real or fake classifier
 ├── sample/                       ← Local video fixtures, supplied by hand (gitignored)
+├── data/
+│   └── labeled_dataset/{positive,negative}/ ← Hand-labeled 256x144 frames for classifier
+│                                   evaluation and tests — do NOT delete (see ADR 008)
 ├── downloads/                    ← CLI downloads: <video-id>_worst.mp4, <video-id>_best.mp4 (gitignored)
 ├── .runtime/                     ← Per-run artifacts (gitignored):
 │   ├── <run-name>/
@@ -76,8 +79,7 @@ ExtractMemes/
 │   │   └── saved/                    ← thumb_frame_<idx>_<ts>s.jpg (scan quality, written when
 │   │                                   flagged) + frame_<idx>_<ts>s.jpg (best quality, final)
 │   ├── downloads/                    ← Downloads made by run_real_video.py
-│   ├── _playground/                  ← Output of playground/playground.py
-│   └── experiment/{positive,negative}/ ← Labeled classifier eval frames — do NOT delete
+│   └── _playground/                  ← Output of playground/playground.py
 ├── specs/
 │   ├── _TEMPLATE.md              ← Spec template — copy this for new specs
 │   └── features/                 ← One file per feature

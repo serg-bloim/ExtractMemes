@@ -35,3 +35,10 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-09-16: Rebuild smoke check passed: the real run on `sample/short.mp4` flagged exactly the
   two known meme cards (10.56 s, 28.80 s) —
   [specs/features/extraction-pipeline.md](specs/features/extraction-pipeline.md).
+- 2026-09-16: Proposed iteration 2, a hand-built image heuristic as the default classifier with the
+  Claude classifier kept as the rebuild baseline, and defined iteration specs —
+  [ADR 008](decisions/008-heuristic-classifier-iteration.md).
+- 2026-09-16: Drafted the heuristic classifier spec (band and texture margin scores, `--classifier`
+  switch) — [specs/features/heuristic-classifier.md](specs/features/heuristic-classifier.md).
+- 2026-09-16: Moved the labeled frames from `.runtime/experiment/` to `data/labeled_dataset/` —
+  [specs/features/heuristic-classifier.md](specs/features/heuristic-classifier.md).

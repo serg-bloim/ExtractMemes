@@ -26,3 +26,5 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   [specs/features/frame-extraction.md](specs/features/frame-extraction.md).
 - 2026-09-16: Rebuild step 4: implemented `ClaudeCliClassifier` with the verbatim v3 rubric and
   strict error handling — [specs/features/meme-classifier.md](specs/features/meme-classifier.md).
+- 2026-09-16: Rebuild step 5: implemented `pipeline.run`, run-name derivation, and the full
+  `extract-memes` CLI — [specs/features/extraction-pipeline.md](specs/features/extraction-pipeline.md).

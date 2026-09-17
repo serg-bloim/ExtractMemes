@@ -1,6 +1,6 @@
 ---
 title: "Extraction Pipeline + CLI"
-status: ready
+status: implemented
 created: 2026-09-16
 updated: 2026-09-16
 author: ""
@@ -34,12 +34,12 @@ so that I can check results (and stop early) without waiting for the whole run.
 
 ### Library: `pipeline.run`
 
-- [ ] AC1: `src/extract_memes/pipeline.py` exposes
+- [x] AC1: `src/extract_memes/pipeline.py` exposes
       `run(source: str, downloads_dir: Path = Path("downloads"), runtime_dir: Path = Path(".runtime"), run_name: str | None = None, fps: float = 2.0, classifier: FrameClassifier | None = None, classifier_model: str = "claude-haiku-4-5-20251001", classifier_effort: str | None = "low") -> list[Path]`.
       If `classifier` is `None`, a `ClaudeCliClassifier(model=classifier_model, effort=classifier_effort)`
       is built inside `run`. Otherwise `classifier_model`/`classifier_effort` are ignored. Tests
       inject fakes without needing `claude` installed.
-- [ ] AC2: `run` executes these steps in this order:
+- [x] AC2: `run` executes these steps in this order:
       1. Resolve `run_name` (AC5). Create `runtime_dir/run_name/frames/` and
          `runtime_dir/run_name/saved/` (parents OK, existing OK).
       2. `scan_path = download(source, "worst", downloads_dir)`.
@@ -55,7 +55,7 @@ so that I can check results (and stop early) without waiting for the whole run.
          `frame_at(extract_path, ts)`, write `saved/frame_<idx:06d>_<ts:.2f>s.jpg`, collect the
          path.
       7. Return the collected best-quality paths in scan order. Thumbnails aren't included.
-- [ ] AC3: File-name format for all three kinds of image:
+- [x] AC3: File-name format for all three kinds of image:
       - `idx` is the **scan file's** decoded frame index, zero-padded to 6 digits.
       - `ts` is seconds with exactly two decimals.
       - All images are JPEG, written with `cv2.imwrite` defaults.
@@ -63,13 +63,13 @@ so that I can check results (and stop early) without waiting for the whole run.
       For the test video at 2 fps, this gives `frames/frame_000036_1.44s.jpg`,
       `saved/thumb_frame_000036_1.44s.jpg`, and `saved/frame_000036_1.44s.jpg`. Sorting names
       lexicographically sorts by position in the video (up to 999,999 frames).
-- [ ] AC4: Nothing the pipeline writes is ever deleted by it:
+- [x] AC4: Nothing the pipeline writes is ever deleted by it:
       - `frames/` keeps every sampled frame.
       - `thumb_frame_*` (scan quality) and `frame_*` (best quality) for the same timestamp coexist
         in `saved/`, without being reconciled.
       - Re-running with the same run name overwrites same-named files and leaves other files in
         place.
-- [ ] AC5: The default run name comes from `source` and is then slugified: replace every run of
+- [x] AC5: The default run name comes from `source` and is then slugified: replace every run of
       `[^A-Za-z0-9_-]` with `_`, strip `_` from both ends, and fall back to `video` if nothing is
       left. The base name before slugifying:
       - Local path (no `://`): the file stem.
@@ -83,17 +83,17 @@ so that I can check results (and stop early) without waiting for the whole run.
       | `https://youtu.be/AElGyY97k_0` | `AElGyY97k_0` |
       | `https://www.youtube.com/watch?v=dQw4w9WgXcQ` | `dQw4w9WgXcQ` |
       | `https://www.youtube.com/shorts/abc123` | `abc123` |
-- [ ] AC6: Progress is shown with `tqdm`: `desc="Scanning frames"` wraps the sampled-frame iteration
+- [x] AC6: Progress is shown with `tqdm`: `desc="Scanning frames"` wraps the sampled-frame iteration
       in step 3, and `desc="Extracting memes"` wraps the flagged list in step 6.
-- [ ] AC7: When `source` is a local file, the whole run makes no network access and uses that one
+- [x] AC7: When `source` is a local file, the whole run makes no network access and uses that one
       file for both passes (per the video-download spec's passthrough).
-- [ ] AC8: If `download`, `sample_frames`, `frame_at`, or `classifier.is_meme` raises, the exception
+- [x] AC8: If `download`, `sample_frames`, `frame_at`, or `classifier.is_meme` raises, the exception
       propagates and aborts the run. There's no silent skipping. Files already written (frames,
       thumbnails) stay on disk.
 
 ### CLI: `extract-memes` / `python -m extract_memes`
 
-- [ ] AC9: `src/extract_memes/__main__.py` builds an `argparse` parser (`prog="extract-memes"`, a
+- [x] AC9: `src/extract_memes/__main__.py` builds an `argparse` parser (`prog="extract-memes"`, a
       description of the tool's purpose) with:
       - an **optional** positional `source` (`nargs="?"`), a YouTube URL or local video path;
       - `--fps` (float, default 2.0);
@@ -105,28 +105,28 @@ so that I can check results (and stop early) without waiting for the whole run.
 
       `main()` passes them to `pipeline.run`. The console script `extract-memes` maps to
       `extract_memes.__main__:main`.
-- [ ] AC10: With no `source`, the CLI prints the help text and exits 0 without running anything.
+- [x] AC10: With no `source`, the CLI prints the help text and exits 0 without running anything.
       With a `source`, it runs the pipeline and prints each returned path on its own line (nothing
       extra when there are no memes; `run` already printed `No memes found.`).
-- [ ] AC11: `extract-memes --help` and `python -m extract_memes --help` exit 0 with no network
+- [x] AC11: `extract-memes --help` and `python -m extract_memes --help` exit 0 with no network
       access and no ffmpeg setup (no import-time side effects; see video-download AC6).
 
 ### Tests
 
-- [ ] AC12: Offline integration test (module skipped if `sample/short.mp4` is absent). Run on
+- [x] AC12: Offline integration test (module skipped if `sample/short.mp4` is absent). Run on
       `short.mp4` with `fps=1.0`, `tmp_path` dirs, and a fake classifier that returns `True` on
       every 10th call. Assert:
       - the returned paths are non-empty, all exist, live in `tmp_path/.runtime/short/saved/`,
         match `^frame_\d{6}_\d+\.\d{2}s\.jpg$`, and decode to shape `(144, 256)`;
       - `frames/` holds exactly one `.jpg` per classifier call;
       - `saved/` holds exactly as many `thumb_frame_*.jpg` files as there are returned paths.
-- [ ] AC13: No-memes test, on `sample/short.mp4` (**not** `full.mp4`) with a never-meme fake: `run`
+- [x] AC13: No-memes test, on `sample/short.mp4` (**not** `full.mp4`) with a never-meme fake: `run`
       returns `[]`, prints `No memes found.` (captured with `capsys`), and `download` (patched as a
       spy around the real function) is called only with `"worst"`.
-- [ ] AC14: Run-name tests cover every row of the AC5 table plus the `video` fallback.
-- [ ] AC15: CLI tests: both `--help` invocations exit 0 with output mentioning "extract". Invoking
+- [x] AC14: Run-name tests cover every row of the AC5 table plus the `video` fallback.
+- [x] AC15: CLI tests: both `--help` invocations exit 0 with output mentioning "extract". Invoking
       with no arguments exits 0 and prints usage.
-- [ ] AC16: One real-network test, marked `@pytest.mark.slow`: `run("https://youtu.be/AElGyY97k_0", …)`
+- [x] AC16: One real-network test, marked `@pytest.mark.slow`: `run("https://youtu.be/AElGyY97k_0", …)`
       with **`tmp_path`** for `downloads_dir` and `runtime_dir` (never the project's own
       `downloads/`/`.runtime/`) and a fake classifier flagging every 5th call. Assert the returned
       paths exist, the best-quality frames are larger than the thumbnails in pixel height, and no
@@ -229,3 +229,16 @@ All resolved:
   URLs (AC5), the no-memes test scanning `full.mp4` (AC13), and the real-URL test polluting the
   project and lacking a `slow` marker (AC16). Renumbered ACs into Library / CLI / Tests groups.
   Reset status to `ready` with unchecked ACs because the implementation will be erased and rebuilt.
+- 2026-09-16: "Implement the project according to the docs in it. Commit each feature
+  individually." Rebuild step 5 of [ADR 007](../../decisions/007-documentation-consolidation-for-rebuild.md).
+  Added `src/extract_memes/pipeline.py`: `default_run_name` (AC5) and `run`, which follows the
+  AC2 steps in order with `tqdm` bars. A failed `cv2.imwrite` raises `RuntimeError` instead of
+  being ignored, so no image is silently skipped (AC8). Replaced the skeleton
+  `__main__.py` with the full parser (AC9) and `main(argv=None)`, which prints help for no
+  `source` and otherwise prints each returned path. Declared `tqdm`. Added
+  `tests/test_pipeline.py`: AC12–AC14 and AC16, plus the default-classifier wiring (AC1), file
+  names and scan order (AC3), the progress-bar descriptions (AC6), overwrite-on-rerun (AC4), a
+  local run with yt-dlp and ffmpeg setup patched to fail (AC7), and error propagation (AC8).
+  Rewrote `tests/test_cli.py` for AC15, the argument pass-through, and help leaving the cwd
+  untouched (AC11). Verified: `pytest -m "not slow"` (60 passed, also with no `claude` or `node`
+  on `PATH`) and `pytest -m slow` (4 passed). All ACs checked; status `implemented`.

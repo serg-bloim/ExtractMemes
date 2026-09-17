@@ -12,6 +12,7 @@ dependencies = [
     "static-ffmpeg",
     "opencv-python-headless",
     "numpy",
+    "tqdm",
 ]
 
 [project.optional-dependencies]

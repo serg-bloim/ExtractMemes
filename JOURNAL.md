@@ -24,3 +24,5 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   [specs/features/video-download.md](specs/features/video-download.md).
 - 2026-09-16: Rebuild step 3: implemented `sample_frames` and `frame_at` with OpenCV —
   [specs/features/frame-extraction.md](specs/features/frame-extraction.md).
+- 2026-09-16: Rebuild step 4: implemented `ClaudeCliClassifier` with the verbatim v3 rubric and
+  strict error handling — [specs/features/meme-classifier.md](specs/features/meme-classifier.md).

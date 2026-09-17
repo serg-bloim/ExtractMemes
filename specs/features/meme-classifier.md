@@ -1,6 +1,6 @@
 ---
 title: "Meme Classifier (Claude CLI)"
-status: ready
+status: implemented
 created: 2026-09-16
 updated: 2026-09-16
 author: ""
@@ -33,25 +33,25 @@ that I can trade cost and speed against accuracy while tuning.
 
 ## Acceptance Criteria
 
-- [ ] AC1: `src/extract_memes/classifier.py` defines an abstract base class `FrameClassifier` with a
+- [x] AC1: `src/extract_memes/classifier.py` defines an abstract base class `FrameClassifier` with a
       single abstract method `is_meme(self, image_path: Path) -> bool`. It takes the path of an
       image file on disk, not an in-memory array, because the CLI reads files. Test doubles and
       dev fakes subclass it.
-- [ ] AC2: `ClaudeCliClassifier(model: str = "claude-haiku-4-5-20251001", effort: str | None = "low", timeout: float = 60.0)`
+- [x] AC2: `ClaudeCliClassifier(model: str = "claude-haiku-4-5-20251001", effort: str | None = "low", timeout: float = 60.0)`
       implements it and exposes `model`, `effort`, and `timeout` as public attributes.
-- [ ] AC3: `is_meme` runs `subprocess.run` with this exact argument list:
+- [x] AC3: `is_meme` runs `subprocess.run` with this exact argument list:
       `["claude", "-p", "--output-format", "json", "--allowedTools=Read", "--model", <model>]`,
       then `["--effort", <effort>]` only if `effort` is truthy, then the prompt as the last
       argument. It uses `cwd=image_path.parent`, `capture_output=True`, `text=True`, and
       `timeout=self.timeout`. The prompt refers to the image **by bare file name only** (never the
       absolute path).
-- [ ] AC4: The prompt is the verbatim "glitch-framed meme card" rubric under
+- [x] AC4: The prompt is the verbatim "glitch-framed meme card" rubric under
       [Prompt (verbatim)](#prompt-verbatim) below, with `{filename}` replaced by `image_path.name`.
       Any change to the prompt text is a spec change.
-- [ ] AC5: Parsing: `json.loads(stdout)["result"]`, then the first case-insensitive whole-word match
+- [x] AC5: Parsing: `json.loads(stdout)["result"]`, then the first case-insensitive whole-word match
       of `YES` or `NO` (`\b(YES|NO)\b`). `YES` gives `True` and `NO` gives `False`. Surrounding
       whitespace and punctuation are fine (`"No."` → `False`).
-- [ ] AC6: Any failure raises `RuntimeError` naming `image_path`. It never silently returns
+- [x] AC6: Any failure raises `RuntimeError` naming `image_path`. It never silently returns
       `True`/`False`. Failures include:
       the call times out (chained from `TimeoutExpired`);
       the process exits non-zero (the message includes stripped stderr);
@@ -59,7 +59,7 @@ that I can trade cost and speed against accuracy while tuning.
       the result has no YES/NO word (the message includes the result text);
       or the `claude` executable isn't found. For that last case, catch `FileNotFoundError` and
       say that the Claude Code CLI must be installed, authenticated, and on `PATH`.
-- [ ] AC7: Unit tests mock `subprocess.run` and never spawn a real `claude` process (that would be
+- [x] AC7: Unit tests mock `subprocess.run` and never spawn a real `claude` process (that would be
       slow, cost real usage, and recursively launch Claude Code from its own test suite). They
       cover:
       `"YES"` → `True`, `"No."` → `False`;
@@ -222,3 +222,15 @@ All resolved:
   missing-binary error (AC6), measured latency, the labeled evaluation set and its at-risk
   location, and the unverified per-call session overhead. Reset status to `ready` with unchecked
   ACs because the implementation will be erased and rebuilt.
+- 2026-09-16: "Implement the project according to the docs in it. Commit each feature
+  individually." Rebuild step 4 of [ADR 007](../../decisions/007-documentation-consolidation-for-rebuild.md).
+  Added `src/extract_memes/classifier.py` with the `FrameClassifier` ABC and
+  `ClaudeCliClassifier`. It runs the exact AC3 argument list with `cwd=image_path.parent` and
+  parses `json.loads(stdout)["result"]` with `\b(YES|NO)\b`. Every failure (timeout, non-zero
+  exit, bad JSON or no `result`, no YES/NO, missing binary) raises a chained `RuntimeError`
+  naming the image. The prompt is `PROMPT_TEMPLATE`, copied programmatically from the verbatim
+  block above. Added `tests/test_classifier.py` with `subprocess.run` mocked, covering every AC7
+  item, plus a test that `PROMPT_TEMPLATE` still equals this spec's verbatim block. No new
+  dependency. Manual check with the real CLI (haiku-4.5 / low) on frames read from
+  `sample/short.mp4`: 10.56s → YES, 34.56s (blurred side fill) → NO, 74.40s (black bars) → NO,
+  about 7.5–9.4 s per call. All ACs checked; status `implemented`.

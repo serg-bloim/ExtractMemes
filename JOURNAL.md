@@ -45,3 +45,9 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-09-16: Implemented iteration 2: `HeuristicClassifier` is the default classifier, with
   `--classifier claude` still available —
   [specs/features/heuristic-classifier.md](specs/features/heuristic-classifier.md).
+- 2026-09-17: Proposed iteration 3: scan frames in memory, and separate `high-res/` and opt-in
+  `low-res/` output folders — [ADR 009](decisions/009-in-memory-scan-and-resolution-folders.md).
+- 2026-09-17: Drafted the in-memory scan frames spec (`--save-frames`, temporary files for the
+  Claude classifier) — [specs/features/in-memory-frames.md](specs/features/in-memory-frames.md).
+- 2026-09-17: Drafted the resolution output folders spec (`high-res/`, `--save-low-res`) —
+  [specs/features/resolution-output-folders.md](specs/features/resolution-output-folders.md).

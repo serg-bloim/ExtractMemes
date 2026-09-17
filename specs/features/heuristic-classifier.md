@@ -1,6 +1,6 @@
 ---
 title: "Heuristic Meme Classifier (Iteration 2)"
-status: draft
+status: implemented
 created: 2026-09-16
 updated: 2026-09-16
 author: ""
@@ -52,10 +52,10 @@ on videos whose cards the heuristic doesn't recognize.
 
 ### Classifier: `src/extract_memes/heuristic_classifier.py`
 
-- [ ] AC1: The new module defines `HeuristicClassifier(FrameClassifier)` with
+- [x] AC1: The new module defines `HeuristicClassifier(FrameClassifier)` with
       `__init__(self, band_threshold: float = 180.0, texture_threshold: float = 18.0)`, both exposed
       as public attributes. `classifier.py` isn't modified.
-- [ ] AC2: `HeuristicClassifier.scores(frame: np.ndarray) -> FrameScores` computes two numbers.
+- [x] AC2: `HeuristicClassifier.scores(frame: np.ndarray) -> FrameScores` computes two numbers.
       `FrameScores` is a frozen dataclass with float fields `band` and `texture`. `frame` is a BGR
       `uint8` array of shape `(H, W, 3)`, as returned by `cv2.imread` and `sample_frames`.
       1. **Normalize:** if `(H, W) != (144, 256)`, resize to 256x144 with `cv2.INTER_AREA` first.
@@ -66,16 +66,16 @@ on videos whose cards the heuristic doesn't recognize.
          at 0.
       4. **`texture`:** take the saturation channel (`cv2.COLOR_BGR2HSV`, channel 1) as float, take
          the absolute difference between each pixel and the one directly below it, and average.
-- [ ] AC3: `is_meme_frame(frame: np.ndarray) -> bool` returns
+- [x] AC3: `is_meme_frame(frame: np.ndarray) -> bool` returns
       `band > band_threshold and texture > texture_threshold` (both strict).
-- [ ] AC4: `is_meme(image_path: Path) -> bool` reads the file with `cv2.imread(str(image_path))`
+- [x] AC4: `is_meme(image_path: Path) -> bool` reads the file with `cv2.imread(str(image_path))`
       and returns `is_meme_frame` of it. If the image can't be read (missing file, not an image),
       it raises `RuntimeError` naming `image_path`; it never silently returns `False`. It starts no
       subprocess, makes no network access, and writes no files.
 
 ### Pipeline and CLI (amends extraction-pipeline AC1 and AC9)
 
-- [ ] AC5: `pipeline.run` gains a trailing keyword parameter
+- [x] AC5: `pipeline.run` gains a trailing keyword parameter
       `classifier_type: Literal["heuristic", "claude"] = "heuristic"`. When `classifier` is `None`:
       - `"heuristic"` builds `HeuristicClassifier()`;
       - `"claude"` builds `ClaudeCliClassifier(model=classifier_model, effort=classifier_effort)`,
@@ -86,7 +86,7 @@ on videos whose cards the heuristic doesn't recognize.
       When `classifier` is given, `classifier_type`, `classifier_model`, and `classifier_effort` are
       all ignored. Every other step of extraction-pipeline AC2–AC8 is unchanged, including writing
       every sampled frame to `frames/` and passing that written file to `is_meme`.
-- [ ] AC6: The CLI adds `--classifier` (choices `heuristic|claude`, default `heuristic`), passed to
+- [x] AC6: The CLI adds `--classifier` (choices `heuristic|claude`, default `heuristic`), passed to
       `pipeline.run` as `classifier_type`. `--classifier-model` and `--classifier-effort` keep their
       defaults and are still passed through. Their help text says they only apply to `claude`, and
       they're silently ignored with `heuristic`. The parser description no longer names Claude as
@@ -94,16 +94,15 @@ on videos whose cards the heuristic doesn't recognize.
 
 ### Dev harness (amends dev-harness AC5)
 
-- [ ] AC7: `playground/playground.py` adds `test_score_labeled_set`. For every image in
+- [x] AC7: `playground/playground.py` adds `test_score_labeled_set`. For every image in
       `data/labeled_dataset/positive/` and then `data/labeled_dataset/negative/` (each sorted by
-      name), it
-      prints one line with the label, the file name, `band` and `texture` to one decimal, and the
+      name), it prints one line with the label, the file name, `band` and `texture` to one decimal, and the
       verdict of `HeuristicClassifier()`, with wrong verdicts clearly marked. It ends with a line
       `<correct>/<total> correct`. It uses no Claude usage.
 
 ### Tests
 
-- [ ] AC8: `tests/test_heuristic_classifier.py` needs no fixture files. It builds 256x144 synthetic
+- [x] AC8: `tests/test_heuristic_classifier.py` needs no fixture files. It builds 256x144 synthetic
       frames with NumPy and a fixed random seed:
       - **Glitch card:** each margin pixel channel is uniform in `[0, 120)`, there's a light
         (value 230) central rectangle, and a white (255) band 6 rows tall across the full width.
@@ -117,17 +116,17 @@ on videos whose cards the heuristic doesn't recognize.
       - **`HeuristicClassifier(band_threshold=1000.0)`** returns `False` for the glitch card.
       - **`is_meme` on a missing path and on a non-image file** raises `RuntimeError` whose message
         contains the path.
-- [ ] AC9: Labeled-frame tests, each skipped when its fixture is absent. Every
+- [x] AC9: Labeled-frame tests, each skipped when its fixture is absent. Every
       `data/labeled_dataset/positive/*.png` gives `is_meme` → `True`, and every
       `data/labeled_dataset/negative/*.png` gives `False`. `sample/quick_frame_9-32.png` gives `True`.
-- [ ] AC10: Pipeline and CLI tests (`tests/test_pipeline.py`, `tests/test_cli.py`):
+- [x] AC10: Pipeline and CLI tests (`tests/test_pipeline.py`, `tests/test_cli.py`):
       - with no `classifier`, `run` builds a `HeuristicClassifier`;
       - `classifier_type="claude"` builds `ClaudeCliClassifier` with the given model and effort
         (constructor patched, so `claude` is never spawned);
       - an unknown `classifier_type` raises `ValueError` and creates no run directory;
       - the CLI defaults to `heuristic` and passes `--classifier claude` through;
       - existing tests that relied on Claude being the default pass `classifier_type="claude"`.
-- [ ] AC11: Offline end-to-end check (skipped when `sample/short.mp4` is absent):
+- [x] AC11: Offline end-to-end check (skipped when `sample/short.mp4` is absent):
       `run("sample/short.mp4", downloads_dir=tmp, runtime_dir=tmp)` with every other argument at its
       default returns exactly `[<saved>/frame_000264_10.56s.jpg, <saved>/frame_000720_28.80s.jpg]`.
       It runs as part of `pytest -m "not slow"`, without `claude` on `PATH`. This replaces the
@@ -192,20 +191,22 @@ on videos whose cards the heuristic doesn't recognize.
 
 ## Open Questions
 
-- [ ] Q1: Should the heuristic be the default classifier for `pipeline.run` and the CLI?
-      **Proposed: yes** (AC5, AC6). Claude stays available with `--classifier claude`. The
-      alternative is to keep Claude as the default and make the heuristic opt-in.
+Q1, Q3, and Q4 were resolved as proposed when the user asked to implement the spec as drafted
+(2026-09-16).
+
+- Q1: Should the heuristic be the default classifier for `pipeline.run` and the CLI? **Yes**
+  (AC5, AC6). Claude stays available with `--classifier claude`.
 - Q2: Where do the labeled frames come from for AC7 and AC9? **Resolved by the user:**
   `data/labeled_dataset/positive/` (15) and `data/labeled_dataset/negative/` (23), moved from
   `.runtime/experiment/` on 2026-09-16, with no "experiment" in the path. The baseline docs
   (meme-classifier Technical Notes, ADR 007) still name the old location; ADR 008 register 63
   records the move. The tests still skip when the directory is absent.
-- [ ] Q3: A new module, or add the class to `classifier.py`? **Proposed: a new module**
-      (`heuristic_classifier.py`, with `tests/test_heuristic_classifier.py`). Iteration 1's module
-      then stays exactly as its spec describes, which keeps the rebuild order clean.
-- [ ] Q4: Keep the path-based `is_meme` for the pipeline in this iteration? **Proposed: yes.** The
-      pipeline doesn't change beyond choosing the classifier. `is_meme_frame` is added for later
-      in-memory use, but nothing calls it yet.
+- Q3: A new module, or add the class to `classifier.py`? **A new module**
+  (`heuristic_classifier.py`, with `tests/test_heuristic_classifier.py`). Iteration 1's module
+  stays exactly as its spec describes, which keeps the rebuild order clean.
+- Q4: Keep the path-based `is_meme` for the pipeline in this iteration? **Yes.** The pipeline
+  doesn't change beyond choosing the classifier. `is_meme_frame` is added for later in-memory
+  use, but only `is_meme` calls it for now.
 
 ## Changelog
 
@@ -223,3 +224,26 @@ on videos whose cards the heuristic doesn't recognize.
   (only a `.DS_Store` was left). Updated AC7, AC9, and the measured-scores table to the new path.
   Updated CLAUDE.md's directory structure and resolved ADR 008 register 63. `data/` isn't
   gitignored, so the set can now be committed. Q1, Q3, and Q4 are still open.
+- 2026-09-16: "Let's implement 008 spec." Implemented as drafted, which adopts the proposed Q1, Q3,
+  and Q4 answers.
+  - **Classifier:** added `src/extract_memes/heuristic_classifier.py` with `FrameScores`,
+    `HeuristicClassifier.scores` (the exact AC2 steps), `is_meme_frame`, and `is_meme`, which
+    raises `RuntimeError` for an unreadable image.
+  - **Pipeline and CLI:** `pipeline.run` gained the trailing `classifier_type` (default
+    `heuristic`), validated before anything is created or downloaded. The CLI gained
+    `--classifier`, and the model and effort help text now says it only applies to `claude`.
+  - **Playground:** added `test_score_labeled_set` (38/38 correct). Interpretation: the other
+    dev-harness entry points use the pipeline's new default, so `test_default_run`,
+    `test_different_fps`, and `test_full_video_run` now run the heuristic.
+    `test_custom_model_and_effort` passes `classifier_type="claude"`, so it still exercises the
+    Claude model and effort it names.
+  - **Tests:** added `tests/test_heuristic_classifier.py` (AC8, AC9) and labeled-set fixtures in
+    `tests/conftest.py`. `tests/test_pipeline.py` and `tests/test_cli.py` cover AC10. The former
+    Claude-default test now passes `classifier_type="claude"`.
+    `test_default_run_finds_exactly_the_known_memes` covers AC11.
+  - **Docs:** ADR 008 is `Accepted`, and CLAUDE.md got the updates it lists.
+  - **Verified:** `pytest -m "not slow"` passes, and so does `pytest -m slow`.
+    `extract-memes sample/short.mp4` printed exactly `frame_000264_10.56s.jpg` and
+    `frame_000720_28.80s.jpg`.
+
+  All ACs checked; status `implemented`.

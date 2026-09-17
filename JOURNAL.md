@@ -42,3 +42,6 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   switch) — [specs/features/heuristic-classifier.md](specs/features/heuristic-classifier.md).
 - 2026-09-16: Moved the labeled frames from `.runtime/experiment/` to `data/labeled_dataset/` —
   [specs/features/heuristic-classifier.md](specs/features/heuristic-classifier.md).
+- 2026-09-16: Implemented iteration 2: `HeuristicClassifier` is the default classifier, with
+  `--classifier claude` still available —
+  [specs/features/heuristic-classifier.md](specs/features/heuristic-classifier.md).

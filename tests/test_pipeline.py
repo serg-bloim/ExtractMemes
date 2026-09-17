@@ -96,7 +96,20 @@ def test_no_memes(short_video, tmp_path, capsys):
     assert list((tmp_path / ".runtime" / "short" / "saved").iterdir()) == []
 
 
-def test_default_classifier_uses_model_and_effort(short_video, tmp_path):
+def test_default_classifier_is_heuristic(short_video, tmp_path):
+    with (
+        mock.patch("extract_memes.pipeline.HeuristicClassifier") as heuristic_classifier,
+        mock.patch("extract_memes.pipeline.ClaudeCliClassifier") as claude_classifier,
+    ):
+        heuristic_classifier.return_value.is_meme.return_value = False
+        run(str(short_video), runtime_dir=tmp_path, fps=0.5)
+
+    heuristic_classifier.assert_called_once_with()
+    claude_classifier.assert_not_called()
+    assert heuristic_classifier.return_value.is_meme.call_count == 40
+
+
+def test_claude_classifier_type_uses_model_and_effort(short_video, tmp_path):
     with mock.patch("extract_memes.pipeline.ClaudeCliClassifier") as claude_classifier:
         claude_classifier.return_value.is_meme.return_value = False
         run(
@@ -105,16 +118,37 @@ def test_default_classifier_uses_model_and_effort(short_video, tmp_path):
             fps=0.5,
             classifier_model="claude-sonnet-5",
             classifier_effort=None,
+            classifier_type="claude",
         )
 
     claude_classifier.assert_called_once_with(model="claude-sonnet-5", effort=None)
     assert claude_classifier.return_value.is_meme.call_count == 40
 
 
-def test_injected_classifier_ignores_model_and_effort(short_video, tmp_path):
-    with mock.patch("extract_memes.pipeline.ClaudeCliClassifier") as claude_classifier:
-        run(str(short_video), runtime_dir=tmp_path, fps=0.5, classifier=NeverMeme())
+def test_unknown_classifier_type_raises_before_creating_anything(short_video, tmp_path):
+    with (
+        mock.patch("extract_memes.pipeline.download", side_effect=AssertionError("downloaded")),
+        pytest.raises(ValueError, match="heuristic.*claude"),
+    ):
+        run(str(short_video), runtime_dir=tmp_path, classifier_type="clip")
 
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_injected_classifier_ignores_classifier_options(short_video, tmp_path):
+    with (
+        mock.patch("extract_memes.pipeline.HeuristicClassifier") as heuristic_classifier,
+        mock.patch("extract_memes.pipeline.ClaudeCliClassifier") as claude_classifier,
+    ):
+        run(
+            str(short_video),
+            runtime_dir=tmp_path,
+            fps=0.5,
+            classifier=NeverMeme(),
+            classifier_type="bogus",
+        )
+
+    heuristic_classifier.assert_not_called()
     claude_classifier.assert_not_called()
 
 
@@ -181,6 +215,17 @@ def test_default_run_name(source, expected):
 
 
 @pytest.mark.slow
+def test_default_run_finds_exactly_the_known_memes(short_video, tmp_path):
+    saved = run(str(short_video), downloads_dir=tmp_path, runtime_dir=tmp_path)
+
+    saved_dir = tmp_path / "short" / "saved"
+    assert saved == [
+        saved_dir / "frame_000264_10.56s.jpg",
+        saved_dir / "frame_000720_28.80s.jpg",
+    ]
+    assert all(path.is_file() for path in saved)
+
+
 def test_real_url_run(tmp_path):
     downloads_dir = tmp_path / "downloads"
 

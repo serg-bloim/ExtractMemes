@@ -38,6 +38,7 @@ def test_defaults_are_passed_to_pipeline(capsys):
         runtime_dir=Path(".runtime"),
         run_name=None,
         fps=2.0,
+        classifier_type="heuristic",
         classifier_model="claude-haiku-4-5-20251001",
         classifier_effort="low",
     )
@@ -53,6 +54,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
             "--downloads-dir", "dl",
             "--runtime-dir", "out",
             "--run-name", "demo",
+            "--classifier", "claude",
             "--classifier-model", "claude-sonnet-5",
             "--classifier-effort", "xhigh",
         ])  # fmt: skip
@@ -63,6 +65,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         runtime_dir=Path("out"),
         run_name="demo",
         fps=0.5,
+        classifier_type="claude",
         classifier_model="claude-sonnet-5",
         classifier_effort="xhigh",
     )
@@ -72,5 +75,12 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
 def test_invalid_effort_is_rejected():
     with pytest.raises(SystemExit) as excinfo:
         main(["sample/short.mp4", "--classifier-effort", "extreme"])
+
+    assert excinfo.value.code == 2
+
+
+def test_invalid_classifier_is_rejected():
+    with pytest.raises(SystemExit) as excinfo:
+        main(["sample/short.mp4", "--classifier", "clip"])
 
     assert excinfo.value.code == 2

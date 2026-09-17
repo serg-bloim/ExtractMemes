@@ -1,7 +1,7 @@
 # 008 — Iteration 2: Classify with a Hand-Built Image Heuristic; Keep the Claude Classifier as the Baseline
 
 **Date:** 2026-09-16
-**Status:** Proposed
+**Status:** Accepted
 
 ---
 

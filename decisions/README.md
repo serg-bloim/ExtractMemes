@@ -75,4 +75,4 @@ Links to related specs, external resources, or prior discussions.
 | 005 | [Checkpoint: Runtime Layout, 2fps Default, Meme-Reveal Prompt](005-runtime-layout-and-classifier-checkpoint.md) | Accepted | 2026-09-16 |
 | 006 | [YouTube Downloads: Video-Only Formats, Node.js JS Runtime, Bundled ffmpeg](006-youtube-video-only-formats-and-download-toolchain.md) | Accepted (recorded retroactively) | 2026-09-16 |
 | 007 | [Consolidate Specs and ADRs as the Source of Truth for a From-Scratch Rebuild](007-documentation-consolidation-for-rebuild.md) | Accepted | 2026-09-16 |
-| 008 | [Iteration 2: Classify with a Hand-Built Image Heuristic; Keep the Claude Classifier as the Baseline](008-heuristic-classifier-iteration.md) | Proposed | 2026-09-16 |
+| 008 | [Iteration 2: Classify with a Hand-Built Image Heuristic; Keep the Claude Classifier as the Baseline](008-heuristic-classifier-iteration.md) | Accepted | 2026-09-16 |

@@ -2,6 +2,7 @@
 
 import re
 from pathlib import Path
+from typing import Literal
 from urllib.parse import parse_qs, urlparse
 
 import cv2
@@ -11,6 +12,7 @@ from tqdm import tqdm
 from extract_memes.classifier import ClaudeCliClassifier, FrameClassifier
 from extract_memes.downloader import download
 from extract_memes.frame_extractor import frame_at, sample_frames
+from extract_memes.heuristic_classifier import HeuristicClassifier
 
 
 def default_run_name(source: str) -> str:
@@ -46,6 +48,7 @@ def run(
     classifier: FrameClassifier | None = None,
     classifier_model: str = "claude-haiku-4-5-20251001",
     classifier_effort: str | None = "low",
+    classifier_type: Literal["heuristic", "claude"] = "heuristic",
 ) -> list[Path]:
     """Extract the memes in `source` and return the best-quality image paths, in video order.
 
@@ -54,7 +57,12 @@ def run(
     `frame_*` files.
     """
     if classifier is None:
-        classifier = ClaudeCliClassifier(model=classifier_model, effort=classifier_effort)
+        if classifier_type == "heuristic":
+            classifier = HeuristicClassifier()
+        elif classifier_type == "claude":
+            classifier = ClaudeCliClassifier(model=classifier_model, effort=classifier_effort)
+        else:
+            raise ValueError(f"classifier_type must be 'heuristic' or 'claude', not {classifier_type!r}")
     run_dir = runtime_dir / (run_name or default_run_name(source))
     frames_dir = run_dir / "frames"
     saved_dir = run_dir / "saved"

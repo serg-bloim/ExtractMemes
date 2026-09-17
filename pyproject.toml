@@ -7,7 +7,10 @@ name = "extract-memes"
 version = "0.1.0"
 description = "Extract meme images from YouTube videos known to contain them."
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "yt-dlp",
+    "static-ffmpeg",
+]
 
 [project.optional-dependencies]
 dev = ["pytest"]

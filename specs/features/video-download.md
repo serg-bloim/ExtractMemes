@@ -1,6 +1,6 @@
 ---
 title: "Video Download"
-status: ready
+status: implemented
 created: 2026-09-16
 updated: 2026-09-16
 author: ""
@@ -33,32 +33,32 @@ can validate the pipeline against `sample/short.mp4` without a network call.
 
 ## Acceptance Criteria
 
-- [ ] AC1: `src/extract_memes/downloader.py` exposes
+- [x] AC1: `src/extract_memes/downloader.py` exposes
       `download(source: str, quality: Literal["worst", "best"], dest_dir: Path) -> Path`. Callers
       (the pipeline) pass only `"worst"` or `"best"`, never raw yt-dlp format selectors.
-- [ ] AC2: When `source` is an existing local file (`Path(source).is_file()`), `download` returns
+- [x] AC2: When `source` is an existing local file (`Path(source).is_file()`), `download` returns
       that path unchanged. No network call, no copy, no ffmpeg setup; `quality` and `dest_dir`
       are ignored.
-- [ ] AC3: Otherwise `source` is treated as a URL and downloaded with `yt_dlp.YoutubeDL` using these
+- [x] AC3: Otherwise `source` is treated as a URL and downloaded with `yt_dlp.YoutubeDL` using these
       format selectors:
       `worst` → `wv*[ext=mp4]/wv*`, `best` → `bv*[ext=mp4]/bv*`. That is, the worst/best format
       that contains video, preferring mp4. Audio isn't needed, and nothing is merged.
-- [ ] AC4: The downloaded file goes to `dest_dir/<video id>_<quality>.<ext>`, using yt-dlp output
+- [x] AC4: The downloaded file goes to `dest_dir/<video id>_<quality>.<ext>`, using yt-dlp output
       template `%(id)s_<quality>.%(ext)s`, e.g. `downloads/AElGyY97k_0_worst.mp4`. File names
       never contain `*` or other glob/shell metacharacters. Downloading the same URL at `worst`
       and at `best` produces two distinct files, and both are kept. The returned `Path` is the
       final file on disk (`ydl.prepare_filename(info)`).
-- [ ] AC5: The yt-dlp options include `js_runtimes={"node": {}}` (Node.js solves YouTube's JS
+- [x] AC5: The yt-dlp options include `js_runtimes={"node": {}}` (Node.js solves YouTube's JS
       challenges), `quiet=True`, and `noprogress=True`.
-- [ ] AC6: Right before a URL download, `static_ffmpeg.add_paths()` is called so yt-dlp has ffmpeg
+- [x] AC6: Right before a URL download, `static_ffmpeg.add_paths()` is called so yt-dlp has ffmpeg
       and remuxes HLS output into a real MP4 container. Importing `extract_memes.downloader` (or
       anything that imports it, including the CLI's `--help`) and the local-file path of AC2
       **never** call it: no import-time side effects, no `PATH` changes, no binary download.
-- [ ] AC7: `dest_dir` is created (with parents) if it's missing, and only on the URL path.
-- [ ] AC8: If yt-dlp fails for any reason (bad URL, format not available, network error, local path
+- [x] AC7: `dest_dir` is created (with parents) if it's missing, and only on the URL path.
+- [x] AC8: If yt-dlp fails for any reason (bad URL, format not available, network error, local path
       typo that fell through to the URL path), `download` raises `RuntimeError` whose message
       includes the original `source` and `quality`, chained (`from exc`) to the underlying error.
-- [ ] AC9: Offline unit tests (no network) with `yt_dlp.YoutubeDL` and `static_ffmpeg.add_paths`
+- [x] AC9: Offline unit tests (no network) with `yt_dlp.YoutubeDL` and `static_ffmpeg.add_paths`
       mocked cover:
       local passthrough (returns the same path; `add_paths` not called; `YoutubeDL` not
       constructed);
@@ -68,7 +68,7 @@ can validate the pipeline against `sample/short.mp4` without a network call.
       `dest_dir` is created;
       a yt-dlp failure raises `RuntimeError` mentioning the source;
       and importing the module doesn't call `add_paths`.
-- [ ] AC10: Tests marked `@pytest.mark.slow` download the permanent test video
+- [x] AC10: Tests marked `@pytest.mark.slow` download the permanent test video
       `https://youtu.be/AElGyY97k_0` into `tmp_path` at both qualities and assert: each returned
       file exists, is non-empty, has suffix `.mp4`, starts with an MP4 `ftyp` box (bytes 4–8 are
       `ftyp`), opens with `cv2.VideoCapture`, and the `best` file's frame height is at least the
@@ -149,3 +149,17 @@ All resolved:
   offline tests for both selectors and for import-time side effects (AC9);
   and a stronger slow test (AC10).
   Reset status to `ready` with unchecked ACs because the implementation will be erased and rebuilt.
+- 2026-09-16: "Implement the project according to the docs in it. Commit each feature
+  individually." Rebuild step 2 of [ADR 007](../../decisions/007-documentation-consolidation-for-rebuild.md).
+  Added `src/extract_memes/downloader.py`: local-file passthrough, then lazy `yt_dlp` and
+  `static_ffmpeg` imports, `dest_dir` creation, `static_ffmpeg.add_paths()`, and a `YoutubeDL`
+  call that maps `worst`/`best` to `wv*[ext=mp4]/wv*`/`bv*[ext=mp4]/bv*` via a module-level
+  `FORMAT_SELECTORS` dict. Any yt-dlp error is wrapped in a chained `RuntimeError` naming the
+  source and quality. Declared `yt-dlp` and `static-ffmpeg` in `pyproject.toml`. Added
+  `tests/test_downloader.py`: offline tests with `yt_dlp.YoutubeDL` and `static_ffmpeg.add_paths`
+  mocked (AC9), plus `slow` tests that download the test video once per module into a temporary
+  directory (AC10). The `slow` tests import `cv2` inside the test function, so the offline tests
+  don't need OpenCV before frame-extraction declares it. Verified: offline and `slow` tests pass;
+  a real download writes `AElGyY97k_0_worst.mp4` (152831 bytes, `ftyp` header) with no yt-dlp
+  warnings; a mistyped local path raises `RuntimeError` chained from `DownloadError`. All ACs
+  checked; status `implemented`.

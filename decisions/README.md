@@ -77,3 +77,5 @@ Links to related specs, external resources, or prior discussions.
 | 007 | [Consolidate Specs and ADRs as the Source of Truth for a From-Scratch Rebuild](007-documentation-consolidation-for-rebuild.md) | Accepted | 2026-09-16 |
 | 008 | [Iteration 2: Classify with a Hand-Built Image Heuristic; Keep the Claude Classifier as the Baseline](008-heuristic-classifier-iteration.md) | Accepted | 2026-09-16 |
 | 009 | [Iteration 3: Scan Frames in Memory; Separate, Opt-In Low-Res Output](009-in-memory-scan-and-resolution-folders.md) | Proposed | 2026-09-17 |
+| 010 | [Clean Each Meme Batch with a Temporal Trimmed Mean](010-batch-cleaning-by-trimmed-mean.md) | Default superseded by 011 | 2026-09-17 |
+| 011 | [Clean Batches with `clean_rows` by Default](011-clean-rows-as-the-default.md) | Accepted | 2026-09-17 |

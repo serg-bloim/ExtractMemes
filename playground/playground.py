@@ -18,10 +18,13 @@ from pathlib import Path
 
 import cv2
 
+import numpy as np
+
+from extract_memes.batch_cleaner import METHODS, banding_score, combine
 from extract_memes.classifier import ClaudeCliClassifier, FrameClassifier
-from extract_memes.frame_extractor import frame_at
+from extract_memes.frame_extractor import frame_at, frames_from
 from extract_memes.heuristic_classifier import HeuristicClassifier
-from extract_memes.pipeline import run
+from extract_memes.pipeline import _to_scan_size, run
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SHORT_VIDEO = PROJECT_ROOT / "sample" / "short.mp4"
@@ -29,6 +32,11 @@ FULL_VIDEO = PROJECT_ROOT / "sample" / "full.mp4"
 PLAYGROUND_DIR = PROJECT_ROOT / ".runtime" / "_playground"
 DOWNLOADS_DIR = PLAYGROUND_DIR / "downloads"
 LABELED_DATASET = PROJECT_ROOT / "data" / "labeled_dataset"
+CLEAN_DIR = PLAYGROUND_DIR / "clean"
+# The 1080p download of the source of sample/full.mp4, and timestamps of cards it contains.
+REAL_VIDEO = PROJECT_ROOT / ".runtime" / "downloads" / "0TSqnhLXYfA_best.mp4"
+REAL_CARD_TIMES = (5.76, 99.56, 687.36, 2717.76, 2812.32)
+FULL_VIDEO_URL = "https://www.youtube.com/watch?v=0TSqnhLXYfA"
 
 
 class SlowEveryNthClassifier(FrameClassifier):
@@ -114,6 +122,114 @@ def test_score_labeled_set():
                 f"texture={scores.texture:4.1f} {'meme' if verdict else 'not meme'}{wrong}"
             )
     print(f"{correct}/{total} correct")
+
+
+def _batch_at(video: Path, timestamp: float, window: float = 1.0) -> list:
+    """The frames the pipeline would keep for a meme at `timestamp`: flagged, full quality."""
+    classifier = HeuristicClassifier()
+    start = max(0.0, timestamp - window)
+    count = round(2 * window * 25) + 1
+    return [
+        frame
+        for _, _, frame in frames_from(video, start, count)
+        if classifier.is_meme_frame(_to_scan_size(frame, (144, 256)))
+    ]
+
+
+def _label_panel(image, text: str):
+    """One contact-sheet panel: the image with a caption strip above it."""
+    panel = cv2.copyMakeBorder(image, 34, 0, 0, 0, cv2.BORDER_CONSTANT, value=(20, 20, 20))
+    cv2.putText(panel, text, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    return panel
+
+
+def _sheet(panels: list, columns: int = 3):
+    """Lay labelled panels out in a grid, padding the last row so it can be stacked."""
+    blank = np.zeros_like(panels[0])
+    rows = [panels[i : i + columns] for i in range(0, len(panels), columns)]
+    rows[-1] += [blank] * (columns - len(rows[-1]))
+    return np.vstack([np.hstack(row) for row in rows])
+
+
+def _compare_methods(video: Path, timestamp: float, label: str) -> None:
+    """Write one image per cleaning method for one meme batch, plus a sheet and a 100% crop."""
+    if not video.is_file():
+        print(f"{video} is absent; skipping.")
+        return
+    frames = _batch_at(video, timestamp)
+    if not frames:
+        print(f"No meme frames around {timestamp}s in {video.name}; skipping.")
+        return
+
+    out_dir = CLEAN_DIR / label
+    (out_dir / "inputs").mkdir(parents=True, exist_ok=True)
+    for index, frame in enumerate(frames):
+        cv2.imwrite(str(out_dir / "inputs" / f"frame_{index:02d}.png"), frame)
+
+    height, width = frames[0].shape[:2]
+    crop = np.s_[height // 2 - 180 : height // 2 + 180, width // 2 - 240 : width // 2 + 240]
+    reference = combine(frames, "trimmed_mean")
+    panels, details = [], []
+    print(f"\n{label}: {len(frames)} frames, {width}x{height}")
+    print(f"{'method':14} {'ms':>6} {'banding':>8} {'vs trimmed_mean':>16}")
+    for number, method in enumerate(METHODS, start=1):
+        started = time.perf_counter()
+        cleaned = combine(frames, method)
+        elapsed = (time.perf_counter() - started) * 1000
+        cv2.imwrite(str(out_dir / f"{number:02d}_{method}.png"), cleaned)
+        panels.append(_label_panel(cv2.resize(cleaned, (640, round(640 * height / width))), method))
+        details.append(_label_panel(cleaned[crop], method))
+        difference = np.abs(cleaned.astype(np.float32) - reference).mean()
+        print(f"{method:14} {elapsed:6.0f} {banding_score(cleaned):8.2f} {difference:16.1f}")
+    worst, best = max(frames, key=banding_score), min(frames, key=banding_score)
+    print(f"{'input frames':14} {'':>6} {banding_score(best):8.2f} (best) {banding_score(worst):.2f} (worst)")
+
+    cv2.imwrite(str(out_dir / "sheet.png"), _sheet(panels))
+    cv2.imwrite(str(out_dir / "detail.png"), _sheet(details))
+    print(f"Wrote {out_dir}")
+
+
+def test_full_video_every_method():
+    """Extract every meme of the real video, then clean each batch with every method.
+
+    Writes `.runtime/full_experiment/high-res/meme_<n>/` (the batches) and
+    `.runtime/full_experiment/clean/meme_<n>/<method>.png` (one cleaned image per method), so the
+    methods can be compared on all ~93 memes. Downloads are reused from `.runtime/downloads/`.
+    """
+    run_dir = PROJECT_ROOT / ".runtime" / "full_experiment"
+    saved = run(
+        FULL_VIDEO_URL,
+        downloads_dir=PROJECT_ROOT / ".runtime" / "downloads",
+        runtime_dir=run_dir.parent,
+        run_name=run_dir.name,
+        clean_method=None,
+    )
+    print(f"{len(saved)} frames in {len(list((run_dir / 'high-res').iterdir()))} batches")
+    _clean_every_method(run_dir)
+
+
+def _clean_every_method(run_dir: Path) -> None:
+    """Clean every batch of a finished run with every method, into `clean/meme_<n>/<method>.png`."""
+    for meme_dir in sorted((run_dir / "high-res").iterdir()):
+        frames = [cv2.imread(str(path)) for path in sorted(meme_dir.iterdir())]
+        if not frames:
+            print(f"{meme_dir.name}: empty, skipped")
+            continue
+        out_dir = run_dir / "clean" / meme_dir.name
+        out_dir.mkdir(parents=True, exist_ok=True)
+        started = time.perf_counter()
+        for method in METHODS:
+            cv2.imwrite(str(out_dir / f"{method}.png"), combine(frames, method))
+        print(f"{meme_dir.name}: {len(frames)} frames, {len(METHODS)} methods, {time.perf_counter() - started:.1f}s")
+
+
+def test_compare_cleaners_on_real_batch():
+    for timestamp in REAL_CARD_TIMES:
+        _compare_methods(REAL_VIDEO, timestamp, f"real_{timestamp:.0f}s")
+
+
+def test_compare_cleaners_on_short_video():
+    _compare_methods(SHORT_VIDEO, 10.56, "short_10s")
 
 
 if __name__ == "__main__":

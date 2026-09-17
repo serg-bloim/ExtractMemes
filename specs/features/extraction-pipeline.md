@@ -159,8 +159,9 @@ so that I can check results (and stop early) without waiting for the whole run.
 
 ## Out of Scope
 
-- **Refining a batch into one resulting image** (picking the sharpest or most complete frame,
-  merging them). The batches are saved whole for now; this is the intended next step.
+- **Refining a batch into one resulting image.** Done, in
+  [batch-cleaning](batch-cleaning.md): each batch is combined into `clean/meme_<n:03d>.png`, which
+  also changes what `run` returns (AC2 step 7, AC12, AC16, AC19 are amended there).
 - **A CLI flag for `window_seconds`.** It's available from Python only, like `classifier_effort=None`.
 - Deduplicating a meme that appears in several consecutive samples (ADR 002 M7, still deferred).
   With the v3 prompt at 2 fps, each glitch card in `short.mp4` was flagged once, but that isn't
@@ -226,6 +227,11 @@ All resolved:
 
 ## Changelog
 
+- 2026-09-17: Batch cleaning ([batch-cleaning](batch-cleaning.md),
+  [ADR 010](../../decisions/010-batch-cleaning-by-trimmed-mean.md)) amends this spec: `run` gained
+  `clean_method`, step 1 also creates `clean/`, each batch is combined into `clean/meme_<n:03d>.png`,
+  and `run` returns those paths instead of the batch frames unless cleaning is off. "Refining a
+  batch into one resulting image" is no longer out of scope.
 - 2026-09-17: The user asked to process each flagged timestamp as a batch instead of a single
   frame: read the best-quality frames within ±1 s with `frames_from`, downscale each and re-check
   it with the classifier, save every match at full quality, and group the files by meme so batches

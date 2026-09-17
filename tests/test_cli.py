@@ -43,12 +43,13 @@ def test_defaults_are_passed_to_pipeline(capsys):
         classifier_effort="low",
         save_frames=False,
         save_low_res=False,
+        clean_method="clean_rows",
     )
     assert capsys.readouterr().out == ""
 
 
 def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
-    saved = [Path("out/demo/high-res/frame_000264_10.56s.jpg"), Path("out/demo/high-res/frame_000720_28.80s.jpg")]
+    saved = [Path("out/demo/clean/meme_001.png"), Path("out/demo/clean/meme_002.png")]
     with mock.patch("extract_memes.pipeline.run", return_value=saved) as run:
         main([
             "https://youtu.be/AElGyY97k_0",
@@ -61,6 +62,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
             "--classifier-effort", "xhigh",
             "--save-frames",
             "--save-low-res",
+            "--clean-method", "median",
         ])  # fmt: skip
 
     run.assert_called_once_with(
@@ -74,6 +76,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         classifier_effort="xhigh",
         save_frames=True,
         save_low_res=True,
+        clean_method="median",
     )
     assert capsys.readouterr().out.splitlines() == [str(path) for path in saved]
 
@@ -103,6 +106,21 @@ def test_help_describes_the_output_folders(capsys, monkeypatch):
     assert "saved/" not in help_text
     assert "<runtime-dir>/<run-name>/frames/" in help_text
     assert "<runtime-dir>/<run-name>/low-res/" in help_text
+    assert "<runtime-dir>/<run-name>/clean/" in help_text
+
+
+def test_clean_method_none_disables_cleaning():
+    with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
+        main(["sample/short.mp4", "--clean-method", "none"])
+
+    assert run.call_args.kwargs["clean_method"] is None
+
+
+def test_invalid_clean_method_is_rejected():
+    with pytest.raises(SystemExit) as excinfo:
+        main(["sample/short.mp4", "--clean-method", "average"])
+
+    assert excinfo.value.code == 2
 
 
 def test_invalid_effort_is_rejected():

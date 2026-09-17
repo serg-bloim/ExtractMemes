@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
+from extract_memes import batch_cleaner
 from extract_memes.classifier import ClaudeCliClassifier, FrameClassifier
 from extract_memes.downloader import download
 from extract_memes.frame_extractor import frames_from, sample_frames
@@ -69,8 +70,9 @@ def run(
     save_frames: bool = False,
     save_low_res: bool = False,
     window_seconds: float = 1.0,
+    clean_method: str | None = batch_cleaner.DEFAULT_METHOD,
 ) -> list[Path]:
-    """Extract the memes in `source` and return the best-quality image paths, in video order.
+    """Extract the memes in `source` and return one cleaned image path per meme, in video order.
 
     Sampled frames are kept in memory. With `save_frames=True`, they are written to
     `<runtime_dir>/<run_name>/frames/`. Flagged frames are written to `low-res/` when
@@ -78,7 +80,10 @@ def run(
 
     Each flagged timestamp becomes one batch under `high-res/meme_<n:03d>/`: every best-quality
     frame within `window_seconds` either side of it is downscaled to the scan resolution, given to
-    the classifier, and saved at full quality if it too looks like a meme.
+    the classifier, and saved at full quality if it too looks like a meme. The batch is then
+    combined into `clean/meme_<n:03d>.png` with `clean_method` (one of `batch_cleaner.METHODS`),
+    which removes most of the glitch bands. With `clean_method=None` nothing is cleaned and the
+    batch frames are returned instead.
     """
     if classifier is None:
         if classifier_type == "heuristic":
@@ -87,15 +92,20 @@ def run(
             classifier = ClaudeCliClassifier(model=classifier_model, effort=classifier_effort)
         else:
             raise ValueError(f"classifier_type must be 'heuristic' or 'claude', not {classifier_type!r}")
+    if clean_method is not None and clean_method not in batch_cleaner.METHODS:
+        raise ValueError(f"clean_method must be None or one of {batch_cleaner.METHODS}, not {clean_method!r}")
     run_dir = runtime_dir / (run_name or default_run_name(source))
     frames_dir = run_dir / "frames"
     high_res_dir = run_dir / "high-res"
     low_res_dir = run_dir / "low-res"
+    clean_dir = run_dir / "clean"
     if save_frames:
         frames_dir.mkdir(parents=True, exist_ok=True)
     high_res_dir.mkdir(parents=True, exist_ok=True)
     if save_low_res:
         low_res_dir.mkdir(parents=True, exist_ok=True)
+    if clean_method is not None:
+        clean_dir.mkdir(parents=True, exist_ok=True)
 
     scan_path = download(source, "worst", downloads_dir)
     flagged: list[tuple[int, float]] = []
@@ -121,10 +131,17 @@ def run(
         meme_dir = high_res_dir / f"meme_{meme_number:03d}"
         meme_dir.mkdir(parents=True, exist_ok=True)
         start = max(0.0, timestamp - window_seconds)
+        batch: list[np.ndarray] = []
         for index, frame_timestamp, frame in frames_from(extract_path, start, count):
             if not classifier.is_meme_frame(_to_scan_size(frame, scan_shape)):
                 continue
             meme_path = meme_dir / _frame_name(index, frame_timestamp)
             _write_image(meme_path, frame)
-            saved.append(meme_path)
+            batch.append(frame)
+            if clean_method is None:
+                saved.append(meme_path)
+        if clean_method is not None and batch:
+            clean_path = clean_dir / f"meme_{meme_number:03d}.png"
+            _write_image(clean_path, batch_cleaner.combine(batch, clean_method))
+            saved.append(clean_path)
     return saved

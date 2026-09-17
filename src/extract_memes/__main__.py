@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from extract_memes import pipeline
+from extract_memes import batch_cleaner, pipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -65,6 +65,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="write scan-quality copies to <runtime-dir>/<run-name>/low-res/ as memes are found",
     )
+    parser.add_argument(
+        "--clean-method",
+        choices=("none", *batch_cleaner.METHODS),
+        default=batch_cleaner.DEFAULT_METHOD,
+        help=(
+            "how to combine each meme's frames into one less distorted image in "
+            "<runtime-dir>/<run-name>/clean/; 'none' skips cleaning (default: %(default)s)"
+        ),
+    )
     return parser
 
 
@@ -86,6 +95,7 @@ def main(argv: list[str] | None = None) -> None:
         classifier_effort=args.classifier_effort,
         save_frames=args.save_frames,
         save_low_res=args.save_low_res,
+        clean_method=None if args.clean_method == "none" else args.clean_method,
     )
     for path in saved:
         print(path)

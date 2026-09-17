@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from extract_memes import pipeline
+from extract_memes.batch_cleaner import banding_score
 from extract_memes.classifier import FrameClassifier
 from extract_memes.downloader import download
 from extract_memes.pipeline import default_run_name, run
@@ -84,20 +85,60 @@ def test_local_run(short_video, tmp_path):
         )
 
     run_dir = runtime_dir / "short"
-    # Eight scan hits, so eight batch folders; every saved frame lives in one of them.
+    # Eight scan hits, so eight batch folders, each combined into one cleaned image.
     assert [path.name for path in batches(run_dir)] == [f"meme_{n:03d}" for n in range(1, 9)]
+    assert saved == [run_dir / "clean" / f"meme_{n:03d}.png" for n in range(1, 9)]
     for path in saved:
         assert path.is_file()
-        assert BATCH_NAME.match(path.parent.name)
-        assert path.parent.parent == run_dir / "high-res"
-        assert MEME_NAME.match(path.name)
         assert cv2.imread(str(path)).shape[:2] == (144, 256)
-    assert sorted(saved) == sorted(path for batch in batches(run_dir) for path in batch.iterdir())
+    for batch in batches(run_dir):
+        assert batch.iterdir()
+        for path in batch.iterdir():
+            assert MEME_NAME.match(path.name)
+            assert cv2.imread(str(path)).shape[:2] == (144, 256)
     # The classifier gets every sample as a decoded array during the scan, then every frame of
     # each batch. By default nothing but the memes is written: no frames/, low-res/, or saved/.
     assert len(classifier.frames) > 79
     assert all(frame.shape == (144, 256, 3) for frame in classifier.frames)
+    assert names(run_dir) == ["clean", "high-res"]
+
+
+def test_clean_method_none_returns_the_batch_frames(short_video, tmp_path):
+    classifier = EveryNth(10)
+
+    saved = run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        run_name="raw",
+        fps=1.0,
+        classifier=classifier,
+        clean_method=None,
+    )
+
+    run_dir = tmp_path / "raw"
     assert names(run_dir) == ["high-res"]
+    assert saved == [path for batch in batches(run_dir) for path in sorted(batch.iterdir())]
+
+
+def test_unknown_clean_method_raises_before_creating_anything(short_video, tmp_path):
+    with (
+        mock.patch("extract_memes.pipeline.download", side_effect=AssertionError("downloaded")),
+        pytest.raises(ValueError, match="trimmed_mean"),
+    ):
+        run(str(short_video), runtime_dir=tmp_path, clean_method="average")
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_cleaned_image_differs_from_every_frame_it_was_made_from(short_video, tmp_path):
+    saved = run(str(short_video), downloads_dir=tmp_path, runtime_dir=tmp_path, run_name="cleaned")
+
+    cleaned = cv2.imread(str(saved[0]))
+    batch_frames = [cv2.imread(str(path)) for path in sorted((tmp_path / "cleaned" / "high-res" / "meme_001").iterdir())]
+    assert len(batch_frames) == 10
+    assert all(not np.array_equal(cleaned, frame) for frame in batch_frames)
+    # And it is less banded than the least banded frame it was made from.
+    assert banding_score(cleaned) < min(banding_score(frame) for frame in batch_frames)
 
 
 def test_save_frames_writes_every_sampled_frame(short_video, tmp_path):
@@ -138,8 +179,10 @@ def test_classifier_reading_files_leaves_no_temporary_files(short_video, tmp_pat
     assert len(aborted.paths) == 3
     assert all(path.parent.parent == temp_root for path in complete.paths + aborted.paths)
     assert list(temp_root.iterdir()) == []
-    assert names(tmp_path / "complete") == ["high-res"]
-    assert names(tmp_path / "aborted") == ["high-res"]
+    assert names(tmp_path / "complete") == ["clean", "high-res"]
+    assert names(tmp_path / "aborted") == ["clean", "high-res"]
+    # A batch that matches nothing is combined into nothing.
+    assert names(tmp_path / "complete" / "clean") == []
 
 
 def test_file_names_and_order(short_video, tmp_path):
@@ -162,9 +205,10 @@ def test_file_names_and_order(short_video, tmp_path):
     assert [path.name for path in batches(run_dir)] == [
         f"meme_{n:03d}" for n in range(1, len(expected) + 1)
     ]
-    # Saved frames come back batch by batch, and within a batch in video order.
-    assert saved == [path for batch in batches(run_dir) for path in sorted(batch.iterdir())]
-    assert all(MEME_NAME.match(path.name) for path in saved)
+    # One cleaned image per batch, returned in meme order.
+    assert saved == [run_dir / "clean" / f"meme_{n:03d}.png" for n in range(1, len(expected) + 1)]
+    # The batch frames keep the best file's own names, in video order within a batch.
+    assert all(MEME_NAME.match(path.name) for batch in batches(run_dir) for path in batch.iterdir())
 
 
 def test_save_low_res_writes_a_scan_quality_copy_of_each_meme(short_video, tmp_path):
@@ -174,7 +218,7 @@ def test_save_low_res_writes_a_scan_quality_copy_of_each_meme(short_video, tmp_p
     saved = run(str(short_video), run_name="low", classifier=EveryNth(10), save_low_res=True, **kwargs)
 
     assert [path.name for path in saved] == [path.name for path in default]
-    assert all(path.parent.parent == tmp_path / "low" / "high-res" for path in saved)
+    assert all(path.parent == tmp_path / "low" / "clean" for path in saved)
     # One low-res copy per scan hit, so one per batch folder, at scan quality.
     low_res = sorted((tmp_path / "low" / "low-res").iterdir())
     assert len(low_res) == len(batches(tmp_path / "low"))
@@ -198,7 +242,8 @@ def test_no_memes(short_video, tmp_path, capsys, save_low_res):
     assert [call.args[1] for call in download_spy.call_args_list] == ["worst"]
     # high-res/ always exists and low-res/ only when asked for; both stay empty.
     run_dir = tmp_path / ".runtime" / "short"
-    assert names(run_dir) == (["high-res", "low-res"] if save_low_res else ["high-res"])
+    expected = ["clean", "high-res", "low-res"] if save_low_res else ["clean", "high-res"]
+    assert names(run_dir) == expected
     assert all(names(folder) == [] for folder in run_dir.iterdir())
 
 
@@ -306,8 +351,9 @@ def test_classifier_error_aborts_the_run(short_video, tmp_path):
         run(str(short_video), runtime_dir=tmp_path, run_name="broken", classifier=classifier)
 
     classifier.is_meme.assert_not_called()
-    assert names(tmp_path / "broken") == ["high-res"]
+    assert names(tmp_path / "broken") == ["clean", "high-res"]
     assert names(tmp_path / "broken" / "high-res") == []
+    assert names(tmp_path / "broken" / "clean") == []
 
 
 def test_classifier_error_keeps_saved_frames_and_low_res_copies(short_video, tmp_path):
@@ -393,7 +439,7 @@ def test_real_url_mock_classifier_run(tmp_path):
     assert len(batches(run_dir)) == 6
     for path in saved:
         assert path.is_file()
-        assert path.parent.parent == run_dir / "high-res"
+        assert path.parent == run_dir / "clean"
         assert image_height(path) > image_height(sorted((run_dir / "low-res").iterdir())[0])
     downloaded = [path.name for path in downloads_dir.rglob("*")]
     assert sorted(downloaded) == ["AElGyY97k_0_best.mp4", "AElGyY97k_0_worst.mp4"]
@@ -414,7 +460,7 @@ def test_real_url_real_classifier_run(tmp_path):
     assert len(batches(run_dir)) == 2
     for path in saved:
         assert path.is_file()
-        assert path.parent.parent == run_dir / "high-res"
+        assert path.parent == run_dir / "clean"
         assert image_height(path) > image_height(sorted((run_dir / "low-res").iterdir())[0])
     downloaded = [path.name for path in downloads_dir.rglob("*")]
     assert sorted(downloaded) == ["AElGyY97k_0_best.mp4", "AElGyY97k_0_worst.mp4"]

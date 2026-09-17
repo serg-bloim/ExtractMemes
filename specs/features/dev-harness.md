@@ -71,6 +71,8 @@ so that I can try one variation from my IDE without editing code.
       | `test_full_video_run` | `sample/full.mp4`, `fps=0.5`, run name `full_video` |
       | `test_classify_one_frame` | `frame_at(short.mp4, 10.56)` (a known glitch card), saved to `.runtime/_playground/single_frame.jpg`, classified with `ClaudeCliClassifier()`, prints `YES`/`NO` |
       | `test_progress_bars_demo` | `short.mp4`, `fps=2.0`, a fake flagging every 5th call with a 0.1 s sleep per call, run name `progress_bars_demo`; no Claude usage |
+      | `test_compare_cleaners_on_real_batch` | every `batch_cleaner` method on batches of the 1080p `0TSqnhLXYfA` download, written to `.runtime/_playground/clean/real_<t>s/` (see [batch-cleaning](batch-cleaning.md) AC11) |
+      | `test_compare_cleaners_on_short_video` | the same comparison on `short.mp4`'s card at 10.56 s, written to `.runtime/_playground/clean/short_10s/` |
 - [x] AC6: The functions are named `test_*` only so IDE pytest integrations show a run icon for each
       one. The file name doesn't match pytest's `test_*.py` / `*_test.py` collection patterns, so
       running `pytest` from the project root collects nothing from `playground/` or

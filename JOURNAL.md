@@ -61,3 +61,7 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   [specs/features/resolution-output-folders.md](specs/features/resolution-output-folders.md).
 - 2026-09-17: Added `frames_from` for reading a run of consecutive frames from one open-and-seek — [specs/features/frame-extraction.md](specs/features/frame-extraction.md).
 - 2026-09-17: Extraction now saves a ±1s batch of re-classified full-quality frames per meme, grouped in `high-res/meme_<n>/` — [specs/features/extraction-pipeline.md](specs/features/extraction-pipeline.md).
+- 2026-09-17: Each meme batch is combined into one less distorted image in `clean/meme_<n>.png` with a temporal trimmed mean — [specs/features/batch-cleaning.md](specs/features/batch-cleaning.md).
+- 2026-09-17: Added `darkest` and `darkest_mean` cleaning methods, which exploit that the glitch bands only brighten — [specs/features/batch-cleaning.md](specs/features/batch-cleaning.md).
+- 2026-09-17: Added the `clean_rows` cleaning method, which uses the letterbox bars to tell damaged rows from clean ones — [specs/features/batch-cleaning.md](specs/features/batch-cleaning.md).
+- 2026-09-17: Ran the full video with every cleaning method (93 memes in `.runtime/full_experiment/`) and made `clean_rows` the default — [decisions/011-clean-rows-as-the-default.md](decisions/011-clean-rows-as-the-default.md).

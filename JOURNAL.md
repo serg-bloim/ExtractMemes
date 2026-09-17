@@ -32,3 +32,6 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   a fresh-virtualenv install — [specs/features/project-setup.md](specs/features/project-setup.md).
 - 2026-09-16: Rebuild step 6: recreated `run_real_video.py` and `playground/playground.py` —
   [specs/features/dev-harness.md](specs/features/dev-harness.md).
+- 2026-09-16: Rebuild smoke check passed: the real run on `sample/short.mp4` flagged exactly the
+  two known meme cards (10.56 s, 28.80 s) —
+  [specs/features/extraction-pipeline.md](specs/features/extraction-pipeline.md).

@@ -242,3 +242,9 @@ All resolved:
   Rewrote `tests/test_cli.py` for AC15, the argument pass-through, and help leaving the cwd
   untouched (AC11). Verified: `pytest -m "not slow"` (60 passed, also with no `claude` or `node`
   on `PATH`) and `pytest -m slow` (4 passed). All ACs checked; status `implemented`.
+- 2026-09-16: Ran the rebuild smoke check from ADR 007 with the real classifier:
+  `extract-memes sample/short.mp4 --run-name rebuild_smoke` (defaults: 2 fps, haiku-4.5 / `low`).
+  164 frames were classified in 21:57 (~8.0 s per frame) and exactly two memes were flagged and
+  extracted: `frame_000264_10.56s.jpg` and `frame_000720_28.80s.jpg`. There were no false
+  positives on the portrait-video look-alikes at ≈31–38 s and ≈73–76 s. `saved/` holds the two
+  best-quality frames plus their two thumbnails, and `frames/` holds all 164 samples.

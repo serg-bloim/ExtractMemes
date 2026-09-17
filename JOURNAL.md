@@ -59,3 +59,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
   overstated changelog claims —
   [specs/features/in-memory-frames.md](specs/features/in-memory-frames.md),
   [specs/features/resolution-output-folders.md](specs/features/resolution-output-folders.md).
+- 2026-09-17: Added `frames_from` for reading a run of consecutive frames from one open-and-seek — [specs/features/frame-extraction.md](specs/features/frame-extraction.md).

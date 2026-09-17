@@ -29,6 +29,10 @@ As the ExtractMemes pipeline, I want to read the frame at an exact timestamp fro
 higher-quality) copy of the same video, so that I can save the full-quality meme image once its
 timecode is known.
 
+**Secondary:**
+As the developer, I want to read a run of consecutive frames starting at a known timestamp, so that
+I can study every frame a meme is on screen for without paying the open-and-seek cost per frame.
+
 ## Acceptance Criteria
 
 - [x] AC1: `src/extract_memes/frame_extractor.py` exposes
@@ -68,6 +72,29 @@ timecode is known.
       for several indices `i` (e.g. 0, 12, 150, 288), `frame_at(short.mp4, i / 25)` is
       pixel-identical to the `i`-th sequentially decoded frame;
       and a missing file raises `RuntimeError` on iteration.
+- [x] AC10: It also exposes
+      `frames_from(video_path: Path, start_seconds: float, count: int) -> Iterator[tuple[int, float, np.ndarray]]`,
+      which yields up to `count` consecutive frames starting at the frame at `start_seconds`:
+      - it opens the file and seeks **once** (`CAP_PROP_POS_MSEC`), then reads sequentially, so
+        every frame after the first costs one decode;
+      - `frame_index` is read from `CAP_PROP_POS_FRAMES` before each read, because the seek lands
+        on the nearest decodable frame, which can be earlier than `start_seconds`;
+      - `timestamp_seconds` is `frame_index / native_fps` (as in AC1), falling back to
+        `CAP_PROP_POS_MSEC` when the file reports `fps == 0`. `CAP_PROP_POS_MSEC` is not used
+        otherwise: it can lag `CAP_PROP_POS_FRAMES` by one frame (see Technical Notes);
+      - it stops early at the first failed read, so it yields fewer than `count` frames near the
+        end of the file, and nothing at all when `start_seconds` is past the end. That is not an
+        error (unlike AC4's `frame_at`);
+      - AC5–AC8 apply to it as well: OpenCV only, `RuntimeError` on an unopenable file (raised on
+        the first `next()`), release in `try/finally`, frames exactly as decoded.
+- [x] AC11: Unit tests for `frames_from` against `sample/short.mp4`, plus fixture-free mocked ones:
+      5 frames from `10.56s` have indices `264…268` and timestamps `10.56…10.72`, shape
+      `(144, 256)`, and are pixel-identical to the same sequentially decoded frames;
+      `frames_from(short.mp4, 78.40, 10)` yields only the 4 frames left in the file;
+      `frames_from(short.mp4, 3600.0, 5)` yields nothing;
+      a missing file raises `RuntimeError` on the first `next()`;
+      and with a mocked `VideoCapture`, stopping early releases the capture, `VideoCapture` was
+      constructed once, and `set` was called once with `CAP_PROP_POS_MSEC`.
 
 ## Out of Scope
 
@@ -94,6 +121,17 @@ timecode is known.
   the *extraction* (best) file by time. Both tiers of the test video are 25 fps, so indices line up.
   If the tiers ever have different frame rates, seeking by time is still correct, but the scan
   file's `frame_index` in file names won't match the best file's frame numbering.
+- **Why `frames_from` exists (measured 2026-09-17** on the 1080p VP9 download of
+  `0TSqnhLXYfA`, 10 consecutive frames at each of 4 timestamps): `frame_at` per frame took 3.92 s
+  (~98 ms each), because each call reopens the file and decodes forward from the preceding
+  keyframe. Opening and seeking once per run of frames took 0.41 s. Reusing one capture across all
+  four runs took 0.27 s; that was rejected as not worth the lifetime management (user decision,
+  2026-09-17). Keyframes in that file are ~2.5 s apart, which is why a seek is expensive and the
+  frames after it are not (~10 ms each).
+- **`CAP_PROP_POS_MSEC` can lag `CAP_PROP_POS_FRAMES` by one frame** (observed 2026-09-17 on
+  `sample/short.mp4`, H.264 25 fps): right after a seek to `10.56s`, `POS_FRAMES` reported 264 and
+  `POS_MSEC` reported `10.52s`, while the frame then read was pixel-identical to sequentially
+  decoded frame 264. So `frames_from` derives the timestamp from the index (AC10).
 - **Sample counts for reference** (at `fps=2.0`, step 12):
   - `sample/short.mp4` (1964 frames): 164 samples.
   - `sample/full.mp4` (94095 frames): 7842 samples.
@@ -113,7 +151,15 @@ All resolved:
   rounding choices would silently change which frames get scanned. Revisit only as a deliberate
   spec change.
 - Q4: What if the video reports `fps == 0`? **Fall back to the requested `fps`** (step 1: every
-  decoded frame is sampled, with timestamps based on the requested rate).
+  decoded frame is sampled, with timestamps based on the requested rate). `frames_from` has no
+  requested rate, so it falls back to `CAP_PROP_POS_MSEC` instead (AC10).
+- Q5: Should `frames_from` reuse one capture across several runs of frames, for another ~1.5x?
+  **No** (user decision, 2026-09-17). Each call opens and releases its own capture, so it stays a
+  plain generator with no lifetime to manage and no ordering requirement between calls. The
+  measurements are in Technical Notes.
+- Q6: Should `frames_from` raise when `start_seconds` is past the end, as `frame_at` does?
+  **No.** It yields nothing, like `sample_frames` stopping at the first failed read. A caller
+  asking for a run of frames can't know how many are left near the end of the file.
 
 ## Changelog
 
@@ -146,3 +192,13 @@ All resolved:
   Re-verified seek accuracy on the VP9 640x360 best download of the test video (302 frames, 26
   samples at 2 fps, indices 0/12/36/150/288 pixel-identical). All ACs checked; status
   `implemented`.
+- 2026-09-17: The user asked how to fetch all the consecutive frames a meme appears on, noting that
+  `frame_at` reopens the video on every call. Measured the alternatives on the 1080p download of
+  `0TSqnhLXYfA` (Technical Notes): per-frame `frame_at` is ~10x slower than one open-and-seek per
+  run of frames. The user asked for `frames_from` and decided against reusing one capture across
+  runs (Q5). Added `frames_from` (AC10) and its tests (AC11). While writing them, found that
+  `CAP_PROP_POS_MSEC` lags `CAP_PROP_POS_FRAMES` by a frame after a seek, so the timestamp is
+  derived from the index. Verified on `sample/short.mp4` and on the 1080p VP9 file, where the known
+  card at 99.56 s yields frames 2489–2498 (99.56–99.92 s) in 0.20 s, and the first frame is
+  pixel-identical to `frame_at(path, 99.56)`. `sample_frames`, `frame_at`, and the pipeline are
+  unchanged; status stays `implemented`.

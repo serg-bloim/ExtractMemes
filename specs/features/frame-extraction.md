@@ -1,6 +1,6 @@
 ---
 title: "Frame Extraction"
-status: ready
+status: implemented
 created: 2026-09-16
 updated: 2026-09-16
 author: ""
@@ -31,34 +31,34 @@ timecode is known.
 
 ## Acceptance Criteria
 
-- [ ] AC1: `src/extract_memes/frame_extractor.py` exposes
+- [x] AC1: `src/extract_memes/frame_extractor.py` exposes
       `sample_frames(video_path: Path, fps: float = 2.0) -> Iterator[tuple[int, float, np.ndarray]]`,
       which yields `(frame_index, timestamp_seconds, frame)`. `frame_index` is the 0-based index of
       the decoded frame in the source file (not a sample counter). `timestamp_seconds` is
       `frame_index / native_fps`. Items come in strictly increasing order.
-- [ ] AC2: Sampling step: `native_fps = cap.get(cv2.CAP_PROP_FPS) or fps`,
+- [x] AC2: Sampling step: `native_fps = cap.get(cv2.CAP_PROP_FPS) or fps`,
       `step = max(1, round(native_fps / fps))` using Python's built-in `round` (half-to-even).
       Every `step`-th decoded frame is yielded, starting at index 0. So the effective rate is
       `native_fps / step`, which isn't always exactly `fps`. For a 25 fps source at the default
       `fps=2.0`: `round(12.5) == 12`, giving 2.083 samples/s at `0.00s, 0.48s, 0.96s, …`. This is
       the documented, intended behavior (see Open Questions Q3).
-- [ ] AC3: `sample_frames` decodes sequentially with `cap.read()` and never seeks per sample. It
+- [x] AC3: `sample_frames` decodes sequentially with `cap.read()` and never seeks per sample. It
       doesn't use `cv2.CAP_PROP_FRAME_COUNT` to decide how many frames to read (that property is
       unreliable, see Technical Notes). It stops at the first failed read.
-- [ ] AC4: It also exposes `frame_at(video_path: Path, timestamp_seconds: float) -> np.ndarray`.
+- [x] AC4: It also exposes `frame_at(video_path: Path, timestamp_seconds: float) -> np.ndarray`.
       This seeks with `cap.set(cv2.CAP_PROP_POS_MSEC, timestamp_seconds * 1000)` and reads one
       frame. If no frame can be read, it raises `RuntimeError` naming both the timestamp and the
       path.
-- [ ] AC5: Both functions use `cv2.VideoCapture` (OpenCV's bundled FFmpeg backend). No system
+- [x] AC5: Both functions use `cv2.VideoCapture` (OpenCV's bundled FFmpeg backend). No system
       `ffmpeg`/`ffprobe` binary is required.
-- [ ] AC6: If the video can't be opened (`not cap.isOpened()`: missing file, unsupported codec),
+- [x] AC6: If the video can't be opened (`not cap.isOpened()`: missing file, unsupported codec),
       both functions raise `RuntimeError("Could not open video file: <path>")`. `sample_frames` is a
       generator, so it raises on the first `next()`, not when it's called.
-- [ ] AC7: The `VideoCapture` is always released (`try/finally`), including when the consumer stops
+- [x] AC7: The `VideoCapture` is always released (`try/finally`), including when the consumer stops
       iterating early or an exception propagates.
-- [ ] AC8: Frames are returned exactly as decoded: BGR `numpy.ndarray` at the file's native
+- [x] AC8: Frames are returned exactly as decoded: BGR `numpy.ndarray` at the file's native
       resolution, with no resizing or color conversion. That's what `cv2.imwrite` expects.
-- [ ] AC9: Unit tests run against `sample/short.mp4` (module skipped if that fixture is absent) and
+- [x] AC9: Unit tests run against `sample/short.mp4` (module skipped if that fixture is absent) and
       check:
       at `fps=1.0`, 79 frames, all within the range 70–85;
       at the default `fps=2.0`, exactly 164 frames with `frame_index` values `0, 12, 24, …`;
@@ -132,3 +132,17 @@ All resolved:
   error-message and release guarantees (AC4, AC6, AC7). Declared `numpy` explicitly. Strengthened
   the tests (exact 164-sample count, frame indices, seek-equals-sequential). Reset status to
   `ready` with unchecked ACs because the implementation will be erased and rebuilt.
+- 2026-09-16: "Implement the project according to the docs in it. Commit each feature
+  individually." Rebuild step 3 of [ADR 007](../../decisions/007-documentation-consolidation-for-rebuild.md).
+  Added `src/extract_memes/frame_extractor.py` with `sample_frames` (a generator: sequential
+  `cap.read()`, `step = max(1, round(native_fps / fps))`, stops at the first failed read) and
+  `frame_at` (`CAP_PROP_POS_MSEC` seek). Both share an `_open` helper that raises
+  `RuntimeError("Could not open video file: <path>")` and release the capture in `try/finally`.
+  Declared `opencv-python-headless` and `numpy`. Added `tests/test_frame_extractor.py` covering
+  every AC9 item, plus mocked-`VideoCapture` tests for release on early stop (AC7) and the
+  `fps == 0` fallback (Q4), and a past-the-end `frame_at` error. Interpretation: AC9's "module
+  skipped" is done per test through a shared `short_video` fixture in `tests/conftest.py`
+  (skipped with a reason when `sample/short.mp4` is absent), so the fixture-free tests still run.
+  Re-verified seek accuracy on the VP9 640x360 best download of the test video (302 frames, 26
+  samples at 2 fps, indices 0/12/36/150/288 pixel-identical). All ACs checked; status
+  `implemented`.

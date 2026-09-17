@@ -22,3 +22,5 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-09-16: Rebuild step 2: implemented `download()` with local passthrough, `wv*`/`bv*`
   selectors behind `worst`/`best`, and lazy ffmpeg setup —
   [specs/features/video-download.md](specs/features/video-download.md).
+- 2026-09-16: Rebuild step 3: implemented `sample_frames` and `frame_at` with OpenCV —
+  [specs/features/frame-extraction.md](specs/features/frame-extraction.md).

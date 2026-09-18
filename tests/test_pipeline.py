@@ -11,6 +11,7 @@ from extract_memes.batch_cleaner import banding_score
 from extract_memes.classifier import FrameClassifier
 from extract_memes.downloader import download
 from extract_memes.pipeline import MEME_LABEL, default_run_name, format_timecode, run
+from extract_memes.uploader import Uploader
 
 TEST_VIDEO_URL = "https://youtu.be/AElGyY97k_0"
 MEME_NAME = re.compile(r"^frame_\d{6}_\d+\.\d{2}s\.jpg$")
@@ -54,6 +55,19 @@ class ReadsFiles(FrameClassifier):
 class NeverMeme(FrameClassifier):
     def is_meme(self, image_path: Path) -> bool:
         return False
+
+
+class FakeUploader(Uploader):
+    """Records each `upload_all` call; raises `error` (if given) after recording it."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.calls: list[tuple[list[Path], str]] = []
+
+    def upload_all(self, image_paths: list[Path], source: str) -> None:
+        self.calls.append((list(image_paths), source))
+        if self.error:
+            raise self.error
 
 
 def image_height(path: Path) -> int:
@@ -639,3 +653,112 @@ def test_no_images_with_no_memes(short_video, tmp_path, capsys):
     assert saved == []
     assert capsys.readouterr().out == "No memes found.\n"
     assert not (tmp_path / ".runtime").exists()
+
+
+def test_uploader_receives_the_saved_paths_and_source_once(short_video, tmp_path):
+    uploader = FakeUploader()
+
+    saved = run(
+        str(short_video), runtime_dir=tmp_path, fps=1.0, classifier=EveryNth(10), uploader=uploader
+    )
+
+    assert uploader.calls == [(saved, str(short_video))]
+    assert len(saved) > 0
+
+
+def test_uploader_receives_batch_frames_when_clean_method_is_none(short_video, tmp_path):
+    uploader = FakeUploader()
+
+    saved = run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        fps=1.0,
+        classifier=EveryNth(10),
+        clean_method=None,
+        save_high_res=True,
+        uploader=uploader,
+    )
+
+    assert uploader.calls == [(saved, str(short_video))]
+    assert len(saved) > 0
+
+
+def test_no_uploader_means_nothing_is_uploaded(short_video, tmp_path):
+    saved = run(str(short_video), runtime_dir=tmp_path, fps=1.0, classifier=EveryNth(10))
+
+    assert len(saved) > 0  # sanity: the run did produce something to (not) upload
+
+
+def test_a_failed_upload_does_not_abort_the_run(short_video, tmp_path, capsys):
+    uploader = FakeUploader(error=RuntimeError("telegram rejected"))
+
+    saved = run(
+        str(short_video), runtime_dir=tmp_path, fps=1.0, classifier=EveryNth(10), uploader=uploader
+    )
+
+    assert uploader.calls == [(saved, str(short_video))]
+    assert len(saved) > 0
+    assert capsys.readouterr().out.endswith("Upload failed: telegram rejected\n")
+
+
+def test_no_images_with_upload_to_telegram_raises_before_creating_anything(short_video, tmp_path):
+    with pytest.raises(ValueError, match="nothing to upload"):
+        run(
+            str(short_video),
+            runtime_dir=tmp_path,
+            classifier=EveryNth(10),
+            no_images=True,
+            save_timecodes=True,
+            upload_to="telegram",
+            telegram_bot_token="tok",
+            telegram_chat_id="123",
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_no_images_with_uploader_raises_before_creating_anything(short_video, tmp_path):
+    with pytest.raises(ValueError, match="nothing to upload"):
+        run(
+            str(short_video),
+            runtime_dir=tmp_path,
+            classifier=EveryNth(10),
+            no_images=True,
+            save_timecodes=True,
+            uploader=FakeUploader(),
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_upload_to_telegram_builds_a_telegram_uploader(short_video, tmp_path):
+    with mock.patch("extract_memes.pipeline.TelegramUploader") as telegram_uploader:
+        telegram_uploader.return_value = FakeUploader()
+        run(
+            str(short_video),
+            runtime_dir=tmp_path,
+            fps=1.0,
+            classifier=EveryNth(10),
+            upload_to="telegram",
+            telegram_bot_token="tok",
+            telegram_chat_id="123",
+        )
+
+    telegram_uploader.assert_called_once_with(bot_token="tok", chat_id="123")
+
+
+def test_explicit_uploader_ignores_upload_to(short_video, tmp_path):
+    uploader = FakeUploader()
+
+    with mock.patch("extract_memes.pipeline.TelegramUploader") as telegram_uploader:
+        run(
+            str(short_video),
+            runtime_dir=tmp_path,
+            fps=1.0,
+            classifier=EveryNth(10),
+            uploader=uploader,
+            upload_to="telegram",
+        )
+
+    telegram_uploader.assert_not_called()
+    assert len(uploader.calls) == 1

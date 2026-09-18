@@ -1,6 +1,7 @@
 """Command-line entrypoint for ExtractMemes."""
 
 import argparse
+import os
 from pathlib import Path
 
 from extract_memes import batch_cleaner, pipeline
@@ -108,6 +109,22 @@ def build_parser() -> argparse.ArgumentParser:
             "<runtime-dir>/<run-name>/clean/; 'none' skips cleaning (default: %(default)s)"
         ),
     )
+    parser.add_argument(
+        "--upload-to",
+        choices=["telegram"],
+        default=None,
+        help="upload each saved meme image to a messenger chat as the run finishes (default: no upload)",
+    )
+    parser.add_argument(
+        "--telegram-bot-token",
+        default=None,
+        help="Telegram bot token; falls back to the TELEGRAM_BOT_TOKEN env var. Only applies to --upload-to telegram",
+    )
+    parser.add_argument(
+        "--telegram-chat-id",
+        default=None,
+        help="Telegram chat id to upload to; falls back to the TELEGRAM_CHAT_ID env var. Only applies to --upload-to telegram",
+    )
     return parser
 
 
@@ -119,6 +136,16 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.no_images and args.save_high_res:
         parser.error("--no-images cannot be combined with --save-high-res")
+    if args.upload_to == "telegram":
+        if args.no_images:
+            parser.error("--upload-to telegram cannot be combined with --no-images")
+        bot_token = args.telegram_bot_token or os.environ.get("TELEGRAM_BOT_TOKEN")
+        chat_id = args.telegram_chat_id or os.environ.get("TELEGRAM_CHAT_ID")
+        if not bot_token or not chat_id:
+            parser.error(
+                "--upload-to telegram requires --telegram-bot-token/--telegram-chat-id or "
+                "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID"
+            )
 
     saved = pipeline.run(
         args.source,
@@ -136,6 +163,9 @@ def main(argv: list[str] | None = None) -> None:
         save_timecodes=args.save_timecodes,
         timecode_offset=args.timecode_offset,
         no_images=args.no_images,
+        upload_to=args.upload_to,
+        telegram_bot_token=args.telegram_bot_token,
+        telegram_chat_id=args.telegram_chat_id,
     )
     for path in saved:
         print(path)

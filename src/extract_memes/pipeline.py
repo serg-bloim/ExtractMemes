@@ -14,6 +14,8 @@ from extract_memes.classifier import ClaudeCliClassifier, FrameClassifier
 from extract_memes.downloader import download
 from extract_memes.frame_extractor import frames_from, sample_frames
 from extract_memes.heuristic_classifier import HeuristicClassifier
+from extract_memes.telegram_uploader import TelegramUploader
+from extract_memes.uploader import Uploader
 
 
 MEME_LABEL = "Мем"
@@ -100,6 +102,10 @@ def run(
     save_timecodes: bool = False,
     timecode_offset: float = 0.0,
     no_images: bool = False,
+    uploader: Uploader | None = None,
+    upload_to: Literal["telegram"] | None = None,
+    telegram_bot_token: str | None = None,
+    telegram_chat_id: str | None = None,
 ) -> list[Path]:
     """Extract the memes in `source` and return one cleaned image path per meme, in video order.
 
@@ -122,6 +128,11 @@ def run(
     The batch frames themselves are kept only with `save_high_res=True`, which writes them to
     `high-res/meme_<n:03d>/`. With `clean_method=None` nothing is cleaned and those frames are
     returned instead, so that combination requires `save_high_res=True`.
+
+    With `uploader` set (or `upload_to="telegram"`, which builds a `TelegramUploader` from
+    `telegram_bot_token`/`telegram_chat_id`), `uploader.upload_all(saved, source)` is called once
+    before `run` returns. A failure there is logged and does not abort the run or affect what's
+    returned — unlike every other step here, whose errors propagate.
     """
     if classifier is None:
         if classifier_type == "heuristic":
@@ -132,9 +143,13 @@ def run(
             raise ValueError(f"classifier_type must be 'heuristic' or 'claude', not {classifier_type!r}")
     if clean_method is not None and clean_method not in batch_cleaner.METHODS:
         raise ValueError(f"clean_method must be None or one of {batch_cleaner.METHODS}, not {clean_method!r}")
+    if uploader is None and upload_to == "telegram":
+        uploader = TelegramUploader(bot_token=telegram_bot_token, chat_id=telegram_chat_id)
     if no_images:
         if save_high_res:
             raise ValueError("no_images and save_high_res contradict each other")
+        if uploader is not None:
+            raise ValueError("no_images and uploading contradict each other: there is nothing to upload")
         if not (save_timecodes or save_low_res or save_frames):
             raise ValueError(
                 "nothing would be saved: with no_images, pass save_timecodes=True, "
@@ -214,4 +229,9 @@ def run(
             saved.append(clean_path)
     if save_timecodes:
         _write_timecodes(run_dir, timecodes)
+    if uploader is not None:
+        try:
+            uploader.upload_all(saved, source)
+        except Exception as exc:
+            print(f"Upload failed: {exc}")
     return saved

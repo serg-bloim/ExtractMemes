@@ -48,6 +48,9 @@ def test_defaults_are_passed_to_pipeline(capsys):
         save_timecodes=False,
         timecode_offset=0.0,
         no_images=False,
+        upload_to=None,
+        telegram_bot_token=None,
+        telegram_chat_id=None,
     )
     assert capsys.readouterr().out == ""
 
@@ -70,6 +73,9 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
             "--save-high-res",
             "--save-timecodes",
             "--timecode-offset", "-1.5",
+            "--upload-to", "telegram",
+            "--telegram-bot-token", "token123",
+            "--telegram-chat-id", "chat456",
         ])  # fmt: skip
 
     run.assert_called_once_with(
@@ -88,6 +94,9 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         save_timecodes=True,
         timecode_offset=-1.5,
         no_images=False,
+        upload_to="telegram",
+        telegram_bot_token="token123",
+        telegram_chat_id="chat456",
     )
     assert capsys.readouterr().out.splitlines() == [str(path) for path in saved]
 
@@ -170,5 +179,61 @@ def test_no_images_is_passed_to_pipeline():
 def test_no_images_with_save_high_res_is_rejected():
     with pytest.raises(SystemExit) as excinfo:
         main(["sample/short.mp4", "--no-images", "--save-high-res"])
+
+    assert excinfo.value.code == 2
+
+
+def test_upload_to_telegram_without_credentials_is_rejected(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["sample/short.mp4", "--upload-to", "telegram"])
+
+    assert excinfo.value.code == 2
+
+
+def test_upload_to_telegram_with_flags_reaches_the_pipeline(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+
+    with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
+        main([
+            "sample/short.mp4",
+            "--upload-to", "telegram",
+            "--telegram-bot-token", "token123",
+            "--telegram-chat-id", "chat456",
+        ])  # fmt: skip
+
+    assert run.call_args.kwargs["upload_to"] == "telegram"
+    assert run.call_args.kwargs["telegram_bot_token"] == "token123"
+    assert run.call_args.kwargs["telegram_chat_id"] == "chat456"
+
+
+def test_upload_to_telegram_falls_back_to_env_vars(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "env-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "env-chat")
+
+    with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
+        main(["sample/short.mp4", "--upload-to", "telegram"])
+
+    assert run.call_args.kwargs["upload_to"] == "telegram"
+    assert run.call_args.kwargs["telegram_bot_token"] is None
+    assert run.call_args.kwargs["telegram_chat_id"] is None
+
+
+def test_upload_to_telegram_with_no_images_is_rejected(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "env-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "env-chat")
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["sample/short.mp4", "--upload-to", "telegram", "--no-images"])
+
+    assert excinfo.value.code == 2
+
+
+def test_invalid_upload_to_is_rejected():
+    with pytest.raises(SystemExit) as excinfo:
+        main(["sample/short.mp4", "--upload-to", "discord"])
 
     assert excinfo.value.code == 2

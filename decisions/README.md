@@ -79,3 +79,4 @@ Links to related specs, external resources, or prior discussions.
 | 009 | [Iteration 3: Scan Frames in Memory; Separate, Opt-In Low-Res Output](009-in-memory-scan-and-resolution-folders.md) | Proposed | 2026-09-17 |
 | 010 | [Clean Each Meme Batch with a Temporal Trimmed Mean](010-batch-cleaning-by-trimmed-mean.md) | Default superseded by 011 | 2026-09-17 |
 | 011 | [Clean Batches with `clean_rows` by Default](011-clean-rows-as-the-default.md) | Accepted | 2026-09-17 |
+| 012 | [Package ExtractMemes as a Docker Image](012-docker-image.md) | Accepted | 2026-09-17 |

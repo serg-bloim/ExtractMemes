@@ -59,15 +59,21 @@ publishing a new video doesn't require me to manually find and launch a run.
       triggering. Permissions: `contents: write` (needed to push the updated processed-file back).
       Steps:
       1. `actions/checkout@v4`.
-      2. `actions/setup-python@v5` (3.14) and `actions/setup-node@v4` — Node.js is required by
-         `extract-memes` itself for YouTube downloads (ADR 006), not just for this new script.
-      3. `pip install -e .` (installs the project fresh, including the latest `yt-dlp` from PyPI —
-         see Technical Notes on why this runs natively rather than via the published Docker image).
+      2. `actions/setup-python@v5` (3.14).
+      3. `pip install yt-dlp && pip install --no-deps -e .` — installs only what `find` actually
+         needs (`yt_dlp`, plus the local package itself so `python -m extract_memes.playlist_watch`
+         is importable), skipping `opencv-python-headless`/`numpy`/`static-ffmpeg`/`tqdm`/`requests`
+         entirely for a run that finds nothing new (see Technical Notes).
       4. Run `python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}"`,
          capturing stdout into a step output (e.g. `video_id`) via `$GITHUB_OUTPUT`.
-      5. If `video_id` is non-empty: run
-         `extract-memes "https://youtu.be/$video_id" --classifier heuristic --upload-to telegram`
-         with `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` from repo secrets.
+      5. Only if `video_id` is non-empty:
+         - `actions/setup-node@v4` — Node.js is required by `extract-memes` itself for YouTube
+           downloads (ADR 006); not needed for step 4's flat playlist listing.
+         - `pip install -e .` (now installs the full dependency set fresh, including the latest
+           `yt-dlp` from PyPI — see Technical Notes on why this runs natively rather than via the
+           published Docker image).
+         - `extract-memes "https://youtu.be/$video_id" --classifier heuristic --upload-to telegram`
+           with `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` from repo secrets.
       6. If step 5 succeeded: run `python -m extract_memes.playlist_watch mark-processed "$video_id"`.
       7. If `data/processed_vids.txt` has uncommitted changes: commit (bot identity,
          e.g. `github-actions[bot]`) and push.
@@ -118,6 +124,13 @@ publishing a new video doesn't require me to manually find and launch a run.
   not secret, and keeping it in repo settings means changing the target playlist doesn't require a
   code change.
 - `count` (playlist fetch depth) defaults to 8, inside the user-requested 5–10 range.
+- **Why the install is split in two (`pip install yt-dlp` + `--no-deps -e .`, then the full
+  `pip install -e .` only if a video was found):** raised by the user — if this workflow ends up
+  triggered often (checking) while actually downloading/processing rarely, paying for
+  `opencv-python-headless`/`numpy`/`static-ffmpeg` (tens of MB combined, plus a bundled ffmpeg
+  binary) on every single check is wasted time when nothing new is usually there.
+  `playlist_watch.py` only ever imports `yt_dlp`, so the cheap install is enough for `find` to run;
+  the heavy dependencies are deferred to the one branch that actually needs them.
 
 ## Open Questions
 
@@ -168,3 +181,12 @@ Resolved by the user (2026-09-18):
     by inspection only.
 
   All ACs are checked. Status `implemented`.
+- 2026-09-18: The user asked how much overhead installing all dependencies adds if the workflow
+  ends up checking frequently but downloading/processing rarely. Pointed out `playlist_watch.py`
+  only needs `yt_dlp`, while `pip install -e .` pulls in `opencv-python-headless`/`numpy`/
+  `static-ffmpeg` regardless. The user asked to restructure accordingly: `check-new-video.yml`
+  (AC7) now installs only `yt-dlp` plus the local package via `--no-deps` for the `find` step, and
+  defers `setup-node` and the full `pip install -e .` to the conditional branch that runs only once
+  a video is actually found. Updated this spec's AC7 and Technical Notes to match; no ADR needed
+  (a routine, easily-reversible refinement of the already-decided "install natively" architecture
+  from ADR 016, not a new decision).

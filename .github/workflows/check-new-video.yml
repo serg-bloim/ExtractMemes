@@ -18,19 +18,26 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install ExtractMemes
-        run: pip install -e .
+      - name: Install yt-dlp and the local package, without its heavy dependencies
+        run: |
+          pip install yt-dlp
+          pip install --no-deps -e .
 
       - name: Find the oldest unprocessed video
         id: find
         run: |
           video_id=$(python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}")
           echo "video_id=$video_id" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: steps.find.outputs.video_id != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install the rest of ExtractMemes' dependencies
+        if: steps.find.outputs.video_id != ''
+        run: pip install -e .
 
       - name: Run the pipeline on the new video
         if: steps.find.outputs.video_id != ''

@@ -99,11 +99,17 @@ default is chosen by looking at results rather than by argument.
 - [x] AC6: `pipeline.run` gains a trailing keyword parameter
       `clean_method: str | None = batch_cleaner.DEFAULT_METHOD`. A value outside `METHODS` (and not
       `None`) raises `ValueError` before anything is downloaded or created.
-- [x] AC7: Step 1 also creates `runtime_dir/run_name/clean/` when `clean_method` is not `None`.
-- [x] AC8: In step 6, the frames of a batch are kept in memory as they're written, and when the
-      batch is finished `combine(batch, clean_method)` is written to `clean/meme_<n:03d>.png`. A
-      batch that matched no frame produces no file. With `clean_method=None` nothing is combined
-      and no `clean/` folder is made.
+- [x] AC7: Step 1 also creates `runtime_dir/run_name/clean/` when `clean_method` is not `None`, and
+      `high-res/` only when `save_high_res` is true (AC13).
+- [x] AC8: In step 6, the frames of a batch are collected in memory, and when the batch is finished
+      `combine(batch, clean_method)` is written to `clean/meme_<n:03d>.png`. A batch that matched no
+      frame produces no file. With `clean_method=None` nothing is combined and no `clean/` folder is
+      made.
+- [x] AC13: `run` gains a trailing keyword parameter `save_high_res: bool = False`. The batch frames
+      are written to `high-res/meme_<n:03d>/` (and the batch folder created) only when it's true;
+      by default a batch is combined from memory and nothing full-quality is kept. `clean_method`
+      is `None` **and** `save_high_res` false would save nothing at all, so that combination raises
+      `ValueError` before anything is downloaded or created. The CLI adds `--save-high-res`.
 - [x] AC9: Step 7 returns the `clean/` paths in meme order when cleaning is on, and the batch frame
       paths (as before) when it's off. The CLI prints the returned paths and gains
       `--clean-method` with `none` plus every name in `METHODS` as choices, defaulting to
@@ -267,3 +273,10 @@ Resolved during implementation:
   **`clean_rows` as the default**. `tests/test_pipeline.py`'s "the result sits near the middle of
   the batch" assertion was replaced with "the result is less banded than the least banded frame it
   was made from": a row-selecting method legitimately sits further from the batch mean.
+- 2026-09-17: The user asked to make saving the high-res frames optional. Added `save_high_res`
+  (default `False`) and `--save-high-res` (AC13): a default run now writes only `clean/`, which for
+  the hour-long video is 93 PNGs instead of those plus 978 full-quality JPEGs. Asking for neither
+  the cleaned images nor the frames (`clean_method=None` without `save_high_res`) raises rather than
+  running to produce nothing. Every test that inspects the batch folders now asks for them
+  explicitly; `playground.test_full_video_every_method` passes `save_high_res=True`, since it
+  cleans the batches afterwards.

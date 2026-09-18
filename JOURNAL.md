@@ -65,3 +65,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-09-17: Added `darkest` and `darkest_mean` cleaning methods, which exploit that the glitch bands only brighten — [specs/features/batch-cleaning.md](specs/features/batch-cleaning.md).
 - 2026-09-17: Added the `clean_rows` cleaning method, which uses the letterbox bars to tell damaged rows from clean ones — [specs/features/batch-cleaning.md](specs/features/batch-cleaning.md).
 - 2026-09-17: Ran the full video with every cleaning method (93 memes in `.runtime/full_experiment/`) and made `clean_rows` the default — [decisions/011-clean-rows-as-the-default.md](decisions/011-clean-rows-as-the-default.md).
+- 2026-09-17: Keeping each meme's full-quality frames is now opt-in (`--save-high-res`); a default run writes only the cleaned images — [specs/features/batch-cleaning.md](specs/features/batch-cleaning.md).

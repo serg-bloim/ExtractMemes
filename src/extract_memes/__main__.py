@@ -66,6 +66,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="write scan-quality copies to <runtime-dir>/<run-name>/low-res/ as memes are found",
     )
     parser.add_argument(
+        "--save-high-res",
+        action="store_true",
+        help=(
+            "keep each meme's full-quality frames in <runtime-dir>/<run-name>/high-res/meme_<n>/; "
+            "required with --clean-method none, which has nothing else to save"
+        ),
+    )
+    parser.add_argument(
         "--clean-method",
         choices=("none", *batch_cleaner.METHODS),
         default=batch_cleaner.DEFAULT_METHOD,
@@ -96,6 +104,7 @@ def main(argv: list[str] | None = None) -> None:
         save_frames=args.save_frames,
         save_low_res=args.save_low_res,
         clean_method=None if args.clean_method == "none" else args.clean_method,
+        save_high_res=args.save_high_res,
     )
     for path in saved:
         print(path)

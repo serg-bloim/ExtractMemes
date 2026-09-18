@@ -82,6 +82,7 @@ def test_local_run(short_video, tmp_path):
             runtime_dir=runtime_dir,
             fps=1.0,
             classifier=classifier,
+            save_high_res=True,
         )
 
     run_dir = runtime_dir / "short"
@@ -113,11 +114,30 @@ def test_clean_method_none_returns_the_batch_frames(short_video, tmp_path):
         fps=1.0,
         classifier=classifier,
         clean_method=None,
+        save_high_res=True,
     )
 
     run_dir = tmp_path / "raw"
     assert names(run_dir) == ["high-res"]
     assert saved == [path for batch in batches(run_dir) for path in sorted(batch.iterdir())]
+
+
+def test_high_res_frames_are_not_kept_by_default(short_video, tmp_path):
+    saved = run(str(short_video), runtime_dir=tmp_path, run_name="lean", fps=1.0, classifier=EveryNth(10))
+
+    run_dir = tmp_path / "lean"
+    assert names(run_dir) == ["clean"]
+    assert len(saved) == len(names(run_dir / "clean")) == 8
+
+
+def test_saving_nothing_at_all_raises_before_creating_anything(short_video, tmp_path):
+    with (
+        mock.patch("extract_memes.pipeline.download", side_effect=AssertionError("downloaded")),
+        pytest.raises(ValueError, match="nothing would be saved"),
+    ):
+        run(str(short_video), runtime_dir=tmp_path, clean_method=None)
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_unknown_clean_method_raises_before_creating_anything(short_video, tmp_path):
@@ -131,7 +151,9 @@ def test_unknown_clean_method_raises_before_creating_anything(short_video, tmp_p
 
 
 def test_cleaned_image_differs_from_every_frame_it_was_made_from(short_video, tmp_path):
-    saved = run(str(short_video), downloads_dir=tmp_path, runtime_dir=tmp_path, run_name="cleaned")
+    saved = run(
+        str(short_video), downloads_dir=tmp_path, runtime_dir=tmp_path, run_name="cleaned", save_high_res=True
+    )
 
     cleaned = cv2.imread(str(saved[0]))
     batch_frames = [cv2.imread(str(path)) for path in sorted((tmp_path / "cleaned" / "high-res" / "meme_001").iterdir())]
@@ -179,8 +201,8 @@ def test_classifier_reading_files_leaves_no_temporary_files(short_video, tmp_pat
     assert len(aborted.paths) == 3
     assert all(path.parent.parent == temp_root for path in complete.paths + aborted.paths)
     assert list(temp_root.iterdir()) == []
-    assert names(tmp_path / "complete") == ["clean", "high-res"]
-    assert names(tmp_path / "aborted") == ["clean", "high-res"]
+    assert names(tmp_path / "complete") == ["clean"]
+    assert names(tmp_path / "aborted") == ["clean"]
     # A batch that matches nothing is combined into nothing.
     assert names(tmp_path / "complete" / "clean") == []
 
@@ -194,6 +216,7 @@ def test_file_names_and_order(short_video, tmp_path):
         run_name="named",
         classifier=classifier,
         save_low_res=True,
+        save_high_res=True,
     )
 
     # At 2 fps on 25 fps video the step is 12 frames (0.48 s): calls 0, 11, 22, … are flagged.
@@ -212,7 +235,7 @@ def test_file_names_and_order(short_video, tmp_path):
 
 
 def test_save_low_res_writes_a_scan_quality_copy_of_each_meme(short_video, tmp_path):
-    kwargs = dict(runtime_dir=tmp_path, fps=1.0)
+    kwargs = dict(runtime_dir=tmp_path, fps=1.0, save_high_res=True)
 
     default = run(str(short_video), run_name="default", classifier=EveryNth(10), **kwargs)
     saved = run(str(short_video), run_name="low", classifier=EveryNth(10), save_low_res=True, **kwargs)
@@ -242,7 +265,7 @@ def test_no_memes(short_video, tmp_path, capsys, save_low_res):
     assert [call.args[1] for call in download_spy.call_args_list] == ["worst"]
     # high-res/ always exists and low-res/ only when asked for; both stay empty.
     run_dir = tmp_path / ".runtime" / "short"
-    expected = ["clean", "high-res", "low-res"] if save_low_res else ["clean", "high-res"]
+    expected = ["clean", "low-res"] if save_low_res else ["clean"]
     assert names(run_dir) == expected
     assert all(names(folder) == [] for folder in run_dir.iterdir())
 
@@ -315,7 +338,7 @@ def test_progress_bars(short_video, tmp_path):
 
 
 def test_rerun_overwrites_and_keeps_other_files(short_video, tmp_path):
-    kwargs = dict(runtime_dir=tmp_path, run_name="again", fps=0.5)
+    kwargs = dict(runtime_dir=tmp_path, run_name="again", fps=0.5, save_high_res=True)
     run_dir = tmp_path / "again"
     first = run(str(short_video), classifier=EveryNth(10), save_low_res=True, **kwargs)
     first_low_res = names(run_dir / "low-res")
@@ -351,8 +374,7 @@ def test_classifier_error_aborts_the_run(short_video, tmp_path):
         run(str(short_video), runtime_dir=tmp_path, run_name="broken", classifier=classifier)
 
     classifier.is_meme.assert_not_called()
-    assert names(tmp_path / "broken") == ["clean", "high-res"]
-    assert names(tmp_path / "broken" / "high-res") == []
+    assert names(tmp_path / "broken") == ["clean"]
     assert names(tmp_path / "broken" / "clean") == []
 
 
@@ -368,6 +390,7 @@ def test_classifier_error_keeps_saved_frames_and_low_res_copies(short_video, tmp
             classifier=classifier,
             save_frames=True,
             save_low_res=True,
+            save_high_res=True,
         )
 
     run_dir = tmp_path / "broken"
@@ -409,7 +432,13 @@ def test_default_run_name(source, expected):
 
 @pytest.mark.parametrize("save_frames", [False, True])
 def test_default_run_finds_exactly_the_known_memes(short_video, tmp_path, save_frames):
-    saved = run(str(short_video), downloads_dir=tmp_path, runtime_dir=tmp_path, save_frames=save_frames)
+    saved = run(
+        str(short_video),
+        downloads_dir=tmp_path,
+        runtime_dir=tmp_path,
+        save_frames=save_frames,
+        save_high_res=True,
+    )
 
     # The two known cards, each as a batch of the 10 consecutive frames it's on screen for.
     run_dir = tmp_path / "short"
@@ -433,6 +462,7 @@ def test_real_url_mock_classifier_run(tmp_path):
         runtime_dir=tmp_path / ".runtime",
         classifier=EveryNth(5),
         save_low_res=True,
+        save_high_res=True,
     )
 
     run_dir = tmp_path / ".runtime" / "AElGyY97k_0"
@@ -454,6 +484,7 @@ def test_real_url_real_classifier_run(tmp_path):
         downloads_dir=downloads_dir,
         runtime_dir=tmp_path / ".runtime",
         save_low_res=True,
+        save_high_res=True,
     )
 
     run_dir = tmp_path / ".runtime" / "AElGyY97k_0"

@@ -75,6 +75,8 @@ so that I can check results (and stop early) without waiting for the whole run.
       of the batch window in AC2 step 6. The batch is clamped at the start of the video, and
       `frames_from` stops early at its end, so a meme near either end gets a shorter batch.
       Every batch folder is created even when no frame in it is flagged, so it can stay empty.
+      **Amended by [batch-cleaning](batch-cleaning.md) AC13:** batch folders exist only with
+      `save_high_res=True`.
 - [x] AC18: Before classifying a best-quality frame, `run` downscales it to the resolution the
       scan frames had (`cv2.INTER_AREA`), so the classifier sees the same frame size in both
       passes. A frame already at that size is passed through unchanged. The **saved** image is
@@ -227,6 +229,9 @@ All resolved:
 
 ## Changelog
 
+- 2026-09-17: Keeping the batch frames became opt-in (`save_high_res`, `--save-high-res`;
+  batch-cleaning AC13), so a default run's only output is the cleaned image per meme. AC2 step 6 and
+  AC17 read as amended there.
 - 2026-09-17: Batch cleaning ([batch-cleaning](batch-cleaning.md),
   [ADR 010](../../decisions/010-batch-cleaning-by-trimmed-mean.md)) amends this spec: `run` gained
   `clean_method`, step 1 also creates `clean/`, each batch is combined into `clean/meme_<n:03d>.png`,

@@ -71,6 +71,7 @@ def run(
     save_low_res: bool = False,
     window_seconds: float = 1.0,
     clean_method: str | None = batch_cleaner.DEFAULT_METHOD,
+    save_high_res: bool = False,
 ) -> list[Path]:
     """Extract the memes in `source` and return one cleaned image path per meme, in video order.
 
@@ -78,12 +79,14 @@ def run(
     `<runtime_dir>/<run_name>/frames/`. Flagged frames are written to `low-res/` when
     `save_low_res=True`.
 
-    Each flagged timestamp becomes one batch under `high-res/meme_<n:03d>/`: every best-quality
-    frame within `window_seconds` either side of it is downscaled to the scan resolution, given to
-    the classifier, and saved at full quality if it too looks like a meme. The batch is then
-    combined into `clean/meme_<n:03d>.png` with `clean_method` (one of `batch_cleaner.METHODS`),
-    which removes most of the glitch bands. With `clean_method=None` nothing is cleaned and the
-    batch frames are returned instead.
+    Each flagged timestamp becomes one batch: every best-quality frame within `window_seconds`
+    either side of it is downscaled to the scan resolution and given to the classifier, and the
+    frames that also look like memes are combined into `clean/meme_<n:03d>.png` with `clean_method`
+    (one of `batch_cleaner.METHODS`), which removes most of the glitch bands.
+
+    The batch frames themselves are kept only with `save_high_res=True`, which writes them to
+    `high-res/meme_<n:03d>/`. With `clean_method=None` nothing is cleaned and those frames are
+    returned instead, so that combination requires `save_high_res=True`.
     """
     if classifier is None:
         if classifier_type == "heuristic":
@@ -94,6 +97,8 @@ def run(
             raise ValueError(f"classifier_type must be 'heuristic' or 'claude', not {classifier_type!r}")
     if clean_method is not None and clean_method not in batch_cleaner.METHODS:
         raise ValueError(f"clean_method must be None or one of {batch_cleaner.METHODS}, not {clean_method!r}")
+    if clean_method is None and not save_high_res:
+        raise ValueError("nothing would be saved: pass a clean_method, or save_high_res=True")
     run_dir = runtime_dir / (run_name or default_run_name(source))
     frames_dir = run_dir / "frames"
     high_res_dir = run_dir / "high-res"
@@ -101,7 +106,8 @@ def run(
     clean_dir = run_dir / "clean"
     if save_frames:
         frames_dir.mkdir(parents=True, exist_ok=True)
-    high_res_dir.mkdir(parents=True, exist_ok=True)
+    if save_high_res:
+        high_res_dir.mkdir(parents=True, exist_ok=True)
     if save_low_res:
         low_res_dir.mkdir(parents=True, exist_ok=True)
     if clean_method is not None:
@@ -129,17 +135,19 @@ def run(
     saved: list[Path] = []
     for meme_number, (_, timestamp) in enumerate(tqdm(flagged, desc="Extracting memes"), start=1):
         meme_dir = high_res_dir / f"meme_{meme_number:03d}"
-        meme_dir.mkdir(parents=True, exist_ok=True)
+        if save_high_res:
+            meme_dir.mkdir(parents=True, exist_ok=True)
         start = max(0.0, timestamp - window_seconds)
         batch: list[np.ndarray] = []
         for index, frame_timestamp, frame in frames_from(extract_path, start, count):
             if not classifier.is_meme_frame(_to_scan_size(frame, scan_shape)):
                 continue
-            meme_path = meme_dir / _frame_name(index, frame_timestamp)
-            _write_image(meme_path, frame)
             batch.append(frame)
-            if clean_method is None:
-                saved.append(meme_path)
+            if save_high_res:
+                meme_path = meme_dir / _frame_name(index, frame_timestamp)
+                _write_image(meme_path, frame)
+                if clean_method is None:
+                    saved.append(meme_path)
         if clean_method is not None and batch:
             clean_path = clean_dir / f"meme_{meme_number:03d}.png"
             _write_image(clean_path, batch_cleaner.combine(batch, clean_method))

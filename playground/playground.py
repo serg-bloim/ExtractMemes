@@ -203,6 +203,7 @@ def test_full_video_every_method():
         runtime_dir=run_dir.parent,
         run_name=run_dir.name,
         clean_method=None,
+        save_high_res=True,
     )
     print(f"{len(saved)} frames in {len(list((run_dir / 'high-res').iterdir()))} batches")
     _clean_every_method(run_dir)

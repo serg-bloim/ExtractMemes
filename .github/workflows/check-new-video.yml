@@ -1,0 +1,65 @@
+name: Check for new video
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install yt-dlp and the local package, without its heavy dependencies
+        run: |
+          pip install yt-dlp
+          pip install --no-deps -e .
+
+      - name: Find the oldest unprocessed video
+        id: find
+        run: |
+          video_id=$(python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}")
+          echo "video_id=$video_id" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: steps.find.outputs.video_id != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install the rest of ExtractMemes' dependencies
+        if: steps.find.outputs.video_id != ''
+        run: pip install -e .
+
+      - name: Run the pipeline on the new video
+        if: steps.find.outputs.video_id != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          extract-memes "https://youtu.be/${{ steps.find.outputs.video_id }}" \
+            --classifier heuristic \
+            --upload-to telegram
+
+      - name: Mark the video as processed
+        if: steps.find.outputs.video_id != ''
+        run: python -m extract_memes.playlist_watch mark-processed "${{ steps.find.outputs.video_id }}"
+
+      - name: Commit and push the updated processed-videos file
+        if: steps.find.outputs.video_id != ''
+        run: |
+          if ! git diff --quiet -- data/processed_vids.txt; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add data/processed_vids.txt
+            git commit -m "Mark ${{ steps.find.outputs.video_id }} as processed"
+            git push
+          fi

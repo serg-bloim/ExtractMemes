@@ -3,6 +3,8 @@
 from pathlib import Path
 from typing import Literal
 
+from tqdm import tqdm
+
 # yt-dlp format selectors for each quality tier. YouTube no longer serves pre-muxed formats, so pick
 # the worst/best format that contains video (audio isn't needed). See ADR 006.
 FORMAT_SELECTORS: dict[str, str] = {
@@ -11,11 +13,26 @@ FORMAT_SELECTORS: dict[str, str] = {
 }
 
 
+def _progress_hook(bar: tqdm):
+    """Drive `bar` from yt-dlp's progress_hooks events."""
+
+    def hook(status: dict) -> None:
+        if status["status"] == "downloading":
+            total = status.get("total_bytes") or status.get("total_bytes_estimate")
+            if total:
+                bar.total = total
+            bar.update(status.get("downloaded_bytes", 0) - bar.n)
+        elif status["status"] == "finished" and bar.total:
+            bar.update(bar.total - bar.n)
+
+    return hook
+
+
 def download(source: str, quality: Literal["worst", "best"], dest_dir: Path) -> Path:
     """Return a local video file for `source` at the requested quality tier.
 
     An existing local file is returned unchanged. Anything else is downloaded with yt-dlp to
-    `dest_dir/<video id>_<quality>.<ext>`.
+    `dest_dir/<video id>_<quality>.<ext>`, showing a `tqdm` progress bar.
     """
     if Path(source).is_file():
         return Path(source)
@@ -28,16 +45,18 @@ def download(source: str, quality: Literal["worst", "best"], dest_dir: Path) -> 
     # Puts ffmpeg on PATH so yt-dlp can remux HLS output into a real MP4 container.
     static_ffmpeg.add_paths()
 
-    options = {
-        "format": FORMAT_SELECTORS[quality],
-        "outtmpl": str(dest_dir / f"%(id)s_{quality}.%(ext)s"),
-        "js_runtimes": {"node": {}},
-        "quiet": True,
-        "noprogress": True,
-    }
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(source, download=True)
-            return Path(ydl.prepare_filename(info))
-    except Exception as exc:
-        raise RuntimeError(f"Failed to download {source!r} at {quality!r} quality: {exc}") from exc
+    with tqdm(desc=f"Downloading ({quality})", unit="B", unit_scale=True, unit_divisor=1024) as bar:
+        options = {
+            "format": FORMAT_SELECTORS[quality],
+            "outtmpl": str(dest_dir / f"%(id)s_{quality}.%(ext)s"),
+            "js_runtimes": {"node": {}},
+            "quiet": True,
+            "noprogress": True,
+            "progress_hooks": [_progress_hook(bar)],
+        }
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(source, download=True)
+                return Path(ydl.prepare_filename(info))
+        except Exception as exc:
+            raise RuntimeError(f"Failed to download {source!r} at {quality!r} quality: {exc}") from exc

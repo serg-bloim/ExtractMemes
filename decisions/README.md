@@ -84,3 +84,4 @@ Links to related specs, external resources, or prior discussions.
 | 014 | [Upload Extracted Memes to Telegram as a Pipeline Stage](014-telegram-upload-as-pipeline-stage.md) | Accepted; refined by 015 | 2026-09-18 |
 | 015 | [Deliver Memes to Telegram as a Link Message Plus Chunked Reply Albums](015-telegram-album-and-link-delivery.md) | Accepted | 2026-09-18 |
 | 016 | [Watch a Playlist via a Manually-Triggered GitHub Actions Workflow](016-scheduled-playlist-watcher.md) | Accepted | 2026-09-18 |
+| 017 | [Reaching a LAN Proxy from Python Under macOS Local Network Privacy](017-macos-local-network-proxy-relay.md) | Accepted | 2026-09-18 |

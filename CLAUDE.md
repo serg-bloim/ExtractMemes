@@ -68,6 +68,9 @@ ExtractMemes/
 ├── playground/
 │   └── playground.py             ← Manual IDE entry points (not collected by pytest)
 ├── run_real_video.py             ← Manual runner: real URL, real or fake classifier
+├── tools/                        ← Host-environment utilities, outside the package
+│   └── lan_proxy_relay.py        ← Loopback→LAN TCP relay; lets a Homebrew interpreter reach a
+│                                   LAN proxy on macOS (see ADR 017). Runs under /usr/bin/python3.
 ├── sample/                       ← Local video fixtures, supplied by hand (gitignored)
 ├── data/
 │   └── labeled_dataset/{positive,negative}/ ← Hand-labeled 256x144 frames for classifier
@@ -169,6 +172,12 @@ When asked to write a spec, produce a complete file following `specs/_TEMPLATE.m
 - **External prerequisites** (not pip-installable):
   - the `claude` CLI, installed and authenticated, for real classification;
   - Node.js on `PATH`, for YouTube URLs.
+  - On macOS only, for a proxy on the **local network**: macOS gates LAN connections behind the
+    Local Network permission, held per binary identity rather than inherited from the terminal.
+    The Homebrew interpreter currently holds it, so a LAN proxy address works directly. If it ever
+    fails with `EHOSTUNREACH` ("No route to host") while `curl` works from the same shell, that
+    gate is the reason: start `tools/lan_proxy_relay.py` and use `socks5h://127.0.0.1:1080`
+    instead, since loopback is exempt. See ADR 017. Not applicable on Linux, in Docker, or in CI.
 
   No system `ffmpeg` is needed: OpenCV bundles a decoder, and `static-ffmpeg` supplies ffmpeg to
   yt-dlp. See ADR 006.

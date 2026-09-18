@@ -68,6 +68,33 @@ def test_url_download_options(tmp_path, fake_ytdl, quality, selector):
     assert result == Path("/fake/abc123_worst.mp4")
 
 
+def test_url_download_passes_proxy_through(tmp_path, fake_ytdl):
+    youtube_dl, _ = fake_ytdl
+
+    download(TEST_VIDEO_URL, "worst", tmp_path, proxy="socks5h://127.0.0.1:1080")
+
+    options = ydl_options(youtube_dl)
+    assert options["proxy"] == "socks5h://127.0.0.1:1080"
+
+
+def test_url_download_omits_proxy_when_not_given(tmp_path, fake_ytdl):
+    youtube_dl, _ = fake_ytdl
+
+    download(TEST_VIDEO_URL, "worst", tmp_path)
+
+    options = ydl_options(youtube_dl)
+    assert "proxy" not in options
+
+
+def test_local_file_ignores_proxy(tmp_path, fake_ytdl):
+    youtube_dl, _ = fake_ytdl
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"not really a video")
+
+    assert download(str(video), "worst", tmp_path, proxy="socks5h://127.0.0.1:1080") == video
+    youtube_dl.assert_not_called()
+
+
 def test_url_download_creates_dest_dir(tmp_path, fake_ytdl):
     dest_dir = tmp_path / "nested" / "downloads"
 

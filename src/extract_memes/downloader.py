@@ -28,11 +28,18 @@ def _progress_hook(bar: tqdm):
     return hook
 
 
-def download(source: str, quality: Literal["worst", "best"], dest_dir: Path) -> Path:
+def download(
+    source: str,
+    quality: Literal["worst", "best"],
+    dest_dir: Path,
+    proxy: str | None = None,
+) -> Path:
     """Return a local video file for `source` at the requested quality tier.
 
     An existing local file is returned unchanged. Anything else is downloaded with yt-dlp to
-    `dest_dir/<video id>_<quality>.<ext>`, showing a `tqdm` progress bar.
+    `dest_dir/<video id>_<quality>.<ext>`, showing a `tqdm` progress bar. `proxy` (e.g.
+    `socks5h://127.0.0.1:1080` or an `http://` URL), when given, is passed straight through to
+    yt-dlp; it's ignored for a local-file source, same as `quality` and `dest_dir`.
     """
     if Path(source).is_file():
         return Path(source)
@@ -54,6 +61,8 @@ def download(source: str, quality: Literal["worst", "best"], dest_dir: Path) -> 
             "noprogress": True,
             "progress_hooks": [_progress_hook(bar)],
         }
+        if proxy:
+            options["proxy"] = proxy
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
                 info = ydl.extract_info(source, download=True)

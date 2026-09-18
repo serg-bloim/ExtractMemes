@@ -37,7 +37,7 @@ from pathlib import Path
 
 # The proxy itself. If this fails with EHOSTUNREACH on macOS, the preflight below will tell you to
 # start tools/lan_proxy_relay.py and switch this to "socks5h://127.0.0.1:1080".
-PROXY = "socks5h://192.168.1.99:25344"
+PROXY = "socks5h://vareniki.duckdns.org:5577"
 
 URL = "https://youtu.be/AElGyY97k_0"
 DEST_DIR = Path(".runtime") / "proxy_test"

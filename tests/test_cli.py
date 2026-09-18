@@ -28,7 +28,8 @@ def test_no_arguments_prints_usage(command, tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_defaults_are_passed_to_pipeline(capsys):
+def test_defaults_are_passed_to_pipeline(capsys, monkeypatch):
+    monkeypatch.delenv("EXTRACT_MEMES_PROXY", raising=False)
     with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
         main(["sample/short.mp4"])
 
@@ -51,6 +52,7 @@ def test_defaults_are_passed_to_pipeline(capsys):
         upload_to=None,
         telegram_bot_token=None,
         telegram_chat_id=None,
+        proxy=None,
     )
     assert capsys.readouterr().out == ""
 
@@ -76,6 +78,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
             "--upload-to", "telegram",
             "--telegram-bot-token", "token123",
             "--telegram-chat-id", "chat456",
+            "--proxy", "socks5h://127.0.0.1:1080",
         ])  # fmt: skip
 
     run.assert_called_once_with(
@@ -97,6 +100,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         upload_to="telegram",
         telegram_bot_token="token123",
         telegram_chat_id="chat456",
+        proxy="socks5h://127.0.0.1:1080",
     )
     assert capsys.readouterr().out.splitlines() == [str(path) for path in saved]
 
@@ -220,6 +224,33 @@ def test_upload_to_telegram_falls_back_to_env_vars(monkeypatch):
     assert run.call_args.kwargs["upload_to"] == "telegram"
     assert run.call_args.kwargs["telegram_bot_token"] is None
     assert run.call_args.kwargs["telegram_chat_id"] is None
+
+
+def test_proxy_flag_reaches_the_pipeline(monkeypatch):
+    monkeypatch.delenv("EXTRACT_MEMES_PROXY", raising=False)
+
+    with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
+        main(["sample/short.mp4", "--proxy", "socks5h://127.0.0.1:1080"])
+
+    assert run.call_args.kwargs["proxy"] == "socks5h://127.0.0.1:1080"
+
+
+def test_proxy_falls_back_to_env_var(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MEMES_PROXY", "socks5h://127.0.0.1:1080")
+
+    with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
+        main(["sample/short.mp4"])
+
+    assert run.call_args.kwargs["proxy"] == "socks5h://127.0.0.1:1080"
+
+
+def test_proxy_flag_overrides_env_var(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MEMES_PROXY", "http://from-env:8080")
+
+    with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
+        main(["sample/short.mp4", "--proxy", "http://from-flag:8080"])
+
+    assert run.call_args.kwargs["proxy"] == "http://from-flag:8080"
 
 
 def test_upload_to_telegram_with_no_images_is_rejected(monkeypatch):

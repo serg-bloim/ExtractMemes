@@ -106,6 +106,7 @@ def run(
     upload_to: Literal["telegram"] | None = None,
     telegram_bot_token: str | None = None,
     telegram_chat_id: str | None = None,
+    proxy: str | None = None,
 ) -> list[Path]:
     """Extract the memes in `source` and return one cleaned image path per meme, in video order.
 
@@ -171,7 +172,7 @@ def run(
     if clean_method is not None and not no_images:
         clean_dir.mkdir(parents=True, exist_ok=True)
 
-    scan_path = download(source, "worst", downloads_dir)
+    scan_path = download(source, "worst", downloads_dir, proxy=proxy)
     flagged: list[tuple[int, float]] = []
     scan_shape = (0, 0)
     for index, timestamp, frame in tqdm(sample_frames(scan_path, fps=fps), desc="Scanning frames"):
@@ -199,7 +200,7 @@ def run(
             )
         return []
 
-    extract_path = download(source, "best", downloads_dir)
+    extract_path = download(source, "best", downloads_dir, proxy=proxy)
     count = round(2 * window_seconds * _native_fps(extract_path)) + 1
     saved: list[Path] = []
     timecodes: list[str] = []

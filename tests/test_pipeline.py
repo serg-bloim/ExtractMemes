@@ -286,6 +286,22 @@ def test_no_memes(short_video, tmp_path, capsys, save_low_res):
     assert all(names(folder) == [] for folder in run_dir.iterdir())
 
 
+def test_proxy_is_forwarded_to_both_downloads(short_video, tmp_path):
+    with mock.patch("extract_memes.pipeline.download", wraps=download) as download_spy:
+        run(
+            str(short_video),
+            downloads_dir=tmp_path / "downloads",
+            runtime_dir=tmp_path / ".runtime",
+            classifier=EveryNth(10),
+            proxy="socks5h://127.0.0.1:1080",
+        )
+
+    assert [call.kwargs["proxy"] for call in download_spy.call_args_list] == [
+        "socks5h://127.0.0.1:1080",
+        "socks5h://127.0.0.1:1080",
+    ]
+
+
 def test_default_classifier_is_heuristic(short_video, tmp_path):
     with (
         mock.patch("extract_memes.pipeline.HeuristicClassifier") as heuristic_classifier,

@@ -86,6 +86,20 @@ can validate the pipeline against `sample/short.mp4` without a network call.
       file exists, is non-empty, has suffix `.mp4`, starts with an MP4 `ftyp` box (bytes 4–8 are
       `ftyp`), opens with `cv2.VideoCapture`, and the `best` file's frame height is at least the
       `worst` file's.
+- [x] AC12: `download` accepts an optional `proxy: str | None = None` keyword argument. When set
+      (and only on the URL path — AC2's local-file passthrough ignores it, same as `quality` and
+      `dest_dir`), it's passed straight through as yt-dlp's `proxy` option, e.g.
+      `socks5h://127.0.0.1:1080` for the LAN relay in
+      [ADR 017](../../decisions/017-macos-local-network-proxy-relay.md), or an `http://` URL. No
+      validation of the proxy URL's scheme or reachability — yt-dlp's own error surfaces through
+      AC8's `RuntimeError` wrapping if it's bad. `pipeline.run` gains a matching `proxy: str | None
+      = None` parameter and passes it to both the `"worst"` and `"best"` downloads (same proxy for
+      both — the LAN relay in ADR 017 is a fixed local address, not a per-quality setting). The CLI
+      gains `--proxy`, falling back to the `EXTRACT_MEMES_PROXY` environment variable when unset
+      (same fallback pattern as `--telegram-bot-token`/`TELEGRAM_BOT_TOKEN`), default `None` (no
+      proxy — yt-dlp's own `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` environment handling still applies
+      underneath when neither is set, since that's yt-dlp's existing default behavior, unchanged by
+      this AC).
 
 ## Out of Scope
 
@@ -193,4 +207,20 @@ All resolved:
     events, the `total_bytes_estimate` fallback, topping off on `"finished"`, and a `"finished"`
     event with nothing known yet leaving the bar untouched).
   - **Verified:** `pytest -m "not slow"` — 183 passed. All ACs checked; status remains
+    `implemented`.
+- 2026-09-18: The user asked whether yt-dlp downloads could go through a proxy, in the context of
+  reaching a LAN SOCKS5 proxy ([ADR 017](../../decisions/017-macos-local-network-proxy-relay.md)).
+  Added AC12: `download(..., proxy: str | None = None)` passes `proxy` straight through as yt-dlp's
+  `proxy` option on the URL path only; `pipeline.run` gained a matching `proxy` parameter forwarded
+  to both the `"worst"` and `"best"` downloads; the CLI gained `--proxy`, falling back to the
+  `EXTRACT_MEMES_PROXY` env var (same pattern as the Telegram token/chat-id flags).
+  - **Downloader:** `proxy` param on `download`; `options["proxy"] = proxy` set only when truthy.
+  - **Pipeline:** `run(..., proxy: str | None = None)`, forwarded to both `download` calls.
+  - **CLI:** `--proxy` argument in `build_parser`; `main` resolves it as
+    `args.proxy or os.environ.get("EXTRACT_MEMES_PROXY")` and passes it to `pipeline.run`.
+  - **Tests:** offline tests in `test_downloader.py` (proxy passed through on the URL path, omitted
+    when unset, ignored for a local-file source); `test_pipeline.py` (`proxy` forwarded to both
+    downloads via a `download` spy); `test_cli.py` (flag reaches the pipeline, env-var fallback,
+    flag overrides env var, and the two existing call-signature tests updated for the new kwarg).
+  - **Verified:** `pytest -m "not slow"` — 200 passed. All ACs checked; status remains
     `implemented`.

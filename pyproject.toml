@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "extract-memes"
+version = "0.1.0"
+description = "Extract meme images from YouTube videos known to contain them."
+requires-python = ">=3.14"
+dependencies = [
+    "yt-dlp",
+    "static-ffmpeg",
+    "opencv-python-headless",
+    "numpy",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+extract-memes = "extract_memes.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]

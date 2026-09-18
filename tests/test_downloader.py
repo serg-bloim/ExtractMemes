@@ -1,11 +1,13 @@
 import importlib
+import io
 from pathlib import Path
 from unittest import mock
 
 import pytest
+from tqdm import tqdm
 
 from extract_memes import downloader
-from extract_memes.downloader import download
+from extract_memes.downloader import _progress_hook, download
 
 TEST_VIDEO_URL = "https://youtu.be/AElGyY97k_0"
 
@@ -58,6 +60,8 @@ def test_url_download_options(tmp_path, fake_ytdl, quality, selector):
     assert options["js_runtimes"] == {"node": {}}
     assert options["quiet"] is True
     assert options["noprogress"] is True
+    assert len(options["progress_hooks"]) == 1
+    assert callable(options["progress_hooks"][0])
     add_paths.assert_called_once()
     ydl = youtube_dl.return_value.__enter__.return_value
     ydl.extract_info.assert_called_once_with(TEST_VIDEO_URL, download=True)
@@ -83,6 +87,42 @@ def test_yt_dlp_failure_raises_runtime_error(tmp_path, fake_ytdl):
 
     assert "best" in str(excinfo.value)
     assert excinfo.value.__cause__ is error
+
+
+def test_progress_hook_updates_the_bar_from_downloading_and_finished_events():
+    bar = tqdm(file=io.StringIO())
+    hook = _progress_hook(bar)
+
+    hook({"status": "downloading", "total_bytes": 1000, "downloaded_bytes": 250})
+    assert (bar.total, bar.n) == (1000, 250)
+
+    hook({"status": "downloading", "total_bytes": 1000, "downloaded_bytes": 600})
+    assert bar.n == 600
+
+    hook({"status": "finished"})
+    assert bar.n == bar.total == 1000
+
+    bar.close()
+
+
+def test_progress_hook_falls_back_to_the_estimated_total():
+    bar = tqdm(file=io.StringIO())
+    hook = _progress_hook(bar)
+
+    hook({"status": "downloading", "total_bytes_estimate": 500, "downloaded_bytes": 100})
+
+    assert (bar.total, bar.n) == (500, 100)
+    bar.close()
+
+
+def test_progress_hook_ignores_a_finished_event_with_no_known_total():
+    bar = tqdm(file=io.StringIO())
+    hook = _progress_hook(bar)
+
+    hook({"status": "finished"})
+
+    assert (bar.total, bar.n) == (None, 0)
+    bar.close()
 
 
 def test_importing_module_does_not_set_up_ffmpeg():

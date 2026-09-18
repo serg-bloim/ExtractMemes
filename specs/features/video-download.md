@@ -2,7 +2,7 @@
 title: "Video Download"
 status: implemented
 created: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-18
 author: ""
 depends-on: ["project-setup"]
 ---
@@ -49,7 +49,15 @@ can validate the pipeline against `sample/short.mp4` without a network call.
       and at `best` produces two distinct files, and both are kept. The returned `Path` is the
       final file on disk (`ydl.prepare_filename(info)`).
 - [x] AC5: The yt-dlp options include `js_runtimes={"node": {}}` (Node.js solves YouTube's JS
-      challenges), `quiet=True`, and `noprogress=True`.
+      challenges), `quiet=True`, and `noprogress=True` — yt-dlp's own console output stays
+      suppressed; progress is shown by AC11 instead.
+- [x] AC11: `download` shows a `tqdm` progress bar for a URL download, matching the
+      `pipeline.run` convention of a `tqdm` bar per stage (extraction-pipeline AC6). The options
+      include `progress_hooks=[hook]`, where `hook` updates the bar from yt-dlp's `"downloading"`
+      events (`downloaded_bytes` against `total_bytes`, falling back to `total_bytes_estimate`
+      when the real total isn't known yet) and tops the bar off to its total on the `"finished"`
+      event. The bar's `desc` is `Downloading (worst)` / `Downloading (best)`. A local-file source
+      (AC2) shows no bar — there's nothing to download.
 - [x] AC6: Right before a URL download, `static_ffmpeg.add_paths()` is called so yt-dlp has ffmpeg
       and remuxes HLS output into a real MP4 container. Importing `extract_memes.downloader` (or
       anything that imports it, including the CLI's `--help`) and the local-file path of AC2
@@ -67,7 +75,12 @@ can validate the pipeline against `sample/short.mp4` without a network call.
       `js_runtimes` is set;
       `dest_dir` is created;
       a yt-dlp failure raises `RuntimeError` mentioning the source;
-      and importing the module doesn't call `add_paths`.
+      importing the module doesn't call `add_paths`;
+      and the yt-dlp options carry exactly one callable in `progress_hooks` (AC11).
+      `_progress_hook`'s own behavior (bar total/position from `"downloading"` events, the
+      `total_bytes_estimate` fallback, topping off on `"finished"`, and a `"finished"` event with
+      no known total leaving the bar untouched) is tested directly against a real `tqdm` instance,
+      without going through yt-dlp at all.
 - [x] AC10: Tests marked `@pytest.mark.slow` download the permanent test video
       `https://youtu.be/AElGyY97k_0` into `tmp_path` at both qualities and assert: each returned
       file exists, is non-empty, has suffix `.mp4`, starts with an MP4 `ftyp` box (bytes 4–8 are
@@ -77,7 +90,6 @@ can validate the pipeline against `sample/short.mp4` without a network call.
 ## Out of Scope
 
 - Retry or backoff on network failure.
-- Download progress reporting (`noprogress=True`).
 - Audio or subtitle downloads.
 - Explicit caching logic. By default, yt-dlp already skips a download when the output file exists
   ("has already been downloaded"). Because file names are deterministic (`<id>_<quality>.<ext>`),
@@ -89,7 +101,13 @@ can validate the pipeline against `sample/short.mp4` without a network call.
 ## Technical Notes
 
 - **Runtime dependencies introduced by this spec:** `yt-dlp` (known-good 2026.8.19) and
-  `static-ffmpeg` (known-good 3.0).
+  `static-ffmpeg` (known-good 3.0). AC11's progress bar needs no new dependency: `tqdm` was already
+  declared for extraction-pipeline's scan/extract bars.
+- **Why a `tqdm` bar via `progress_hooks` instead of just flipping `noprogress=False`** (AC11):
+  yt-dlp's own built-in progress renderer writes its own formatted line straight to the terminal,
+  inconsistent with every other stage's `tqdm` bar. Driving a `tqdm` bar from `progress_hooks`
+  keeps one consistent progress-reporting style for the whole run, and it works whether or not
+  `quiet`/`noprogress` are set, since it doesn't depend on yt-dlp's own console output at all.
 - **External prerequisite for URL sources:** Node.js on `PATH` (known-good v26.8.2). No system
   `ffmpeg`, and no `deno`.
 - Import `yt_dlp` and `static_ffmpeg` **inside** the URL branch (lazy import), so local-file runs
@@ -163,3 +181,16 @@ All resolved:
   a real download writes `AElGyY97k_0_worst.mp4` (152831 bytes, `ftyp` header) with no yt-dlp
   warnings; a mistyped local path raises `RuntimeError` chained from `DownloadError`. All ACs
   checked; status `implemented`.
+- 2026-09-18: The user asked for a progress bar during yt-dlp downloads — previously explicitly
+  out of scope (`noprogress=True`, no reporting). Added AC11: a `tqdm` bar per download, driven by
+  a new `_progress_hook` via yt-dlp's `progress_hooks` option, matching the `tqdm`-per-stage
+  convention already used for scanning and extraction rather than yt-dlp's own console output.
+  Removed the stale "no progress reporting" line from Out of Scope.
+  - **Downloader:** `_progress_hook(bar)` in `src/extract_memes/downloader.py`, wired into
+    `download`'s yt-dlp options as `progress_hooks=[hook]`; `desc=f"Downloading ({quality})"`.
+  - **Tests:** `test_url_download_options` asserts exactly one callable in `progress_hooks`; three
+    new direct tests exercise `_progress_hook` against a real `tqdm` instance (`"downloading"`
+    events, the `total_bytes_estimate` fallback, topping off on `"finished"`, and a `"finished"`
+    event with nothing known yet leaving the bar untouched).
+  - **Verified:** `pytest -m "not slow"` — 183 passed. All ACs checked; status remains
+    `implemented`.

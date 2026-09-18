@@ -16,6 +16,10 @@ from extract_memes.frame_extractor import frames_from, sample_frames
 from extract_memes.heuristic_classifier import HeuristicClassifier
 
 
+MEME_LABEL = "Мем"
+"""The title each timecode line carries: YouTube needs a title after the timestamp."""
+
+
 def default_run_name(source: str) -> str:
     """Derive a file-system-safe run name from a URL or local path."""
     if "://" in source:
@@ -46,6 +50,14 @@ def format_timecode(seconds: float) -> str:
     if hours:
         return f"{hours}:{minutes:02d}:{secs:02d}"
     return f"{minutes}:{secs:02d}"
+
+
+def _write_timecodes(run_dir: Path, timecodes: list[str]) -> None:
+    """Write one timecode line per meme to `timecodes.txt`, and say where it went."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    path = run_dir / "timecodes.txt"
+    path.write_text("".join(f"{line}\n" for line in timecodes), encoding="utf-8")
+    print(f"Wrote {len(timecodes)} timecodes to {path}")
 
 
 def _write_image(path: Path, frame: np.ndarray) -> None:
@@ -87,6 +99,7 @@ def run(
     save_high_res: bool = False,
     save_timecodes: bool = False,
     timecode_offset: float = 0.0,
+    no_images: bool = False,
 ) -> list[Path]:
     """Extract the memes in `source` and return one cleaned image path per meme, in video order.
 
@@ -102,6 +115,10 @@ def run(
     With `save_timecodes=True`, `timecodes.txt` lists the start of each meme — the earliest
     batch frame, shifted by `timecode_offset` seconds and clamped at zero — as `<timecode> Meme <n>`.
 
+    With `no_images=True` the run ends after the scan: no best-quality copy is downloaded and no
+    image is written, so the timecodes are the scan timestamps of the flagged frames and `[]` is
+    returned. `clean_method` is then ignored.
+
     The batch frames themselves are kept only with `save_high_res=True`, which writes them to
     `high-res/meme_<n:03d>/`. With `clean_method=None` nothing is cleaned and those frames are
     returned instead, so that combination requires `save_high_res=True`.
@@ -115,7 +132,15 @@ def run(
             raise ValueError(f"classifier_type must be 'heuristic' or 'claude', not {classifier_type!r}")
     if clean_method is not None and clean_method not in batch_cleaner.METHODS:
         raise ValueError(f"clean_method must be None or one of {batch_cleaner.METHODS}, not {clean_method!r}")
-    if clean_method is None and not save_high_res:
+    if no_images:
+        if save_high_res:
+            raise ValueError("no_images and save_high_res contradict each other")
+        if not (save_timecodes or save_low_res or save_frames):
+            raise ValueError(
+                "nothing would be saved: with no_images, pass save_timecodes=True, "
+                "save_low_res=True, or save_frames=True"
+            )
+    elif clean_method is None and not save_high_res:
         raise ValueError("nothing would be saved: pass a clean_method, or save_high_res=True")
     run_dir = runtime_dir / (run_name or default_run_name(source))
     frames_dir = run_dir / "frames"
@@ -128,7 +153,7 @@ def run(
         high_res_dir.mkdir(parents=True, exist_ok=True)
     if save_low_res:
         low_res_dir.mkdir(parents=True, exist_ok=True)
-    if clean_method is not None:
+    if clean_method is not None and not no_images:
         clean_dir.mkdir(parents=True, exist_ok=True)
 
     scan_path = download(source, "worst", downloads_dir)
@@ -146,6 +171,17 @@ def run(
 
     if not flagged:
         print("No memes found.")
+        return []
+
+    if no_images:
+        if save_timecodes:
+            _write_timecodes(
+                run_dir,
+                [
+                    f"{format_timecode(timestamp + timecode_offset)} {MEME_LABEL} {meme_number}"
+                    for meme_number, (_, timestamp) in enumerate(flagged, start=1)
+                ],
+            )
         return []
 
     extract_path = download(source, "best", downloads_dir)
@@ -171,11 +207,11 @@ def run(
                 if clean_method is None:
                     saved.append(meme_path)
         if batch:
-            timecodes.append(f"{format_timecode(batch_start + timecode_offset)} Мем {meme_number}")
+            timecodes.append(f"{format_timecode(batch_start + timecode_offset)} {MEME_LABEL} {meme_number}")
         if clean_method is not None and batch:
             clean_path = clean_dir / f"meme_{meme_number:03d}.png"
             _write_image(clean_path, batch_cleaner.combine(batch, clean_method))
             saved.append(clean_path)
     if save_timecodes:
-        (run_dir / "timecodes.txt").write_text("".join(f"{line}\n" for line in timecodes), encoding="utf-8")
+        _write_timecodes(run_dir, timecodes)
     return saved

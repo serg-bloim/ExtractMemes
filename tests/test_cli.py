@@ -47,6 +47,7 @@ def test_defaults_are_passed_to_pipeline(capsys):
         save_high_res=False,
         save_timecodes=False,
         timecode_offset=0.0,
+        no_images=False,
     )
     assert capsys.readouterr().out == ""
 
@@ -86,6 +87,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         save_high_res=True,
         save_timecodes=True,
         timecode_offset=-1.5,
+        no_images=False,
     )
     assert capsys.readouterr().out.splitlines() == [str(path) for path in saved]
 
@@ -120,6 +122,7 @@ def test_help_describes_the_output_folders(capsys, monkeypatch):
     assert "<runtime-dir>/<run-name>/clean/" in help_text
     assert "<runtime-dir>/<run-name>/high-res/meme_<n>/" in help_text
     assert "<runtime-dir>/<run-name>/timecodes.txt" in help_text
+    assert "--no-images" in help_text
 
 
 def test_clean_method_none_disables_cleaning():
@@ -153,5 +156,19 @@ def test_invalid_classifier_is_rejected():
 def test_invalid_timecode_offset_is_rejected():
     with pytest.raises(SystemExit) as excinfo:
         main(["sample/short.mp4", "--timecode-offset", "soon"])
+
+    assert excinfo.value.code == 2
+
+
+def test_no_images_is_passed_to_pipeline():
+    with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
+        main(["sample/short.mp4", "--no-images", "--save-timecodes"])
+
+    assert run.call_args.kwargs["no_images"] is True
+
+
+def test_no_images_with_save_high_res_is_rejected():
+    with pytest.raises(SystemExit) as excinfo:
+        main(["sample/short.mp4", "--no-images", "--save-high-res"])
 
     assert excinfo.value.code == 2

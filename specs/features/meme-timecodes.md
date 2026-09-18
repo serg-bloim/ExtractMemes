@@ -39,7 +39,7 @@ that a link or chapter starts just before the meme appears rather than exactly o
 - [x] AC3: With `save_timecodes=True`, `run` writes `<runtime_dir>/<run_name>/timecodes.txt` after
       extraction, containing one line per meme that produced at least one accepted frame, in meme
       order: `<timecode> Мем <n>`, where `<n>` is the same 1-based meme number used for
-      `clean/meme_<n:03d>.png` and `high-res/meme_<n:03d>/` (unpadded in the line, e.g. `Meme 7`).
+      `clean/meme_<n:03d>.png` and `high-res/meme_<n:03d>/` (unpadded in the line, e.g. `Мем 7`). The label is `pipeline.MEME_LABEL`, `Мем`.
       The file ends with a newline and is written with UTF-8 encoding.
 - [x] AC4: A timecode is the start time in whole seconds (truncated), formatted `M:SS` — with no
       leading zero on the minutes — and `H:MM:SS` once the time reaches one hour. Examples:
@@ -64,7 +64,7 @@ that a link or chapter starts just before the meme appears rather than exactly o
 
 - [x] AC11: `tests/test_pipeline.py`: a local run with `save_timecodes=True` writes
       `timecodes.txt` with one line per returned meme, each matching
-      `^(\d+:)?\d?\d:\d\d Meme \d+$`, numbered `Meme 1 … Meme N` in order, and with
+      `^(\d+:)?\d?\d:\d\d <label> \d+$`, numbered `Мем 1 … Мем N` in order, and with
       non-decreasing times. A run without the flag writes no such file, and leaves an existing one
       untouched. The no-memes run writes none.
 - [x] AC12: `tests/test_pipeline.py`: a run with `timecode_offset=-1.0` gives times exactly one
@@ -79,7 +79,7 @@ that a link or chapter starts just before the meme appears rather than exactly o
 
 ## Out of Scope
 
-- **Chapter titles beyond `Meme <n>`.** Naming what a meme actually is would need a captioning
+- **Chapter titles beyond the `Мем <n>` label.** Naming what a meme actually is would need a captioning
   pass.
 - **A `0:00 Intro` first line.** YouTube requires chapters to start at `0:00`; adding a synthetic
   first chapter is the user's job when pasting.
@@ -97,7 +97,7 @@ that a link or chapter starts just before the meme appears rather than exactly o
   re-classifies every full-quality frame in a ±`window_seconds` window around it, and the earliest
   frame it accepts is the closest thing the pipeline knows to the meme's first frame.
 - **Format (AC4):** YouTube parses chapter timestamps as `M:SS` / `H:MM:SS`, and requires a title
-  after the timestamp, which is why the line carries `Meme <n>`. Truncating rather than rounding
+  after the timestamp, which is why the line carries `<label> <n>`. Truncating rather than rounding
   keeps a timecode from landing after the meme starts.
 
 ## Open Questions
@@ -131,3 +131,7 @@ Resolved by the user (2026-09-17):
     failures (argparse colours its usage output in this environment) unchanged from `HEAD`.
 
   All ACs are checked. Status `implemented`.
+- 2026-09-17: The user changed the line's title from `Meme` to `Мем` in the working tree. Made it
+  the `pipeline.MEME_LABEL` constant and amended AC3, AC4, AC11 and the Technical notes to name
+  the label rather than the English word — see [no-images](no-images.md), which added a second
+  place that writes these lines.

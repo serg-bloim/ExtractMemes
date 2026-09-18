@@ -10,7 +10,7 @@ from extract_memes import pipeline
 from extract_memes.batch_cleaner import banding_score
 from extract_memes.classifier import FrameClassifier
 from extract_memes.downloader import download
-from extract_memes.pipeline import default_run_name, format_timecode, run
+from extract_memes.pipeline import MEME_LABEL, default_run_name, format_timecode, run
 
 TEST_VIDEO_URL = "https://youtu.be/AElGyY97k_0"
 MEME_NAME = re.compile(r"^frame_\d{6}_\d+\.\d{2}s\.jpg$")
@@ -532,7 +532,7 @@ def test_save_timecodes_lists_one_line_per_meme(short_video, tmp_path):
     lines = (tmp_path / "codes" / "timecodes.txt").read_text(encoding="utf-8").splitlines()
     assert len(lines) == len(saved)
     assert all(TIMECODE_LINE.match(line) for line in lines)
-    assert [line.split(" ", 1)[1] for line in lines] == [f"Meme {n}" for n in range(1, len(saved) + 1)]
+    assert [line.split(" ", 1)[1] for line in lines] == [f"{MEME_LABEL} {n}" for n in range(1, len(saved) + 1)]
     times = [timecode_seconds(line) for line in lines]
     assert times == sorted(times)
     assert not (tmp_path / "plain" / "timecodes.txt").exists()
@@ -561,3 +561,81 @@ def test_timecode_offset_shifts_every_line_and_clamps_at_zero(short_video, tmp_p
         assert at_line.split(" ", 1)[1] == before_line.split(" ", 1)[1]
         expected = max(0, timecode_seconds(at_line) - 1)
         assert timecode_seconds(before_line) == expected
+
+
+def test_no_images_skips_the_best_quality_half(short_video, tmp_path, capsys):
+    classifier = EveryNth(10)
+
+    with mock.patch("extract_memes.pipeline.download", wraps=download) as download_spy:
+        saved = run(
+            str(short_video),
+            downloads_dir=tmp_path / "downloads",
+            runtime_dir=tmp_path,
+            run_name="codes-only",
+            fps=1.0,
+            classifier=classifier,
+            save_timecodes=True,
+            no_images=True,
+        )
+
+    assert saved == []
+    assert [call.args[1] for call in download_spy.call_args_list] == ["worst"]
+    run_dir = tmp_path / "codes-only"
+    assert names(run_dir) == ["timecodes.txt"]
+    lines = (run_dir / "timecodes.txt").read_text(encoding="utf-8").splitlines()
+    # One line per scan hit, not per confirmed batch, so every flagged frame is listed.
+    flagged = sum(1 for index in range(len(classifier.frames)) if index % classifier.n == 0)
+    assert len(lines) == flagged
+    assert all(TIMECODE_LINE.match(line) for line in lines)
+    assert [line.split(" ", 1)[1] for line in lines] == [f"{MEME_LABEL} {n}" for n in range(1, flagged + 1)]
+    assert capsys.readouterr().out.endswith(f"Wrote {flagged} timecodes to {run_dir / 'timecodes.txt'}\n")
+
+
+def test_no_images_keeps_the_scan_folders_and_the_offset(short_video, tmp_path):
+    kwargs = dict(
+        runtime_dir=tmp_path,
+        fps=1.0,
+        save_timecodes=True,
+        save_frames=True,
+        save_low_res=True,
+        no_images=True,
+    )
+
+    run(str(short_video), run_name="at", classifier=EveryNth(10), **kwargs)
+    run(str(short_video), run_name="before", classifier=EveryNth(10), timecode_offset=-1.0, **kwargs)
+
+    assert names(tmp_path / "at") == ["frames", "low-res", "timecodes.txt"]
+    at = (tmp_path / "at" / "timecodes.txt").read_text(encoding="utf-8").splitlines()
+    before = (tmp_path / "before" / "timecodes.txt").read_text(encoding="utf-8").splitlines()
+    for at_line, before_line in zip(at, before, strict=True):
+        assert timecode_seconds(before_line) == max(0, timecode_seconds(at_line) - 1)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"clean_method": None},
+        {"save_high_res": True, "save_timecodes": True},
+    ],
+)
+def test_no_images_without_anything_to_save_raises_before_creating_anything(short_video, tmp_path, kwargs):
+    with pytest.raises(ValueError):
+        run(str(short_video), runtime_dir=tmp_path, classifier=EveryNth(10), no_images=True, **kwargs)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_no_images_with_no_memes(short_video, tmp_path, capsys):
+    saved = run(
+        str(short_video),
+        downloads_dir=tmp_path / "downloads",
+        runtime_dir=tmp_path / ".runtime",
+        classifier=NeverMeme(),
+        save_timecodes=True,
+        no_images=True,
+    )
+
+    assert saved == []
+    assert capsys.readouterr().out == "No memes found.\n"
+    assert not (tmp_path / ".runtime").exists()

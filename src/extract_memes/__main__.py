@@ -92,6 +92,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--no-images",
+        action="store_true",
+        help=(
+            "stop after the scan: skip the best-quality download and write no images at all. "
+            "Pair it with --save-timecodes, whose timecodes then come from the scan frames"
+        ),
+    )
+    parser.add_argument(
         "--clean-method",
         choices=("none", *batch_cleaner.METHODS),
         default=batch_cleaner.DEFAULT_METHOD,
@@ -109,6 +117,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.source is None:
         parser.print_help()
         return
+    if args.no_images and args.save_high_res:
+        parser.error("--no-images cannot be combined with --save-high-res")
 
     saved = pipeline.run(
         args.source,
@@ -125,6 +135,7 @@ def main(argv: list[str] | None = None) -> None:
         save_high_res=args.save_high_res,
         save_timecodes=args.save_timecodes,
         timecode_offset=args.timecode_offset,
+        no_images=args.no_images,
     )
     for path in saved:
         print(path)

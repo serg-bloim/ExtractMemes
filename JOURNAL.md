@@ -69,3 +69,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-09-17: Added `--save-timecodes`, which writes each meme's start as a YouTube timecode to `timecodes.txt`, with an optional `--timecode-offset` — [specs/features/meme-timecodes.md](specs/features/meme-timecodes.md).
 - 2026-09-17: Added `--no-images`, a timecodes-only run that stops after the scan and skips the best-quality download — [specs/features/no-images.md](specs/features/no-images.md).
 - 2026-09-17: Added a `Dockerfile`/`.dockerignore` to package the pipeline as a runnable image — [decisions/012-docker-image.md](decisions/012-docker-image.md).
+- 2026-09-17: Added a GitHub Actions workflow that builds and pushes the Docker image to GHCR on each `v*` tag — [decisions/013-github-actions-docker-publish.md](decisions/013-github-actions-docker-publish.md).

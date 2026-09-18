@@ -80,3 +80,4 @@ Links to related specs, external resources, or prior discussions.
 | 010 | [Clean Each Meme Batch with a Temporal Trimmed Mean](010-batch-cleaning-by-trimmed-mean.md) | Default superseded by 011 | 2026-09-17 |
 | 011 | [Clean Batches with `clean_rows` by Default](011-clean-rows-as-the-default.md) | Accepted | 2026-09-17 |
 | 012 | [Package ExtractMemes as a Docker Image](012-docker-image.md) | Accepted | 2026-09-17 |
+| 013 | [Publish the Docker Image via GitHub Actions on Tag Push](013-github-actions-docker-publish.md) | Accepted | 2026-09-17 |

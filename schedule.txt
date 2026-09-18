@@ -1,0 +1,18 @@
+YouTube Playlist Upload Pattern — 2026 only (7 videos)
+
+DAY OF WEEK
+Monday:    0
+Tuesday:   5  <- dominant
+Wednesday: 1
+Thursday:  1
+Friday:    0
+Saturday:  0
+Sunday:    0
+
+HOUR OF DAY (UTC)
+15:00: 2
+17:00: 3  <- most common
+18:00: 1
+19:00: 1
+All uploads fall between 15:00-19:00 UTC (~17:00-21:00 Kyiv time, evening).
+No morning/midday uploads this year (unlike prior years).

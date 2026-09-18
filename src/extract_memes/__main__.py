@@ -74,6 +74,24 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--save-timecodes",
+        action="store_true",
+        help=(
+            "write the start timecode of each meme, one per line, to "
+            "<runtime-dir>/<run-name>/timecodes.txt in YouTube's chapter format"
+        ),
+    )
+    parser.add_argument(
+        "--timecode-offset",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help=(
+            "shift every timecode by this many seconds; negative shifts earlier, e.g. -1 starts "
+            "each meme a second before it appears (default: %(default)s)"
+        ),
+    )
+    parser.add_argument(
         "--clean-method",
         choices=("none", *batch_cleaner.METHODS),
         default=batch_cleaner.DEFAULT_METHOD,
@@ -105,6 +123,8 @@ def main(argv: list[str] | None = None) -> None:
         save_low_res=args.save_low_res,
         clean_method=None if args.clean_method == "none" else args.clean_method,
         save_high_res=args.save_high_res,
+        save_timecodes=args.save_timecodes,
+        timecode_offset=args.timecode_offset,
     )
     for path in saved:
         print(path)

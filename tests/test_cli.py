@@ -45,6 +45,8 @@ def test_defaults_are_passed_to_pipeline(capsys):
         save_low_res=False,
         clean_method="clean_rows",
         save_high_res=False,
+        save_timecodes=False,
+        timecode_offset=0.0,
     )
     assert capsys.readouterr().out == ""
 
@@ -65,6 +67,8 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
             "--save-low-res",
             "--clean-method", "median",
             "--save-high-res",
+            "--save-timecodes",
+            "--timecode-offset", "-1.5",
         ])  # fmt: skip
 
     run.assert_called_once_with(
@@ -80,6 +84,8 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         save_low_res=True,
         clean_method="median",
         save_high_res=True,
+        save_timecodes=True,
+        timecode_offset=-1.5,
     )
     assert capsys.readouterr().out.splitlines() == [str(path) for path in saved]
 
@@ -90,6 +96,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         ("--save-frames", {"save_frames": True, "save_low_res": False}),
         ("--save-low-res", {"save_frames": False, "save_low_res": True}),
         ("--save-high-res", {"save_frames": False, "save_high_res": True}),
+        ("--save-timecodes", {"save_frames": False, "save_timecodes": True, "timecode_offset": 0.0}),
     ],
 )
 def test_each_save_flag_sets_only_its_option(flag, expected):
@@ -112,6 +119,7 @@ def test_help_describes_the_output_folders(capsys, monkeypatch):
     assert "<runtime-dir>/<run-name>/low-res/" in help_text
     assert "<runtime-dir>/<run-name>/clean/" in help_text
     assert "<runtime-dir>/<run-name>/high-res/meme_<n>/" in help_text
+    assert "<runtime-dir>/<run-name>/timecodes.txt" in help_text
 
 
 def test_clean_method_none_disables_cleaning():
@@ -138,5 +146,12 @@ def test_invalid_effort_is_rejected():
 def test_invalid_classifier_is_rejected():
     with pytest.raises(SystemExit) as excinfo:
         main(["sample/short.mp4", "--classifier", "clip"])
+
+    assert excinfo.value.code == 2
+
+
+def test_invalid_timecode_offset_is_rejected():
+    with pytest.raises(SystemExit) as excinfo:
+        main(["sample/short.mp4", "--timecode-offset", "soon"])
 
     assert excinfo.value.code == 2

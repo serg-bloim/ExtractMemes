@@ -10,10 +10,11 @@ from extract_memes import pipeline
 from extract_memes.batch_cleaner import banding_score
 from extract_memes.classifier import FrameClassifier
 from extract_memes.downloader import download
-from extract_memes.pipeline import default_run_name, run
+from extract_memes.pipeline import default_run_name, format_timecode, run
 
 TEST_VIDEO_URL = "https://youtu.be/AElGyY97k_0"
 MEME_NAME = re.compile(r"^frame_\d{6}_\d+\.\d{2}s\.jpg$")
+TIMECODE_LINE = re.compile(r"^(\d+:)?\d?\d:\d\d Мем \d+$")
 BATCH_NAME = re.compile(r"^meme_\d{3}$")
 
 
@@ -258,6 +259,7 @@ def test_no_memes(short_video, tmp_path, capsys, save_low_res):
             runtime_dir=tmp_path / ".runtime",
             classifier=NeverMeme(),
             save_low_res=save_low_res,
+            save_timecodes=True,
         )
 
     assert saved == []
@@ -266,7 +268,7 @@ def test_no_memes(short_video, tmp_path, capsys, save_low_res):
     # high-res/ always exists and low-res/ only when asked for; both stay empty.
     run_dir = tmp_path / ".runtime" / "short"
     expected = ["clean", "low-res"] if save_low_res else ["clean"]
-    assert names(run_dir) == expected
+    assert names(run_dir) == expected  # no timecodes.txt either, there is nothing to list
     assert all(names(folder) == [] for folder in run_dir.iterdir())
 
 
@@ -496,3 +498,66 @@ def test_real_url_real_classifier_run(tmp_path):
     downloaded = [path.name for path in downloads_dir.rglob("*")]
     assert sorted(downloaded) == ["AElGyY97k_0_best.mp4", "AElGyY97k_0_worst.mp4"]
     assert not any("*" in name for name in downloaded)
+
+
+def timecode_seconds(line: str) -> int:
+    parts = [int(part) for part in line.split(" ")[0].split(":")]
+    return sum(part * 60**power for power, part in enumerate(reversed(parts)))
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (0.0, "0:00"),
+        (7.9, "0:07"),
+        (59.999, "0:59"),
+        (60.0, "1:00"),
+        (725.0, "12:05"),
+        (3599.0, "59:59"),
+        (3600.0, "1:00:00"),
+        (7389.0, "2:03:09"),
+        (-5.0, "0:00"),
+    ],
+)
+def test_format_timecode(seconds, expected):
+    assert format_timecode(seconds) == expected
+
+
+def test_save_timecodes_lists_one_line_per_meme(short_video, tmp_path):
+    kwargs = dict(runtime_dir=tmp_path, fps=1.0)
+
+    saved = run(str(short_video), run_name="codes", classifier=EveryNth(10), save_timecodes=True, **kwargs)
+    run(str(short_video), run_name="plain", classifier=EveryNth(10), **kwargs)
+
+    lines = (tmp_path / "codes" / "timecodes.txt").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == len(saved)
+    assert all(TIMECODE_LINE.match(line) for line in lines)
+    assert [line.split(" ", 1)[1] for line in lines] == [f"Meme {n}" for n in range(1, len(saved) + 1)]
+    times = [timecode_seconds(line) for line in lines]
+    assert times == sorted(times)
+    assert not (tmp_path / "plain" / "timecodes.txt").exists()
+
+
+def test_timecodes_are_not_written_without_the_option(short_video, tmp_path):
+    kwargs = dict(runtime_dir=tmp_path, run_name="keep", fps=1.0)
+    run(str(short_video), classifier=EveryNth(10), save_timecodes=True, **kwargs)
+    kept = (tmp_path / "keep" / "timecodes.txt").read_text(encoding="utf-8")
+
+    run(str(short_video), classifier=EveryNth(10), **kwargs)
+
+    assert (tmp_path / "keep" / "timecodes.txt").read_text(encoding="utf-8") == kept
+
+
+def test_timecode_offset_shifts_every_line_and_clamps_at_zero(short_video, tmp_path):
+    kwargs = dict(runtime_dir=tmp_path, fps=1.0, save_timecodes=True)
+
+    run(str(short_video), run_name="at", classifier=EveryNth(10), **kwargs)
+    run(str(short_video), run_name="before", classifier=EveryNth(10), timecode_offset=-1.0, **kwargs)
+
+    at = (tmp_path / "at" / "timecodes.txt").read_text(encoding="utf-8").splitlines()
+    before = (tmp_path / "before" / "timecodes.txt").read_text(encoding="utf-8").splitlines()
+    assert len(before) == len(at)
+    for at_line, before_line in zip(at, before, strict=True):
+        assert at_line.split(" ", 1)[1] == before_line.split(" ", 1)[1]
+        expected = max(0, timecode_seconds(at_line) - 1)
+        assert timecode_seconds(before_line) == expected

@@ -35,6 +35,19 @@ def _frame_name(index: int, timestamp: float) -> str:
     return f"frame_{index:06d}_{timestamp:.2f}s.jpg"
 
 
+def format_timecode(seconds: float) -> str:
+    """Format `seconds` as a YouTube timecode: `M:SS`, or `H:MM:SS` from one hour on.
+
+    Truncated to whole seconds, so a timecode never lands after the moment it names.
+    """
+    total = max(0, int(seconds))
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
 def _write_image(path: Path, frame: np.ndarray) -> None:
     if not cv2.imwrite(str(path), frame):
         raise RuntimeError(f"Could not write image: {path}")
@@ -72,6 +85,8 @@ def run(
     window_seconds: float = 1.0,
     clean_method: str | None = batch_cleaner.DEFAULT_METHOD,
     save_high_res: bool = False,
+    save_timecodes: bool = False,
+    timecode_offset: float = 0.0,
 ) -> list[Path]:
     """Extract the memes in `source` and return one cleaned image path per meme, in video order.
 
@@ -83,6 +98,9 @@ def run(
     either side of it is downscaled to the scan resolution and given to the classifier, and the
     frames that also look like memes are combined into `clean/meme_<n:03d>.png` with `clean_method`
     (one of `batch_cleaner.METHODS`), which removes most of the glitch bands.
+
+    With `save_timecodes=True`, `timecodes.txt` lists the start of each meme — the earliest
+    batch frame, shifted by `timecode_offset` seconds and clamped at zero — as `<timecode> Meme <n>`.
 
     The batch frames themselves are kept only with `save_high_res=True`, which writes them to
     `high-res/meme_<n:03d>/`. With `clean_method=None` nothing is cleaned and those frames are
@@ -133,23 +151,31 @@ def run(
     extract_path = download(source, "best", downloads_dir)
     count = round(2 * window_seconds * _native_fps(extract_path)) + 1
     saved: list[Path] = []
+    timecodes: list[str] = []
     for meme_number, (_, timestamp) in enumerate(tqdm(flagged, desc="Extracting memes"), start=1):
         meme_dir = high_res_dir / f"meme_{meme_number:03d}"
         if save_high_res:
             meme_dir.mkdir(parents=True, exist_ok=True)
         start = max(0.0, timestamp - window_seconds)
         batch: list[np.ndarray] = []
+        batch_start = 0.0
         for index, frame_timestamp, frame in frames_from(extract_path, start, count):
             if not classifier.is_meme_frame(_to_scan_size(frame, scan_shape)):
                 continue
+            if not batch:
+                batch_start = frame_timestamp
             batch.append(frame)
             if save_high_res:
                 meme_path = meme_dir / _frame_name(index, frame_timestamp)
                 _write_image(meme_path, frame)
                 if clean_method is None:
                     saved.append(meme_path)
+        if batch:
+            timecodes.append(f"{format_timecode(batch_start + timecode_offset)} Мем {meme_number}")
         if clean_method is not None and batch:
             clean_path = clean_dir / f"meme_{meme_number:03d}.png"
             _write_image(clean_path, batch_cleaner.combine(batch, clean_method))
             saved.append(clean_path)
+    if save_timecodes:
+        (run_dir / "timecodes.txt").write_text("".join(f"{line}\n" for line in timecodes), encoding="utf-8")
     return saved

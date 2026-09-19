@@ -11,6 +11,7 @@ from extract_memes.batch_cleaner import banding_score
 from extract_memes.classifier import FrameClassifier
 from extract_memes.downloader import download
 from extract_memes.pipeline import MEME_LABEL, default_run_name, format_timecode, run
+from extract_memes.timecode_sender import TimecodeSender
 from extract_memes.uploader import Uploader
 
 TEST_VIDEO_URL = "https://youtu.be/AElGyY97k_0"
@@ -66,6 +67,19 @@ class FakeUploader(Uploader):
 
     def upload_all(self, image_paths: list[Path], source: str) -> None:
         self.calls.append((list(image_paths), source))
+        if self.error:
+            raise self.error
+
+
+class FakeTimecodeSender(TimecodeSender):
+    """Records each `send` call; raises `error` (if given) after recording it."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.calls: list[tuple[list[str], str]] = []
+
+    def send(self, timecodes: list[str], source: str) -> None:
+        self.calls.append((list(timecodes), source))
         if self.error:
             raise self.error
 
@@ -778,3 +792,124 @@ def test_explicit_uploader_ignores_upload_to(short_video, tmp_path):
 
     telegram_uploader.assert_not_called()
     assert len(uploader.calls) == 1
+
+
+def test_timecode_sender_receives_the_timecodes_and_source_once(short_video, tmp_path):
+    sender = FakeTimecodeSender()
+
+    saved = run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        fps=1.0,
+        classifier=EveryNth(10),
+        save_timecodes=True,
+        timecode_sender=sender,
+    )
+
+    written = (tmp_path / default_run_name(str(short_video)) / "timecodes.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert sender.calls == [(written, str(short_video))]
+    assert len(saved) > 0
+
+
+def test_no_timecode_sender_means_nothing_is_sent(short_video, tmp_path):
+    saved = run(str(short_video), runtime_dir=tmp_path, fps=1.0, classifier=EveryNth(10))
+
+    assert len(saved) > 0  # sanity: the run did produce something to (not) send
+
+
+def test_a_failed_timecode_send_does_not_abort_the_run(short_video, tmp_path, capsys):
+    sender = FakeTimecodeSender(error=RuntimeError("telegram rejected"))
+
+    saved = run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        fps=1.0,
+        classifier=EveryNth(10),
+        timecode_sender=sender,
+    )
+
+    assert len(sender.calls) == 1
+    assert len(saved) > 0
+    assert capsys.readouterr().out.endswith("Timecode send failed: telegram rejected\n")
+
+
+def test_no_images_with_timecode_sender_sends_the_scan_based_list(short_video, tmp_path):
+    sender = FakeTimecodeSender()
+
+    saved = run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        fps=1.0,
+        classifier=EveryNth(10),
+        no_images=True,
+        timecode_sender=sender,
+    )
+
+    assert saved == []
+    assert len(sender.calls) == 1
+    timecodes, source = sender.calls[0]
+    assert source == str(short_video)
+    assert all(TIMECODE_LINE.match(line) for line in timecodes)
+
+
+def test_no_images_with_send_timecodes_to_alone_does_not_raise(short_video, tmp_path):
+    saved = run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        classifier=EveryNth(10),
+        no_images=True,
+        send_timecodes_to="telegram",
+        telegram_bot_token="tok",
+        timecode_chat_id="123",
+    )
+
+    assert saved == []
+
+
+def test_no_images_with_uploader_still_raises_regardless_of_timecode_sender(short_video, tmp_path):
+    with pytest.raises(ValueError, match="nothing to upload"):
+        run(
+            str(short_video),
+            runtime_dir=tmp_path,
+            classifier=EveryNth(10),
+            no_images=True,
+            uploader=FakeUploader(),
+            timecode_sender=FakeTimecodeSender(),
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_send_timecodes_to_telegram_builds_a_telegram_timecode_sender(short_video, tmp_path):
+    with mock.patch("extract_memes.pipeline.TelegramTimecodeSender") as telegram_sender:
+        telegram_sender.return_value = FakeTimecodeSender()
+        run(
+            str(short_video),
+            runtime_dir=tmp_path,
+            fps=1.0,
+            classifier=EveryNth(10),
+            send_timecodes_to="telegram",
+            telegram_bot_token="tok",
+            timecode_chat_id="123",
+        )
+
+    telegram_sender.assert_called_once_with(bot_token="tok", chat_id="123")
+
+
+def test_explicit_timecode_sender_ignores_send_timecodes_to(short_video, tmp_path):
+    sender = FakeTimecodeSender()
+
+    with mock.patch("extract_memes.pipeline.TelegramTimecodeSender") as telegram_sender:
+        run(
+            str(short_video),
+            runtime_dir=tmp_path,
+            fps=1.0,
+            classifier=EveryNth(10),
+            timecode_sender=sender,
+            send_timecodes_to="telegram",
+        )
+
+    telegram_sender.assert_not_called()
+    assert len(sender.calls) == 1

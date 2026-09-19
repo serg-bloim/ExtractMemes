@@ -126,6 +126,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Telegram chat id to upload to; falls back to the TELEGRAM_CHAT_ID env var. Only applies to --upload-to telegram",
     )
     parser.add_argument(
+        "--send-timecodes-to",
+        choices=["telegram"],
+        default=None,
+        help="post the run's timecodes to a messenger chat as the run finishes (default: no send)",
+    )
+    parser.add_argument(
+        "--timecode-chat-id",
+        default=None,
+        help=(
+            "Telegram chat id to send timecodes to; falls back to the TELEGRAM_TIMECODES_CHAT_ID "
+            "env var. Only applies to --send-timecodes-to telegram"
+        ),
+    )
+    parser.add_argument(
         "--proxy",
         default=None,
         help=(
@@ -154,6 +168,14 @@ def main(argv: list[str] | None = None) -> None:
                 "--upload-to telegram requires --telegram-bot-token/--telegram-chat-id or "
                 "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID"
             )
+    if args.send_timecodes_to == "telegram":
+        bot_token = args.telegram_bot_token or os.environ.get("TELEGRAM_BOT_TOKEN")
+        timecode_chat_id = args.timecode_chat_id or os.environ.get("TELEGRAM_TIMECODES_CHAT_ID")
+        if not bot_token or not timecode_chat_id:
+            parser.error(
+                "--send-timecodes-to telegram requires --telegram-bot-token/--timecode-chat-id or "
+                "TELEGRAM_BOT_TOKEN/TELEGRAM_TIMECODES_CHAT_ID"
+            )
 
     proxy = args.proxy or os.environ.get("EXTRACT_MEMES_PROXY")
 
@@ -176,6 +198,8 @@ def main(argv: list[str] | None = None) -> None:
         upload_to=args.upload_to,
         telegram_bot_token=args.telegram_bot_token,
         telegram_chat_id=args.telegram_chat_id,
+        send_timecodes_to=args.send_timecodes_to,
+        timecode_chat_id=args.timecode_chat_id,
         proxy=proxy,
     )
     for path in saved:

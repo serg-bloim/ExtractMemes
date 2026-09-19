@@ -14,7 +14,9 @@ from extract_memes.classifier import ClaudeCliClassifier, FrameClassifier
 from extract_memes.downloader import download
 from extract_memes.frame_extractor import frames_from, sample_frames
 from extract_memes.heuristic_classifier import HeuristicClassifier
+from extract_memes.telegram_timecode_sender import TelegramTimecodeSender
 from extract_memes.telegram_uploader import TelegramUploader
+from extract_memes.timecode_sender import TimecodeSender
 from extract_memes.uploader import Uploader
 
 
@@ -106,6 +108,9 @@ def run(
     upload_to: Literal["telegram"] | None = None,
     telegram_bot_token: str | None = None,
     telegram_chat_id: str | None = None,
+    timecode_sender: TimecodeSender | None = None,
+    send_timecodes_to: Literal["telegram"] | None = None,
+    timecode_chat_id: str | None = None,
     proxy: str | None = None,
 ) -> list[Path]:
     """Extract the memes in `source` and return one cleaned image path per meme, in video order.
@@ -134,6 +139,12 @@ def run(
     `telegram_bot_token`/`telegram_chat_id`), `uploader.upload_all(saved, source)` is called once
     before `run` returns. A failure there is logged and does not abort the run or affect what's
     returned — unlike every other step here, whose errors propagate.
+
+    With `timecode_sender` set (or `send_timecodes_to="telegram"`, which builds a
+    `TelegramTimecodeSender` from `telegram_bot_token`/`timecode_chat_id`),
+    `timecode_sender.send(timecodes, source)` is called once before `run` returns — even with
+    `no_images=True`, unlike `uploader`, since there's still a timecode list to send. A failure
+    there is logged the same way an upload failure is, and does not abort the run.
     """
     if classifier is None:
         if classifier_type == "heuristic":
@@ -146,15 +157,17 @@ def run(
         raise ValueError(f"clean_method must be None or one of {batch_cleaner.METHODS}, not {clean_method!r}")
     if uploader is None and upload_to == "telegram":
         uploader = TelegramUploader(bot_token=telegram_bot_token, chat_id=telegram_chat_id)
+    if timecode_sender is None and send_timecodes_to == "telegram":
+        timecode_sender = TelegramTimecodeSender(bot_token=telegram_bot_token, chat_id=timecode_chat_id)
     if no_images:
         if save_high_res:
             raise ValueError("no_images and save_high_res contradict each other")
         if uploader is not None:
             raise ValueError("no_images and uploading contradict each other: there is nothing to upload")
-        if not (save_timecodes or save_low_res or save_frames):
+        if not (save_timecodes or save_low_res or save_frames or timecode_sender is not None):
             raise ValueError(
                 "nothing would be saved: with no_images, pass save_timecodes=True, "
-                "save_low_res=True, or save_frames=True"
+                "save_low_res=True, save_frames=True, or send_timecodes_to='telegram'"
             )
     elif clean_method is None and not save_high_res:
         raise ValueError("nothing would be saved: pass a clean_method, or save_high_res=True")
@@ -190,14 +203,18 @@ def run(
         return []
 
     if no_images:
-        if save_timecodes:
-            _write_timecodes(
-                run_dir,
-                [
-                    f"{format_timecode(timestamp + timecode_offset)} {MEME_LABEL} {meme_number}"
-                    for meme_number, (_, timestamp) in enumerate(flagged, start=1)
-                ],
-            )
+        if save_timecodes or timecode_sender is not None:
+            scan_timecodes = [
+                f"{format_timecode(timestamp + timecode_offset)} {MEME_LABEL} {meme_number}"
+                for meme_number, (_, timestamp) in enumerate(flagged, start=1)
+            ]
+            if save_timecodes:
+                _write_timecodes(run_dir, scan_timecodes)
+            if timecode_sender is not None:
+                try:
+                    timecode_sender.send(scan_timecodes, source)
+                except Exception as exc:
+                    print(f"Timecode send failed: {exc}")
         return []
 
     extract_path = download(source, "best", downloads_dir, proxy=proxy)
@@ -230,6 +247,11 @@ def run(
             saved.append(clean_path)
     if save_timecodes:
         _write_timecodes(run_dir, timecodes)
+    if timecode_sender is not None:
+        try:
+            timecode_sender.send(timecodes, source)
+        except Exception as exc:
+            print(f"Timecode send failed: {exc}")
     if uploader is not None:
         try:
             uploader.upload_all(saved, source)

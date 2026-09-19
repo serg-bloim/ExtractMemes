@@ -58,26 +58,32 @@ publishing a new video doesn't require me to manually find and launch a run.
 - [x] AC7: Triggered only by `workflow_dispatch` (manual) for now — see Out of Scope for scheduled
       triggering. Permissions: `contents: write` (needed to push the updated processed-file back).
       Steps:
-      1. `actions/checkout@v4`.
-      2. `actions/setup-python@v5` (3.14).
-      3. `pip install yt-dlp && pip install --no-deps -e .` — installs only what `find` actually
+      1. `actions/checkout@v4` — the code, at the triggering ref.
+      2. `actions/checkout@v4` with `ref: data`, `path: data-branch` — a second checkout of the
+         orphan `data` branch (see Technical Notes) into `data-branch/`, side by side with the code
+         checkout.
+      3. `actions/setup-python@v5` (3.14).
+      4. `pip install yt-dlp && pip install --no-deps -e .` — installs only what `find` actually
          needs (`yt_dlp`, plus the local package itself so `python -m extract_memes.playlist_watch`
          is importable), skipping `opencv-python-headless`/`numpy`/`static-ffmpeg`/`tqdm`/`requests`
          entirely for a run that finds nothing new (see Technical Notes).
-      4. Run `python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}"`,
+      5. Run
+         `python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt`,
          capturing stdout into a step output (e.g. `video_id`) via `$GITHUB_OUTPUT`.
-      5. Only if `video_id` is non-empty:
+      6. Only if `video_id` is non-empty:
          - `actions/setup-node@v4` — Node.js is required by `extract-memes` itself for YouTube
-           downloads (ADR 006); not needed for step 4's flat playlist listing.
+           downloads (ADR 006); not needed for step 5's flat playlist listing.
          - `pip install -e .` (now installs the full dependency set fresh, including the latest
            `yt-dlp` from PyPI — see Technical Notes on why this runs natively rather than via the
            published Docker image).
          - `extract-memes "https://youtu.be/$video_id" --classifier heuristic --upload-to telegram`
            with `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` from repo secrets.
-      6. If step 5 succeeded: run `python -m extract_memes.playlist_watch mark-processed "$video_id"`.
-      7. If `data/processed_vids.txt` has uncommitted changes: commit (bot identity,
-         e.g. `github-actions[bot]`) and push.
-      A run where `find` returns nothing does only steps 1–4 and ends there — no error.
+      7. If step 6 succeeded: run
+         `python -m extract_memes.playlist_watch mark-processed "$video_id" --processed-file data-branch/processed_vids.txt`.
+      8. If `data-branch/processed_vids.txt` has uncommitted changes: `cd data-branch`, commit (bot
+         identity, e.g. `github-actions[bot]`) and push — to the `data` branch, independently of
+         whatever ref triggered the workflow on the code checkout.
+      A run where `find` returns nothing does only steps 1–5 and ends there — no error.
 
 ### Tests
 
@@ -116,10 +122,20 @@ publishing a new video doesn't require me to manually find and launch a run.
   authenticated `claude` CLI (ADR 012's Dockerfile explicitly doesn't bundle it, for the same
   reason), which isn't available on a GitHub-hosted runner.
 - **Why commit-and-push instead of `actions/cache` or a release asset:** the user chose this —
-  `data/processed_vids.txt` is a small, human-readable file; a bot commit per processed video is an
+  `processed_vids.txt` is a small, human-readable file; a bot commit per processed video is an
   acceptable, visible cost in exchange for simplicity (no cache-eviction or asset-upload machinery).
   It's tracked in git (not gitignored — CLAUDE.md's Gitignore list doesn't cover `data/`, matching
-  `data/labeled_dataset/` per ADR 008).
+  `data/labeled_dataset/` per ADR 008 — though the processed-videos file itself now lives on the
+  orphan `data` branch, not under `data/` on `main`).
+- **Why the `data` branch is a separate orphan branch, checked out side by side with the code
+  (`data-branch/`), rather than a file on `main`:** the user's choice — it keeps the
+  bookkeeping-only commit history (one line appended per processed video) out of `main`'s history
+  entirely, rather than interleaving bot commits with code changes. `playlist_watch.py`'s
+  `--processed-file` option (AC5, AC6) already supported an arbitrary path with no code change
+  needed — only the workflow's checkout/commit steps had to change to point at the second
+  checkout instead of a path under the first. `read_processed` already treats a missing file as
+  empty (AC2), so a first run against a not-yet-seeded `data` branch works if the branch exists but
+  the file doesn't yet.
 - **Why a repository variable for the playlist URL:** the user chose this — `vars.PLAYLIST_URL` is
   not secret, and keeping it in repo settings means changing the target playlist doesn't require a
   code change.
@@ -190,3 +206,19 @@ Resolved by the user (2026-09-18):
   a video is actually found. Updated this spec's AC7 and Technical Notes to match; no ADR needed
   (a routine, easily-reversible refinement of the already-decided "install natively" architecture
   from ADR 016, not a new decision).
+- 2026-09-18: The user asked to move `processed_vids.txt`'s persistence off `main` entirely, onto a
+  separate orphan `data` branch, so the workflow's bookkeeping commits stop interleaving with code
+  history. Checked `playlist_watch.py` first: `--processed-file` (AC5, AC6) and `read_processed`'s
+  missing-file-as-empty behavior (AC2) already supported an arbitrary, possibly-nonexistent path —
+  no script change was needed. Updated AC7 and Technical Notes: `check-new-video.yml` gains a
+  second `actions/checkout@v4` (`ref: data`, `path: data-branch`), both `find` and `mark-processed`
+  are pointed at `data-branch/processed_vids.txt`, and the commit-and-push step now runs inside
+  `data-branch/` against the `data` branch instead of against `data/processed_vids.txt` on
+  whatever ref triggered the workflow. Removed `data/processed_vids.txt` from `main` (`git rm`) —
+  the user chose not to keep a stale duplicate there. Wrote
+  [ADR 018](../../decisions/018-processed-videos-on-orphan-data-branch.md) for this persistence
+  change (supersedes ADR 016's decision 2).
+  - **Not yet done in this session:** the orphan `data` branch itself doesn't exist in the repo
+    yet. It must be created (seeded with an initial `processed_vids.txt`, even an empty one) and
+    pushed to `origin` before this workflow can run — `actions/checkout@v4` with `ref: data` will
+    fail otherwise. Tracked as a manual follow-up.

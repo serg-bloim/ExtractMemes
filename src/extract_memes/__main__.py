@@ -125,6 +125,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Telegram chat id to upload to; falls back to the TELEGRAM_CHAT_ID env var. Only applies to --upload-to telegram",
     )
+    parser.add_argument(
+        "--proxy",
+        default=None,
+        help=(
+            "proxy URL for yt-dlp downloads (e.g. socks5h://127.0.0.1:1080 or an http:// URL); "
+            "falls back to the EXTRACT_MEMES_PROXY env var. Ignored for a local video file"
+        ),
+    )
     return parser
 
 
@@ -147,6 +155,8 @@ def main(argv: list[str] | None = None) -> None:
                 "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID"
             )
 
+    proxy = args.proxy or os.environ.get("EXTRACT_MEMES_PROXY")
+
     saved = pipeline.run(
         args.source,
         downloads_dir=args.downloads_dir,
@@ -166,6 +176,7 @@ def main(argv: list[str] | None = None) -> None:
         upload_to=args.upload_to,
         telegram_bot_token=args.telegram_bot_token,
         telegram_chat_id=args.telegram_chat_id,
+        proxy=proxy,
     )
     for path in saved:
         print(path)

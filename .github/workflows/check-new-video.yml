@@ -9,9 +9,17 @@ permissions:
 jobs:
   check-and-run:
     runs-on: ubuntu-latest
+    env:
+      EXTRACT_MEMES_PROXY: ${{ secrets.YT_DLP_PROXY }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Check out the data branch
+        uses: actions/checkout@v4
+        with:
+          ref: data
+          path: data-branch
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -26,7 +34,7 @@ jobs:
       - name: Find the oldest unprocessed video
         id: find
         run: |
-          video_id=$(python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}")
+          video_id=$(python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt)
           echo "video_id=$video_id" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
@@ -51,15 +59,16 @@ jobs:
 
       - name: Mark the video as processed
         if: steps.find.outputs.video_id != ''
-        run: python -m extract_memes.playlist_watch mark-processed "${{ steps.find.outputs.video_id }}"
+        run: python -m extract_memes.playlist_watch mark-processed "${{ steps.find.outputs.video_id }}" --processed-file data-branch/processed_vids.txt
 
       - name: Commit and push the updated processed-videos file
         if: steps.find.outputs.video_id != ''
+        working-directory: data-branch
         run: |
-          if ! git diff --quiet -- data/processed_vids.txt; then
+          if ! git diff --quiet -- processed_vids.txt; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add data/processed_vids.txt
+            git add processed_vids.txt
             git commit -m "Mark ${{ steps.find.outputs.video_id }} as processed"
             git push
           fi

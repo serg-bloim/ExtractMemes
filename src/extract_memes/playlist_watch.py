@@ -5,14 +5,19 @@ Uploads playlist — not for an arbitrarily (hand-)ordered playlist.
 """
 
 import argparse
+import os
 from pathlib import Path
 
 DEFAULT_COUNT = 8
 DEFAULT_PROCESSED_FILE = Path("data/processed_vids.txt")
 
 
-def list_playlist_video_ids(playlist_url: str, count: int) -> list[str]:
-    """Return up to `count` video ids from `playlist_url`, metadata only, newest-first."""
+def list_playlist_video_ids(playlist_url: str, count: int, proxy: str | None = None) -> list[str]:
+    """Return up to `count` video ids from `playlist_url`, metadata only, newest-first.
+
+    `proxy` (e.g. `socks5h://127.0.0.1:1080` or an `http://` URL), when given, is passed straight
+    through to yt-dlp, same as `downloader.download`'s `proxy` parameter.
+    """
     # Imported lazily so importing this module has no import-time side effects.
     import yt_dlp
 
@@ -21,6 +26,8 @@ def list_playlist_video_ids(playlist_url: str, count: int) -> list[str]:
         "playlistend": count,
         "quiet": True,
     }
+    if proxy:
+        options["proxy"] = proxy
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(playlist_url, download=False)
     return [entry["id"] for entry in info["entries"]]
@@ -49,7 +56,8 @@ def find_next_unprocessed(video_ids: list[str], processed: set[str]) -> str | No
 
 
 def _cmd_find(args: argparse.Namespace) -> None:
-    video_ids = list_playlist_video_ids(args.playlist_url, args.count)
+    proxy = args.proxy or os.environ.get("EXTRACT_MEMES_PROXY")
+    video_ids = list_playlist_video_ids(args.playlist_url, args.count, proxy=proxy)
     processed = read_processed(args.processed_file)
     next_id = find_next_unprocessed(video_ids, processed)
     if next_id is not None:
@@ -74,6 +82,14 @@ def build_parser() -> argparse.ArgumentParser:
     find_parser.add_argument("--count", type=int, default=DEFAULT_COUNT, help="default: %(default)s")
     find_parser.add_argument(
         "--processed-file", type=Path, default=DEFAULT_PROCESSED_FILE, help="default: %(default)s"
+    )
+    find_parser.add_argument(
+        "--proxy",
+        default=None,
+        help=(
+            "proxy URL for yt-dlp's playlist fetch (e.g. socks5h://127.0.0.1:1080 or an http:// "
+            "URL); falls back to the EXTRACT_MEMES_PROXY env var"
+        ),
     )
     find_parser.set_defaults(func=_cmd_find)
 

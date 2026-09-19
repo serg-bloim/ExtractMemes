@@ -126,14 +126,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Telegram chat id to upload to; falls back to the TELEGRAM_CHAT_ID env var. Only applies to --upload-to telegram",
     )
     parser.add_argument(
-        "--full-download",
-        action="store_true",
-        help=(
-            "download the whole best-quality video instead of only the frame windows around each "
-            "meme (the default). Always on for a local video file"
-        ),
-    )
-    parser.add_argument(
         "--proxy",
         default=None,
         help=(
@@ -185,7 +177,6 @@ def main(argv: list[str] | None = None) -> None:
         telegram_bot_token=args.telegram_bot_token,
         telegram_chat_id=args.telegram_chat_id,
         proxy=proxy,
-        full_download=args.full_download,
     )
     for path in saved:
         print(path)

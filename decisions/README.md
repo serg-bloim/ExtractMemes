@@ -86,4 +86,5 @@ Links to related specs, external resources, or prior discussions.
 | 016 | [Watch a Playlist via a Manually-Triggered GitHub Actions Workflow](016-scheduled-playlist-watcher.md) | Accepted | 2026-09-18 |
 | 017 | [Reaching a LAN Proxy from Python Under macOS Local Network Privacy](017-macos-local-network-proxy-relay.md) | Accepted | 2026-09-18 |
 | 018 | [Persist `processed_vids.txt` on a Separate Orphan `data` Branch](018-processed-videos-on-orphan-data-branch.md) | Accepted | 2026-09-18 |
-| 019 | [Download Only the Meme Windows, Cut by ffmpeg, Through a Loopback SOCKS Bridge](019-partial-section-downloads.md) | Accepted | 2026-09-19 |
+| 019 | [Download Only the Meme Windows, Cut by ffmpeg, Through a Loopback SOCKS Bridge](019-partial-section-downloads.md) | Superseded by 020 | 2026-09-19 |
+| 020 | [Keep Downloading the Whole Video; Partial Fetching Is Not Viable](020-whole-video-download-stands.md) | Accepted | 2026-09-19 |

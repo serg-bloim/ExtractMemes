@@ -9,15 +9,8 @@ import pytest
 from extract_memes import pipeline
 from extract_memes.batch_cleaner import banding_score
 from extract_memes.classifier import FrameClassifier
-from extract_memes.downloader import download, download_sections
-from extract_memes.pipeline import (
-    MEME_LABEL,
-    _extraction_sources,
-    default_run_name,
-    format_timecode,
-    run,
-    section_ranges,
-)
+from extract_memes.downloader import download
+from extract_memes.pipeline import MEME_LABEL, default_run_name, format_timecode, run
 from extract_memes.uploader import Uploader
 
 TEST_VIDEO_URL = "https://youtu.be/AElGyY97k_0"
@@ -491,265 +484,6 @@ def test_default_run_finds_exactly_the_known_memes(short_video, tmp_path, save_f
     assert (run_dir / "frames").is_dir() == save_frames
 
 
-@pytest.mark.parametrize(
-    ("timestamps", "expected"),
-    [
-        ([10.0], [(8, 12)]),
-        ([0.2], [(0, 3)]),  # clamped at the start, so the window reaches further right
-        ([10.0, 10.5], [(8, 12)]),  # overlapping windows
-        ([10.0, 20.0], [(8, 22)]),  # a gap small enough to bridge
-        ([10.0, 40.0], [(8, 12), (38, 42)]),
-        ([40.0, 10.0], [(8, 12), (38, 42)]),  # out of order
-    ],
-)
-def test_section_ranges(timestamps, expected):
-    assert section_ranges(timestamps, window_seconds=1.0) == expected
-
-
-def test_section_ranges_respects_the_window_and_gap():
-    assert section_ranges([10.0, 25.0], window_seconds=3.0, pad=1.0, gap=2.0) == [(6, 14), (21, 29)]
-    assert section_ranges([10.0, 25.0], window_seconds=3.0, pad=1.0, gap=8.0) == [(6, 29)]
-
-
-def extraction_sources(short_video, tmp_path, timestamps, **kwargs):
-    """Call `_extraction_sources` with `short_video` as the already-downloaded scan copy."""
-    return _extraction_sources(
-        kwargs.pop("source", TEST_VIDEO_URL),
-        timestamps,
-        tmp_path / "downloads",
-        kwargs.pop("window_seconds", 1.0),
-        short_video,
-        kwargs.pop("proxy", None),
-        kwargs.pop("full_download", False),
-    )
-
-
-def test_a_url_source_downloads_only_the_meme_windows(short_video, tmp_path):
-    sections = [(Path("/fake/a.mp4"), 8.0), (Path("/fake/b.mp4"), 27.0)]
-
-    with (
-        mock.patch("extract_memes.pipeline.download_sections", return_value=sections) as partial,
-        mock.patch("extract_memes.pipeline.download", side_effect=AssertionError("whole file")),
-    ):
-        sources = extraction_sources(short_video, tmp_path, [10.48, 28.64], proxy="socks5h://p:1")
-
-    partial.assert_called_once_with(
-        TEST_VIDEO_URL, [(8, 12), (27, 31)], tmp_path / "downloads", proxy="socks5h://p:1"
-    )
-    # Each timestamp reads from the section covering it, offset by where that section starts.
-    assert sources == sections
-
-
-def test_two_memes_in_one_section_share_its_file(short_video, tmp_path):
-    sections = [(Path("/fake/a.mp4"), 8.0)]
-
-    with mock.patch("extract_memes.pipeline.download_sections", return_value=sections) as partial:
-        sources = extraction_sources(short_video, tmp_path, [10.0, 11.0])
-
-    assert partial.call_args.args[1] == [(8, 13)]
-    assert sources == [(Path("/fake/a.mp4"), 8.0), (Path("/fake/a.mp4"), 8.0)]
-
-
-@pytest.mark.parametrize("kwargs", [{"full_download": True}, {"source": "LOCAL"}])
-def test_the_whole_file_is_downloaded_on_request_and_for_a_local_file(
-    short_video, tmp_path, kwargs
-):
-    if kwargs.get("source") == "LOCAL":
-        kwargs["source"] = str(short_video)
-
-    with (
-        mock.patch("extract_memes.pipeline.download", return_value=Path("/fake/best.mp4")) as whole,
-        mock.patch(
-            "extract_memes.pipeline.download_sections", side_effect=AssertionError("sections")
-        ),
-    ):
-        sources = extraction_sources(short_video, tmp_path, [10.0, 40.0], **kwargs)
-
-    whole.assert_called_once()
-    assert sources == [(Path("/fake/best.mp4"), 0.0)] * 2
-
-
-def test_dense_memes_fall_back_to_the_whole_file(short_video, tmp_path, capsys):
-    # short.mp4 runs 78.56s; these windows merge into one range covering nearly all of it.
-    timestamps = [float(second) for second in range(2, 70, 5)]
-
-    with (
-        mock.patch("extract_memes.pipeline.download", return_value=Path("/fake/best.mp4")) as whole,
-        mock.patch(
-            "extract_memes.pipeline.download_sections", side_effect=AssertionError("sections")
-        ),
-    ):
-        sources = extraction_sources(short_video, tmp_path, timestamps)
-
-    whole.assert_called_once()
-    assert sources == [(Path("/fake/best.mp4"), 0.0)] * len(timestamps)
-    assert "downloading the whole video instead" in capsys.readouterr().out
-
-
-def test_a_failed_section_download_falls_back_to_the_whole_file(short_video, tmp_path, capsys):
-    with (
-        mock.patch("extract_memes.pipeline.download", return_value=Path("/fake/best.mp4")) as whole,
-        mock.patch(
-            "extract_memes.pipeline.download_sections",
-            side_effect=RuntimeError("Requested format is not available"),
-        ),
-    ):
-        sources = extraction_sources(short_video, tmp_path, [10.0])
-
-    whole.assert_called_once()
-    assert sources == [(Path("/fake/best.mp4"), 0.0)]
-    output = capsys.readouterr().out
-    assert "Requested format is not available" in output
-    assert "downloading the whole video instead" in output
-
-
-def test_missing_sections_fall_back_to_the_whole_file(short_video, tmp_path, capsys):
-    with (
-        mock.patch("extract_memes.pipeline.download", return_value=Path("/fake/best.mp4")) as whole,
-        mock.patch("extract_memes.pipeline.download_sections", return_value=[]),
-    ):
-        sources = extraction_sources(short_video, tmp_path, [10.0, 40.0])
-
-    whole.assert_called_once()
-    assert sources == [(Path("/fake/best.mp4"), 0.0)] * 2
-    assert "asked for 2 sections, got 0" in capsys.readouterr().out
-
-
-def cut(source: Path, dest: Path, start: float, end: float) -> Path:
-    """Write `source`'s frames between `start` and `end` to `dest`, as a section download would.
-
-    The result begins exactly at `start`, which is the property `force_keyframes_at_cuts` buys from
-    ffmpeg and the reason the pipeline can map a position in a section back to the whole video.
-    """
-    capture = cv2.VideoCapture(str(source))
-    try:
-        fps = capture.get(cv2.CAP_PROP_FPS)
-        size = (
-            int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)),
-            int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        )
-        writer = cv2.VideoWriter(str(dest), cv2.VideoWriter_fourcc(*"mp4v"), fps, size)
-        try:
-            capture.set(cv2.CAP_PROP_POS_FRAMES, round(start * fps))
-            for _ in range(round((end - start) * fps)):
-                ok, frame = capture.read()
-                if not ok:
-                    break
-                writer.write(frame)
-        finally:
-            writer.release()
-    finally:
-        capture.release()
-    return dest
-
-
-def test_a_section_run_produces_the_same_output_as_a_whole_file_run(short_video, tmp_path):
-    """The point of the whole feature: identical frames, names and timecodes, fewer bytes."""
-
-    def sections(source, ranges, dest_dir, proxy=None):
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        return [
-            (cut(short_video, dest_dir / f"section_{start}-{end}.mp4", start, end), float(start))
-            for start, end in ranges
-        ]
-
-    def outputs(run_dir: Path) -> tuple[list[str], str]:
-        frames = sorted(str(path.relative_to(run_dir)) for path in (run_dir / "high-res").rglob("*"))
-        return frames, (run_dir / "timecodes.txt").read_text(encoding="utf-8")
-
-    whole_run = tmp_path / "whole"
-    section_run = tmp_path / "sections"
-    common = dict(save_high_res=True, save_timecodes=True, downloads_dir=tmp_path / "downloads")
-    # Sparse enough that the windows stay well under the coverage guard: three memes, one of them
-    # clamped at the start of the video and one running up against its end.
-    run(str(short_video), runtime_dir=whole_run, classifier=EveryNth(80), **common)
-    with (
-        mock.patch("extract_memes.pipeline.download", return_value=short_video),
-        mock.patch("extract_memes.pipeline.download_sections", side_effect=sections) as partial,
-    ):
-        run(TEST_VIDEO_URL, runtime_dir=section_run, classifier=EveryNth(80), **common)
-
-    assert partial.call_args.args[1] == [(0, 3), (36, 40), (75, 79)]
-    assert outputs(section_run / "AElGyY97k_0") == outputs(whole_run / "short")
-
-
-class OneMeme(FrameClassifier):
-    """Flags the first scan frame, then every frame once `extracting` is set.
-
-    One meme, early in the video, with a full batch behind it — so a run stays well under the
-    coverage guard and still produces something to compare.
-    """
-
-    def __init__(self) -> None:
-        self.extracting = False
-        self.count = 0
-
-    def is_meme_frame(self, frame: np.ndarray) -> bool:
-        self.count += 1
-        return self.extracting or self.count == 1
-
-    def is_meme(self, image_path: Path) -> bool:
-        raise AssertionError("the pipeline must classify frames in memory, not files")
-
-
-@pytest.mark.slow
-def test_real_url_partial_download_run(tmp_path):
-    downloads_dir = tmp_path / "downloads"
-
-    def one_meme_run(run_name, **kwargs):
-        """Run the pipeline, flipping the classifier over once the extraction copy is fetched."""
-        classifier = OneMeme()
-
-        def sections(*args, **call_kwargs):
-            fetched = download_sections(*args, **call_kwargs)
-            classifier.extracting = True
-            return fetched
-
-        def whole(source, quality, *args, **call_kwargs):
-            fetched = download(source, quality, *args, **call_kwargs)
-            classifier.extracting |= quality == "best"
-            return fetched
-
-        with (
-            mock.patch("extract_memes.pipeline.download_sections", side_effect=sections) as partial,
-            mock.patch("extract_memes.pipeline.download", side_effect=whole),
-        ):
-            saved = run(
-                TEST_VIDEO_URL,
-                downloads_dir=downloads_dir,
-                runtime_dir=tmp_path / run_name,
-                classifier=classifier,
-                save_timecodes=True,
-                save_high_res=True,
-                **kwargs,
-            )
-        return saved, partial.call_count
-
-    saved, section_downloads = one_meme_run("partial")
-    whole_saved, whole_section_downloads = one_meme_run("whole", full_download=True)
-
-    assert (section_downloads, whole_section_downloads) == (1, 0)
-    downloaded = sorted(path.name for path in downloads_dir.rglob("*"))
-    assert downloaded == [
-        "AElGyY97k_0_best.mp4",
-        "AElGyY97k_0_best_0-3.mp4",
-        "AElGyY97k_0_worst.mp4",
-    ]
-    section = downloads_dir / "AElGyY97k_0_best_0-3.mp4"
-    assert section.stat().st_size < (downloads_dir / "AElGyY97k_0_best.mp4").stat().st_size
-    # Same memes, same frame names, same timecodes -- only the bytes fetched differ.
-    assert [path.name for path in saved] == [path.name for path in whole_saved] != []
-    outputs = [
-        (
-            sorted(path.name for path in (tmp_path / name / "AElGyY97k_0" / "high-res").rglob("*")),
-            (tmp_path / name / "AElGyY97k_0" / "timecodes.txt").read_text(encoding="utf-8"),
-        )
-        for name in ("partial", "whole")
-    ]
-    assert outputs[0] == outputs[1]
-    assert outputs[0][1].strip() != ""
-
-
 @pytest.mark.slow
 def test_real_url_mock_classifier_run(tmp_path):
     downloads_dir = tmp_path / "downloads"
@@ -761,7 +495,6 @@ def test_real_url_mock_classifier_run(tmp_path):
         classifier=EveryNth(5),
         save_low_res=True,
         save_high_res=True,
-        full_download=True,
     )
 
     run_dir = tmp_path / ".runtime" / "AElGyY97k_0"
@@ -784,7 +517,6 @@ def test_real_url_real_classifier_run(tmp_path):
         runtime_dir=tmp_path / ".runtime",
         save_low_res=True,
         save_high_res=True,
-        full_download=True,
     )
 
     run_dir = tmp_path / ".runtime" / "AElGyY97k_0"

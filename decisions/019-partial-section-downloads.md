@@ -1,7 +1,10 @@
 # 019 — Download Only the Meme Windows, Cut by ffmpeg, Through a Loopback SOCKS Bridge
 
 **Date:** 2026-09-19
-**Status:** Accepted
+**Status:** Superseded by [020](020-whole-video-download-stands.md). What this ADR decided was
+built, then timed, and turned out to be ~10× slower than the whole-file download it replaced. The
+reasoning below was sound on the evidence available at the time; the evidence it lacked —
+googlevideo paces open-ended range requests, and ffmpeg only ever issues those — is in ADR 020.
 
 ## Context
 

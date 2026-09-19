@@ -111,17 +111,19 @@ can validate the pipeline against `sample/short.mp4` without a network call.
   a guarantee.
 - Cookies, logins, age-restricted, private, or members-only videos.
 - Non-YouTube sites. yt-dlp may handle them, but they're untested and unsupported.
-- Downloading only parts of a video. `download` always fetches the whole file; fetching just the
-  frame windows around flagged timestamps is a separate function and a separate spec,
-  [partial-high-res-download](partial-high-res-download.md).
+- Downloading only parts of a video. `download` always fetches the whole file. Fetching just the
+  frame windows around flagged timestamps was built and measured, and it was several times
+  *slower*: see [partial-high-res-download](partial-high-res-download.md) (`deprecated`) and
+  [ADR 020](../../decisions/020-whole-video-download-stands.md).
 
 ## Technical Notes
 
-- **`download` is the whole-file path.** The extraction stage no longer always uses it: by default
-  it asks for only the meme windows via `downloader.download_sections`, and falls back to
-  `download(source, "best", …)`. See [partial-high-res-download](partial-high-res-download.md) and
-  [ADR 019](../../decisions/019-partial-section-downloads.md). Everything below, and every AC
-  above, describes `download` itself, which is unchanged.
+- **Why the whole-file download is fast, and what would break it.** yt-dlp fetches progressive
+  formats in bounded 10 MB range requests (`CHUNK_SIZE`, `yt_dlp/extractor/youtube/_video.py:3229`).
+  googlevideo serves those at full speed — measured 15.7 MB/s for a 1.06 GB file — but paces an
+  **open-ended** `Range: bytes=N-` to ~0.17 MB/s, a ~164× difference. If a download is ever
+  mysteriously slow, look for something issuing open-ended range requests. Full evidence in
+  [partial-high-res-download](partial-high-res-download.md).
 - **Runtime dependencies introduced by this spec:** `yt-dlp` (known-good 2026.8.19) and
   `static-ffmpeg` (known-good 3.0). AC11's progress bar needs no new dependency: `tqdm` was already
   declared for extraction-pipeline's scan/extract bars.
@@ -238,3 +240,8 @@ All resolved:
   pointer and an Out-of-Scope line so this spec no longer reads as if whole-file downloads were the
   only path. Details in [partial-high-res-download](partial-high-res-download.md) and
   [ADR 019](../../decisions/019-partial-section-downloads.md).
+- 2026-09-19: That change was reverted the same day — timing it showed partial fetching to be
+  several times slower than downloading the whole file, for reasons now recorded in
+  [ADR 020](../../decisions/020-whole-video-download-stands.md). `download` is again the only
+  download path and is unchanged; no AC here was ever affected. The Technical Notes gained the
+  measured reason this path is fast, since it was not understood before.

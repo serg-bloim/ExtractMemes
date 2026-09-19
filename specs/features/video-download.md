@@ -111,9 +111,17 @@ can validate the pipeline against `sample/short.mp4` without a network call.
   a guarantee.
 - Cookies, logins, age-restricted, private, or members-only videos.
 - Non-YouTube sites. yt-dlp may handle them, but they're untested and unsupported.
+- Downloading only parts of a video. `download` always fetches the whole file; fetching just the
+  frame windows around flagged timestamps is a separate function and a separate spec,
+  [partial-high-res-download](partial-high-res-download.md).
 
 ## Technical Notes
 
+- **`download` is the whole-file path.** The extraction stage no longer always uses it: by default
+  it asks for only the meme windows via `downloader.download_sections`, and falls back to
+  `download(source, "best", …)`. See [partial-high-res-download](partial-high-res-download.md) and
+  [ADR 019](../../decisions/019-partial-section-downloads.md). Everything below, and every AC
+  above, describes `download` itself, which is unchanged.
 - **Runtime dependencies introduced by this spec:** `yt-dlp` (known-good 2026.8.19) and
   `static-ffmpeg` (known-good 3.0). AC11's progress bar needs no new dependency: `tqdm` was already
   declared for extraction-pipeline's scan/extract bars.
@@ -224,3 +232,9 @@ All resolved:
     flag overrides env var, and the two existing call-signature tests updated for the new kwarg).
   - **Verified:** `pytest -m "not slow"` — 200 passed. All ACs checked; status remains
     `implemented`.
+- 2026-09-19: The extraction stage stopped always downloading the whole best-quality file. No AC
+  here changed — `download` keeps its contract — but a new sibling function, `download_sections`,
+  now lives in the same module and is what the pipeline reaches for first. Added a Technical-notes
+  pointer and an Out-of-Scope line so this spec no longer reads as if whole-file downloads were the
+  only path. Details in [partial-high-res-download](partial-high-res-download.md) and
+  [ADR 019](../../decisions/019-partial-section-downloads.md).

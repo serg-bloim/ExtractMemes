@@ -53,6 +53,7 @@ def test_defaults_are_passed_to_pipeline(capsys, monkeypatch):
         telegram_bot_token=None,
         telegram_chat_id=None,
         proxy=None,
+        full_download=False,
     )
     assert capsys.readouterr().out == ""
 
@@ -79,6 +80,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
             "--telegram-bot-token", "token123",
             "--telegram-chat-id", "chat456",
             "--proxy", "socks5h://127.0.0.1:1080",
+            "--full-download",
         ])  # fmt: skip
 
     run.assert_called_once_with(
@@ -101,6 +103,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         telegram_bot_token="token123",
         telegram_chat_id="chat456",
         proxy="socks5h://127.0.0.1:1080",
+        full_download=True,
     )
     assert capsys.readouterr().out.splitlines() == [str(path) for path in saved]
 
@@ -224,6 +227,13 @@ def test_upload_to_telegram_falls_back_to_env_vars(monkeypatch):
     assert run.call_args.kwargs["upload_to"] == "telegram"
     assert run.call_args.kwargs["telegram_bot_token"] is None
     assert run.call_args.kwargs["telegram_chat_id"] is None
+
+
+def test_full_download_flag_reaches_the_pipeline():
+    with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
+        main(["sample/short.mp4", "--full-download"])
+
+    assert run.call_args.kwargs["full_download"] is True
 
 
 def test_proxy_flag_reaches_the_pipeline(monkeypatch):

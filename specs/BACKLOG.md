@@ -1,7 +1,6 @@
 # Backlog
 
 - Progress bar for messenger uploading.
-- Fast partial high res video download. Only download fragments that include the meme timecodes.
 - Filter out empty meme screens. Sometimes there's just a black screen with no meme in it.
 - Send timecodes into a separate messenger channel.
 - If the workflow failed, send a report.

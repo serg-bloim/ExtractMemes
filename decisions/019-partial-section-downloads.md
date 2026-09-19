@@ -32,6 +32,11 @@ Point 3 is the dangerous one: the failure is not an error but a bypass, which wo
 requests from the GitHub runner into the "Sign in to confirm you're not a bot" block that
 [ADR 017](017-macos-local-network-proxy-relay.md) ends on.
 
+A fourth constraint surfaced only once this ran against YouTube: the format the existing
+`bv*[ext=mp4]/bv*` selector picks is usually an HLS playlist (`m3u8_native`), and seeking into one
+is not a ranged fetch. Asking for two 3-second sections of the 12-second test video that way
+produced one 391 KB file out of a 433 KB video and one 261-byte file with no frames in it.
+
 ## Decision
 
 1. The best-quality pass fetches **only the frame windows around flagged timestamps**, via yt-dlp's
@@ -39,9 +44,11 @@ requests from the GitHub runner into the "Sign in to confirm you're not a bot" b
    behavior, and local-file sources are untouched.
 2. Sections are cut with `force_keyframes_at_cuts=True`, which makes yt-dlp drop `-c copy`
    (`yt_dlp/downloader/external.py:513`) so ffmpeg's accurate seek starts the file exactly at the
-   requested second. The resulting re-encode is pinned to `-c:v libx264 -crf 12 -preset veryfast`,
-   and the section selector is `bv*[ext=mp4]` so the container — and therefore the encoder — is
-   predictable.
+   requested second. The resulting re-encode is pinned to `-c:v libx264 -crf 18 -preset veryfast`.
+   The section selector is `bv*[ext=mp4][protocol=https]`: `mp4` so the container — and therefore
+   the encoder — is predictable, and `https` because a range is only a range against a
+   progressive stream. Ranging an HLS playlist, which is what YouTube's best format usually is,
+   fetched nearly the whole video for one section and produced an empty file for another.
 3. Windows are merged into as few integer-second ranges as possible (overlapping, or within 10s).
    If the merged ranges would still cover more than half the video, the run downloads the whole
    file instead; if a section download fails, the run says why and falls back to a full download.
@@ -75,9 +82,15 @@ requests from the GitHub runner into the "Sign in to confirm you're not a bot" b
   saving scales with how sparse the memes are; dense videos hit the coverage guard and behave as
   before.
 - Section files accumulate in `downloads/` as `<id>_best_<start>-<end>.mp4`, named by range so
-  re-runs reuse them. They are re-encoded, so they are not byte-identical to the source; at CRF 12,
-  ahead of `batch_cleaner`'s averaging, this is not expected to be visible. `SECTION_ENCODE_ARGS`
-  is the single place to revisit that.
+  re-runs reuse them. They are re-encoded, so they are not byte-identical to the source; measured,
+  CRF 18 sits 1.6/255 from CRF 12 at half the size, well inside what the JPEG write and
+  `batch_cleaner`'s averaging do afterwards. `SECTION_ENCODE_ARGS` is the single place to revisit.
+- **Partial runs read a different stream than whole-file runs.** Requiring `protocol=https` means
+  the section selector lands on a different codec than `bv*[ext=mp4]/bv*` — measured, 1080p AV1
+  against 1080p VP9, and 360p H.264 against 360p VP9 — at the same resolution. Which memes are
+  found, and their frame names and timecodes, are identical; the pixels are a few levels of grey
+  apart. If YouTube ever stops offering a progressive mp4, sections fail and decision 3's fallback
+  takes over.
 - CPU cost moves from the network to the local encoder — a few seconds of video per meme.
 - The partial path is YouTube-mp4-shaped. Anything else raises, and decision 3's fallback covers it.
 - A new module with a socket server in it, `socks_bridge.py`, is now part of the package. It binds

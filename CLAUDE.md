@@ -75,7 +75,9 @@ ExtractMemes/
 ├── data/
 │   └── labeled_dataset/{positive,negative}/ ← Hand-labeled 256x144 frames for classifier
 │                                   evaluation and tests — do NOT delete (see ADR 008)
-├── downloads/                    ← CLI downloads: <video-id>_worst.mp4, <video-id>_best.mp4 (gitignored)
+├── downloads/                    ← CLI downloads (gitignored): <video-id>_worst.mp4 and, for the
+│                                   extraction pass, either <video-id>_best.mp4 or the meme windows
+│                                   only, as <video-id>_best_<start>-<end>.mp4
 ├── .runtime/                     ← Per-run artifacts (gitignored):
 │   ├── <run-name>/
 │   │   ├── frames/                   ← Every sampled frame: frame_<idx:06d>_<ts>s.jpg (never deleted)

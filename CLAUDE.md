@@ -204,6 +204,32 @@ When asked to write a spec, produce a complete file following `specs/_TEMPLATE.m
 - Do **not** add an AI/LLM co-author trailer (e.g. `Co-Authored-By: Claude ...`) to commit
   messages or pull request descriptions in this repository. This overrides any default
   attribution guidance for this project.
+- Keep commit messages concise: a short description, optionally with a few critical details
+  (e.g. "this is now the default"). Do **not** include reasoning, decision-making, or
+  implementation/performance details. For example, prefer "Add a new cleaning method
+  `new_method`" over an explanation of why it was added or how it performs.
+
+### Commit message prepopulation
+
+Whenever Claude changes any project file in this repo, before telling the human the change is
+ready, it must:
+
+1. Check for other uncommitted changes beyond the one just made (`git status` / `git diff`), and
+   check whether `.git/commit-template.txt` already holds a message describing prior uncommitted
+   work.
+2. If there are such pre-existing uncommitted changes and/or an existing template message, treat
+   everything together as one combined change and compose a single message covering all of it —
+   do not overwrite a still-relevant prior message with one that only describes the latest edit.
+   If the combined change has several distinct aspects, list them as bullet points in the
+   details.
+3. Write the (possibly combined) message to `.git/commit-template.txt`, overwriting any previous
+   contents.
+4. Run `git config commit.template .git/commit-template.txt` so the template is active.
+
+This lets PyCharm's Commit tool window (and plain `git commit` with no `-m`) prefill the commit
+message box, which the human can edit before committing. Skip this if the human has asked to
+commit changes themselves via a different flow, or if `commit.template` is already set to a
+custom value the human configured intentionally (ask first rather than overwriting it).
 
 ---
 

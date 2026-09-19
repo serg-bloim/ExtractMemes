@@ -35,6 +35,20 @@ def test_list_playlist_video_ids_uses_flat_extraction(fake_ytdl):
     assert result == ["newest", "middle", "oldest"]
 
 
+def test_list_playlist_video_ids_passes_proxy_when_given(fake_ytdl):
+    list_playlist_video_ids(PLAYLIST_URL, count=3, proxy="socks5h://127.0.0.1:1080")
+
+    options = fake_ytdl.call_args.args[0]
+    assert options["proxy"] == "socks5h://127.0.0.1:1080"
+
+
+def test_list_playlist_video_ids_omits_proxy_when_unset(fake_ytdl):
+    list_playlist_video_ids(PLAYLIST_URL, count=3)
+
+    options = fake_ytdl.call_args.args[0]
+    assert "proxy" not in options
+
+
 def test_importing_module_does_not_touch_yt_dlp():
     with mock.patch("yt_dlp.YoutubeDL") as youtube_dl:
         importlib.reload(playlist_watch)
@@ -107,6 +121,38 @@ def test_cli_find_prints_nothing_when_all_processed(tmp_path, capsys, fake_ytdl)
     )
 
     assert capsys.readouterr().out == ""
+
+
+def test_cli_find_proxy_flag_reaches_list_playlist_video_ids(tmp_path, monkeypatch, fake_ytdl):
+    monkeypatch.delenv("EXTRACT_MEMES_PROXY", raising=False)
+    processed_file = tmp_path / "processed.txt"
+
+    playlist_watch.main(
+        [
+            "find",
+            "--playlist-url",
+            PLAYLIST_URL,
+            "--processed-file",
+            str(processed_file),
+            "--proxy",
+            "socks5h://127.0.0.1:1080",
+        ]
+    )
+
+    options = fake_ytdl.call_args.args[0]
+    assert options["proxy"] == "socks5h://127.0.0.1:1080"
+
+
+def test_cli_find_proxy_falls_back_to_env_var(tmp_path, monkeypatch, fake_ytdl):
+    monkeypatch.setenv("EXTRACT_MEMES_PROXY", "socks5h://127.0.0.1:1080")
+    processed_file = tmp_path / "processed.txt"
+
+    playlist_watch.main(
+        ["find", "--playlist-url", PLAYLIST_URL, "--processed-file", str(processed_file)]
+    )
+
+    options = fake_ytdl.call_args.args[0]
+    assert options["proxy"] == "socks5h://127.0.0.1:1080"
 
 
 def test_cli_mark_processed_appends_id(tmp_path):

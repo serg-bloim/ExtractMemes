@@ -28,11 +28,14 @@ publishing a new video doesn't require me to manually find and launch a run.
 
 ### Library: `src/extract_memes/playlist_watch.py`
 
-- [x] AC1: `list_playlist_video_ids(playlist_url: str, count: int) -> list[str]` fetches metadata
-      only (yt-dlp with `extract_flat="in_playlist"`, `playlistend=count`, no per-video extraction
-      and no download) and returns up to `count` video ids in the order yt-dlp reports them.
-      `yt_dlp` is imported lazily inside the function, matching `downloader.download`'s pattern, so
-      importing `playlist_watch` has no import-time side effects.
+- [x] AC1: `list_playlist_video_ids(playlist_url: str, count: int, proxy: str | None = None) ->
+      list[str]` fetches metadata only (yt-dlp with `extract_flat="in_playlist"`,
+      `playlistend=count`, no per-video extraction and no download) and returns up to `count`
+      video ids in the order yt-dlp reports them. `yt_dlp` is imported lazily inside the function,
+      matching `downloader.download`'s pattern, so importing `playlist_watch` has no import-time
+      side effects. `proxy`, when given, is passed straight through as yt-dlp's `proxy` option
+      (same as `downloader.download`'s `proxy` parameter, AC12 in
+      [video-download.md](video-download.md)); omitted from the options dict when unset.
 - [x] AC2: `read_processed(path: Path) -> set[str]` reads one video id per non-blank line;
       returns an empty set if `path` doesn't exist yet.
 - [x] AC3: `append_processed(path: Path, video_id: str) -> None` appends one line with `video_id`,
@@ -46,10 +49,14 @@ publishing a new video doesn't require me to manually find and launch a run.
 
 ### CLI: `python -m extract_memes.playlist_watch`
 
-- [x] AC5: `find --playlist-url URL [--count N] [--processed-file PATH]` (defaults: `count=8`,
-      `processed-file=data/processed_vids.txt`) combines AC1/AC2/AC4 and prints the chosen video id
-      to stdout with no other output — or prints nothing and exits 0 if none is found — so a
-      workflow step can capture it directly.
+- [x] AC5: `find --playlist-url URL [--count N] [--processed-file PATH] [--proxy URL]` (defaults:
+      `count=8`, `processed-file=data/processed_vids.txt`, `proxy` unset) combines AC1/AC2/AC4 and
+      prints the chosen video id to stdout with no other output — or prints nothing and exits 0 if
+      none is found — so a workflow step can capture it directly. `--proxy` falls back to the
+      `EXTRACT_MEMES_PROXY` env var when unset, the same flag name, env var, and precedence
+      (`--proxy` wins) as `extract-memes`'s own `--proxy` (AC12 in
+      [video-download.md](video-download.md)) — one secret/env var configures both scripts'
+      yt-dlp calls.
 - [x] AC6: `mark-processed VIDEO_ID [--processed-file PATH]` (default `processed-file` as above)
       calls `append_processed`.
 
@@ -57,7 +64,10 @@ publishing a new video doesn't require me to manually find and launch a run.
 
 - [x] AC7: Triggered only by `workflow_dispatch` (manual) for now — see Out of Scope for scheduled
       triggering. Permissions: `contents: write` (needed to push the updated processed-file back).
-      Steps:
+      Job-level `env: EXTRACT_MEMES_PROXY: ${{ secrets.YT_DLP_PROXY }}` — read by both
+      `playlist_watch find` (AC5) and `extract-memes` (AC12 in
+      [video-download.md](video-download.md)) automatically, no extra `--proxy` flag needed in
+      either `run:` command. Steps:
       1. `actions/checkout@v4` — the code, at the triggering ref.
       2. `actions/checkout@v4` with `ref: data`, `path: data-branch` — a second checkout of the
          orphan `data` branch (see Technical Notes) into `data-branch/`, side by side with the code
@@ -91,7 +101,10 @@ publishing a new video doesn't require me to manually find and launch a run.
       `find_next_unprocessed` as pure functions (no network, no git) — missing processed-file,
       newest-first scanning order, "all already processed" returning `None`, and
       `list_playlist_video_ids` with yt-dlp's `YoutubeDL` faked out (never hits the network),
-      asserting the `extract_flat`/`playlistend` options passed. Runs under `pytest -m "not slow"`.
+      asserting the `extract_flat`/`playlistend` options passed, plus `proxy` passed through when
+      given and omitted when not. CLI coverage includes `find --proxy` reaching
+      `list_playlist_video_ids` and falling back to `EXTRACT_MEMES_PROXY`. Runs under
+      `pytest -m "not slow"`.
 
 ## Out of Scope
 
@@ -139,6 +152,12 @@ publishing a new video doesn't require me to manually find and launch a run.
 - **Why a repository variable for the playlist URL:** the user chose this — `vars.PLAYLIST_URL` is
   not secret, and keeping it in repo settings means changing the target playlist doesn't require a
   code change.
+- **Why `secrets.YT_DLP_PROXY` for the proxy, and why a shared env var name:** the proxy URL may
+  encode credentials (e.g. a `user:pass@host` SOCKS5/HTTP URL), so it's a secret, not a variable.
+  The workflow sets it once, at job level, as `EXTRACT_MEMES_PROXY` — the same env var
+  `extract-memes` already falls back to (AC12 in [video-download.md](video-download.md)) — so both
+  `playlist_watch find`'s yt-dlp metadata fetch and `extract-memes`'s yt-dlp downloads pick it up
+  without a `--proxy` flag in either `run:` command.
 - `count` (playlist fetch depth) defaults to 8, inside the user-requested 5–10 range.
 - **Why the install is split in two (`pip install yt-dlp` + `--no-deps -e .`, then the full
   `pip install -e .` only if a video was found):** raised by the user — if this workflow ends up
@@ -222,3 +241,15 @@ Resolved by the user (2026-09-18):
     yet. It must be created (seeded with an initial `processed_vids.txt`, even an empty one) and
     pushed to `origin` before this workflow can run — `actions/checkout@v4` with `ref: data` will
     fail otherwise. Tracked as a manual follow-up.
+- 2026-09-18: The user asked for both yt-dlp call sites in `check-new-video.yml` (the playlist
+  metadata fetch and the actual video download) to go through their proxy, via a secret. Added a
+  `proxy` parameter to `list_playlist_video_ids` (AC1) and a `--proxy` flag to the `find` CLI
+  subcommand (AC5), falling back to `EXTRACT_MEMES_PROXY` — deliberately reusing the exact env var
+  name `extract-memes`'s own `--proxy` already falls back to (AC12 in
+  [video-download.md](video-download.md)), so the workflow only needs to set that one env var once
+  at job level for both scripts to pick it up. Chose `secrets.YT_DLP_PROXY` as the secret name
+  (proxy URLs can embed credentials). Updated AC1/AC5/AC7/AC8 and Technical Notes.
+  - **Tests:** added proxy pass-through/omission coverage for `list_playlist_video_ids`, and CLI
+    coverage for `find --proxy` and its `EXTRACT_MEMES_PROXY` fallback, in
+    `tests/test_playlist_watch.py`.
+  - **Verified:** `pytest -m "not slow"` — 204 passed (was 200 before this change).

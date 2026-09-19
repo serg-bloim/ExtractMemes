@@ -9,6 +9,8 @@ permissions:
 jobs:
   check-and-run:
     runs-on: ubuntu-latest
+    env:
+      EXTRACT_MEMES_PROXY: ${{ secrets.YT_DLP_PROXY }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

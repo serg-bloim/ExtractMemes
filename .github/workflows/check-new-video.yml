@@ -33,8 +33,14 @@ jobs:
 
       - name: Find the oldest unprocessed video
         id: find
+        env:
+          LOOKBACK_COUNT: ${{ vars.LOOKBACK_COUNT }}
         run: |
-          video_id=$(python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt)
+          count_args=()
+          if [ -n "$LOOKBACK_COUNT" ]; then
+            count_args=(--count "$LOOKBACK_COUNT")
+          fi
+          video_id=$(python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt "${count_args[@]}")
           echo "video_id=$video_id" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js

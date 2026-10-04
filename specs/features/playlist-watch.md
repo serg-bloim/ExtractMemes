@@ -79,7 +79,9 @@ publishing a new video doesn't require me to manually find and launch a run.
          entirely for a run that finds nothing new (see Technical Notes).
       5. Run
          `python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt`,
-         capturing stdout into a step output (e.g. `video_id`) via `$GITHUB_OUTPUT`.
+         capturing stdout into a step output (e.g. `video_id`) via `$GITHUB_OUTPUT`. If the repo
+         variable `vars.LOOKBACK_COUNT` is set and non-empty, also pass `--count "$LOOKBACK_COUNT"` as is (no
+         format check in the workflow); otherwise omit `--count` so `find`'s default (AC5) applies.
       6. Only if `video_id` is non-empty:
          - `actions/setup-node@v4` — Node.js is required by `extract-memes` itself for YouTube
            downloads (ADR 006); not needed for step 5's flat playlist listing.
@@ -253,3 +255,8 @@ Resolved by the user (2026-09-18):
     coverage for `find --proxy` and its `EXTRACT_MEMES_PROXY` fallback, in
     `tests/test_playlist_watch.py`.
   - **Verified:** `pytest -m "not slow"` — 204 passed (was 200 before this change).
+- 2026-10-04: The user asked the workflow to honour an optional repo variable for the lookback
+  size. `check-new-video.yml`'s find step now passes `--count "$LOOKBACK_COUNT"` when
+  `vars.LOOKBACK_COUNT` is non-empty and omits `--count` otherwise, so the default (8) still applies
+  when the variable is absent. The value is passed through unchecked; the workflow does no format
+  validation.

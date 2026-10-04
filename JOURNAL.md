@@ -84,3 +84,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-09-19: Added `--send-timecodes-to telegram`/`--timecode-chat-id`, delivering a run's timecodes to a second Telegram chat (same bot as image uploads) as a source-link message plus a reply — [specs/features/timecode-channel.md](specs/features/timecode-channel.md).
 - 2026-10-04: The Telegram parent post now carries the source video's thumbnail and title, with title-text and bare-link fallbacks — [specs/features/meme-upload.md](specs/features/meme-upload.md).
 - 2026-10-04: Telegram albums now post as comments under the parent post when the channel has a linked discussion group, falling back to channel replies — [specs/features/meme-upload.md](specs/features/meme-upload.md).
+- 2026-10-04: The check-new-video workflow now uses the optional `LOOKBACK_COUNT` repo variable as `--count`, keeping the default when unset — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).

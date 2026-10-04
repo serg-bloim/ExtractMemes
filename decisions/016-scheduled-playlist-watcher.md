@@ -51,7 +51,7 @@ acceptance criteria.
 - Nothing runs automatically yet; someone still has to click "Run workflow" until the follow-up
   scheduling iteration ships.
 - The workflow depends on `vars.PLAYLIST_URL`, `secrets.TELEGRAM_BOT_TOKEN`, and
-  `secrets.TELEGRAM_CHAT_ID` being configured in the repo before first use.
+  `vars.TELEGRAM_CHAT_ID` being configured in the repo before first use.
 - `--classifier claude` isn't available in this workflow (no authenticated `claude` CLI on the
   runner, same constraint as the Docker image per ADR 012) — it always runs
   `--classifier heuristic`.

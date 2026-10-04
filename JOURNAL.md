@@ -85,3 +85,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-04: The Telegram parent post now carries the source video's thumbnail and title, with title-text and bare-link fallbacks — [specs/features/meme-upload.md](specs/features/meme-upload.md).
 - 2026-10-04: Telegram albums now post as comments under the parent post when the channel has a linked discussion group, falling back to channel replies — [specs/features/meme-upload.md](specs/features/meme-upload.md).
 - 2026-10-04: The check-new-video workflow now uses the optional `LOOKBACK_COUNT` repo variable as `--count`, keeping the default when unset — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
+- 2026-10-04: The check-new-video workflow now reads `TELEGRAM_CHAT_ID` from repo variables instead of secrets — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).

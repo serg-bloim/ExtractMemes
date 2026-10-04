@@ -89,7 +89,7 @@ publishing a new video doesn't require me to manually find and launch a run.
            `yt-dlp` from PyPI — see Technical Notes on why this runs natively rather than via the
            published Docker image).
          - `extract-memes "https://youtu.be/$video_id" --classifier heuristic --upload-to telegram`
-           with `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` from repo secrets.
+           with `TELEGRAM_BOT_TOKEN` (repo secret) and `TELEGRAM_CHAT_ID` (repo variable).
       7. If step 6 succeeded: run
          `python -m extract_memes.playlist_watch mark-processed "$video_id" --processed-file data-branch/processed_vids.txt`.
       8. If `data-branch/processed_vids.txt` has uncommitted changes: `cd data-branch`, commit (bot
@@ -260,3 +260,5 @@ Resolved by the user (2026-09-18):
   `vars.LOOKBACK_COUNT` is non-empty and omits `--count` otherwise, so the default (8) still applies
   when the variable is absent. The value is passed through unchecked; the workflow does no format
   validation.
+- 2026-10-04: `TELEGRAM_CHAT_ID` moved from repo secrets to repo variables (`vars.TELEGRAM_CHAT_ID`);
+  `TELEGRAM_BOT_TOKEN` stays a secret. Workflow, this spec, and ADR 016 updated to match.

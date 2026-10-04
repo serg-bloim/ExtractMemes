@@ -1,5 +1,6 @@
 """Fetch a source video at a quality tier, or pass a local video file straight through."""
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -11,6 +12,14 @@ FORMAT_SELECTORS: dict[str, str] = {
     "worst": "wv*[ext=mp4]/wv*",
     "best": "bv*[ext=mp4]/bv*",
 }
+
+
+@dataclass(frozen=True)
+class SourceInfo:
+    """What the source video is called and what it looks like, for posting alongside its memes."""
+
+    title: str | None = None
+    thumbnail_url: str | None = None
 
 
 def _progress_hook(bar: tqdm):
@@ -69,3 +78,21 @@ def download(
                 return Path(ydl.prepare_filename(info))
         except Exception as exc:
             raise RuntimeError(f"Failed to download {source!r} at {quality!r} quality: {exc}") from exc
+
+
+def fetch_source_info(source: str, proxy: str | None = None) -> SourceInfo | None:
+    """Return the title and thumbnail URL of a URL `source`, or `None` for a local file.
+
+    Makes a metadata-only yt-dlp request (nothing is downloaded). Raises if that request fails.
+    """
+    if Path(source).is_file():
+        return None
+
+    import yt_dlp
+
+    options = {"quiet": True, "noprogress": True, "skip_download": True, "js_runtimes": {"node": {}}}
+    if proxy:
+        options["proxy"] = proxy
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(source, download=False)
+    return SourceInfo(title=info.get("title"), thumbnail_url=info.get("thumbnail"))

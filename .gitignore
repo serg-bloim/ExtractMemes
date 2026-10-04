@@ -7,8 +7,3 @@ __pycache__/
 downloads/
 .runtime/
 /sample/
-/.claude
-*.md
-/tests
-/playground
-/data

@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from extract_memes import batch_cleaner
 from extract_memes.classifier import ClaudeCliClassifier, FrameClassifier
-from extract_memes.downloader import download
+from extract_memes.downloader import download, fetch_source_info
 from extract_memes.frame_extractor import frames_from, sample_frames
 from extract_memes.heuristic_classifier import HeuristicClassifier
 from extract_memes.telegram_timecode_sender import TelegramTimecodeSender
@@ -136,8 +136,9 @@ def run(
     returned instead, so that combination requires `save_high_res=True`.
 
     With `uploader` set (or `upload_to="telegram"`, which builds a `TelegramUploader` from
-    `telegram_bot_token`/`telegram_chat_id`), `uploader.upload_all(saved, source)` is called once
-    before `run` returns. A failure there is logged and does not abort the run or affect what's
+    `telegram_bot_token`/`telegram_chat_id`), `uploader.upload_all(saved, source, info)` is called once
+    before `run` returns, `info` being the video's title and thumbnail (`None` for a local file or
+    if they couldn't be fetched). A failure there is logged and does not abort the run or affect what's
     returned — unlike every other step here, whose errors propagate.
 
     With `timecode_sender` set (or `send_timecodes_to="telegram"`, which builds a
@@ -254,7 +255,12 @@ def run(
             print(f"Timecode send failed: {exc}")
     if uploader is not None:
         try:
-            uploader.upload_all(saved, source)
+            try:
+                info = fetch_source_info(source, proxy=proxy)
+            except Exception as exc:
+                print(f"Could not fetch the video's title and thumbnail: {exc}")
+                info = None
+            uploader.upload_all(saved, source, info)
         except Exception as exc:
             print(f"Upload failed: {exc}")
     return saved

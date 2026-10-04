@@ -3,7 +3,8 @@ from unittest import mock
 
 import pytest
 
-from extract_memes.telegram_uploader import ALBUM_LIMIT, TelegramUploader
+from extract_memes.downloader import SourceInfo
+from extract_memes.telegram_uploader import ALBUM_LIMIT, CAPTION_LIMIT, TelegramUploader
 
 
 def response(ok=True, result=None, description=None):
@@ -14,10 +15,12 @@ def response(ok=True, result=None, description=None):
 
 
 def default_post(url, **kwargs):
-    if url.endswith("/sendMessage"):
+    if url.endswith(("/sendMessage", "/sendPhoto")):
         return response(result={"message_id": 111})
     if url.endswith("/sendMediaGroup"):
         return response(result=[{}])
+    if url.endswith("/getChat"):
+        return response(result={"id": -100, "type": "channel"})
     raise AssertionError(f"unexpected call to {url}")
 
 
@@ -146,3 +149,163 @@ def test_image_files_are_closed_after_each_album(post, tmp_path):
 
     assert len(opened) == 2
     assert all(file.closed for file in opened)
+
+
+INFO = SourceInfo(title="Best memes", thumbnail_url="https://img.example/t.jpg")
+
+
+def test_parent_post_is_the_thumbnail_with_title_and_link_as_caption(post, tmp_path):
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 2), "https://youtu.be/xyz", INFO)
+
+    [photo_call] = calls_to(post, "sendPhoto")
+    assert photo_call.kwargs["data"] == {
+        "chat_id": "123",
+        "photo": "https://img.example/t.jpg",
+        "caption": "Best memes\nhttps://youtu.be/xyz",
+    }
+    assert calls_to(post, "sendMessage") == []
+    [album_call] = calls_to(post, "sendMediaGroup")
+    assert album_call.kwargs["data"]["reply_to_message_id"] == 111
+
+
+def test_a_long_title_is_cut_to_fit_the_caption_limit(post, tmp_path):
+    info = SourceInfo(title="x" * 2000, thumbnail_url="https://img.example/t.jpg")
+
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz", info)
+
+    [photo_call] = calls_to(post, "sendPhoto")
+    caption = photo_call.kwargs["data"]["caption"]
+    assert len(caption) == CAPTION_LIMIT
+    assert caption.endswith("\nhttps://youtu.be/xyz")
+
+
+def test_failed_thumbnail_falls_back_to_a_title_and_link_message(post, tmp_path):
+    def photo_fails(url, **kwargs):
+        if url.endswith("/sendPhoto"):
+            return response(ok=False, description="Bad Request: wrong file identifier/HTTP URL")
+        return default_post(url, **kwargs)
+
+    post.side_effect = photo_fails
+
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz", INFO)
+
+    [message_call] = calls_to(post, "sendMessage")
+    assert message_call.kwargs["data"]["text"] == "Best memes\nhttps://youtu.be/xyz"
+    assert calls_to(post, "sendMediaGroup")[0].kwargs["data"]["reply_to_message_id"] == 111
+
+
+def test_info_without_a_thumbnail_posts_title_and_link_as_text(post, tmp_path):
+    info = SourceInfo(title="Best memes")
+
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz", info)
+
+    assert calls_to(post, "sendPhoto") == []
+    [message_call] = calls_to(post, "sendMessage")
+    assert message_call.kwargs["data"]["text"] == "Best memes\nhttps://youtu.be/xyz"
+
+
+def test_everything_failing_falls_back_to_the_bare_link_then_no_reply(post, tmp_path, capsys):
+    def only_bare_link_works(url, **kwargs):
+        if url.endswith("/sendMessage") and kwargs["data"]["text"] == "https://youtu.be/xyz":
+            return response(result={"message_id": 222})
+        if url.endswith(("/sendPhoto", "/sendMessage")):
+            return response(ok=False, description="nope")
+        return default_post(url, **kwargs)
+
+    post.side_effect = only_bare_link_works
+
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz", INFO)
+
+    assert calls_to(post, "sendMediaGroup")[0].kwargs["data"]["reply_to_message_id"] == 222
+
+
+CHANNEL = -1001
+DISCUSSION = -1002
+
+
+def forward_update(update_id=7, post_id=111, forwarded_id=555, discussion=DISCUSSION, channel=CHANNEL):
+    return {
+        "update_id": update_id,
+        "message": {
+            "message_id": forwarded_id,
+            "chat": {"id": discussion},
+            "is_automatic_forward": True,
+            "forward_origin": {"type": "channel", "chat": {"id": channel}, "message_id": post_id},
+        },
+    }
+
+
+def comments_post(updates_by_call):
+    """A `post` side effect for a channel with a linked discussion group.
+
+    `updates_by_call` is a list of `getUpdates` results, one per call (the last repeats).
+    """
+    calls = {"n": 0}
+
+    def side_effect(url, **kwargs):
+        if url.endswith("/getChat"):
+            return response(result={"id": CHANNEL, "type": "channel", "linked_chat_id": DISCUSSION})
+        if url.endswith("/getUpdates"):
+            result = updates_by_call[min(calls["n"], len(updates_by_call) - 1)]
+            calls["n"] += 1
+            return response(result=result)
+        return default_post(url, **kwargs)
+
+    return side_effect
+
+
+def test_albums_go_to_the_discussion_group_as_comments_on_the_forwarded_post(post, tmp_path):
+    post.side_effect = comments_post([[forward_update()]])
+
+    TelegramUploader(bot_token="tok", chat_id="@chan").upload_all(images(tmp_path, ALBUM_LIMIT + 2), "https://youtu.be/xyz")
+
+    albums = calls_to(post, "sendMediaGroup")
+    assert len(albums) == 2
+    for call in albums:
+        assert call.kwargs["data"]["chat_id"] == DISCUSSION
+        assert call.kwargs["data"]["reply_to_message_id"] == 555
+
+
+def test_unrelated_and_stale_forwards_are_skipped_while_waiting(post, tmp_path):
+    stale = forward_update(update_id=1, post_id=99, forwarded_id=444)
+    other_group = forward_update(update_id=2, discussion=-1999)
+    post.side_effect = comments_post([[stale, other_group], [forward_update(update_id=3)]])
+
+    TelegramUploader(bot_token="tok", chat_id="@chan").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+
+    [album] = calls_to(post, "sendMediaGroup")
+    assert album.kwargs["data"]["reply_to_message_id"] == 555
+    offsets = [c.kwargs["data"].get("offset") for c in calls_to(post, "getUpdates")]
+    assert offsets == [None, 3]
+
+
+def test_missing_forward_falls_back_to_replying_in_the_chat(post, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("extract_memes.telegram_uploader.DISCUSSION_WAIT_SECONDS", 0)
+    post.side_effect = comments_post([[]])
+
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+
+    [album] = calls_to(post, "sendMediaGroup")
+    assert album.kwargs["data"]["chat_id"] == "123"
+    assert album.kwargs["data"]["reply_to_message_id"] == 111
+    assert "comments thread never appeared" in capsys.readouterr().out
+
+
+def test_chat_without_a_discussion_group_never_polls(post, tmp_path):
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+
+    assert calls_to(post, "getUpdates") == []
+    assert calls_to(post, "sendMediaGroup")[0].kwargs["data"]["reply_to_message_id"] == 111
+
+
+def test_no_comments_lookup_when_the_parent_post_failed(post, tmp_path):
+    def parent_fails(url, **kwargs):
+        if url.endswith("/sendMessage"):
+            return response(ok=False, description="nope")
+        return default_post(url, **kwargs)
+
+    post.side_effect = parent_fails
+
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+
+    assert calls_to(post, "getChat") == []

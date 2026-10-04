@@ -7,7 +7,7 @@ import pytest
 from tqdm import tqdm
 
 from extract_memes import downloader
-from extract_memes.downloader import _progress_hook, download
+from extract_memes.downloader import SourceInfo, _progress_hook, download, fetch_source_info
 
 TEST_VIDEO_URL = "https://youtu.be/AElGyY97k_0"
 
@@ -114,6 +114,26 @@ def test_yt_dlp_failure_raises_runtime_error(tmp_path, fake_ytdl):
 
     assert "best" in str(excinfo.value)
     assert excinfo.value.__cause__ is error
+
+
+def test_fetch_source_info_reads_title_and_thumbnail_without_downloading(fake_ytdl):
+    youtube_dl, _ = fake_ytdl
+    ydl = youtube_dl.return_value.__enter__.return_value
+    ydl.extract_info.return_value = {"title": "T", "thumbnail": "https://img/t.jpg"}
+
+    info = fetch_source_info(TEST_VIDEO_URL, proxy="socks5h://127.0.0.1:1080")
+
+    assert info == SourceInfo(title="T", thumbnail_url="https://img/t.jpg")
+    ydl.extract_info.assert_called_once_with(TEST_VIDEO_URL, download=False)
+    assert ydl_options(youtube_dl)["proxy"] == "socks5h://127.0.0.1:1080"
+
+
+def test_fetch_source_info_is_none_for_a_local_file(tmp_path, fake_ytdl):
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"")
+
+    assert fetch_source_info(str(video)) is None
+    fake_ytdl[0].assert_not_called()
 
 
 def test_progress_hook_updates_the_bar_from_downloading_and_finished_events():

@@ -3,9 +3,8 @@
 The functions are named `test_*` only so IDE pytest integrations show a run icon next to each one.
 They are not tests: they assert nothing. The runs use the pipeline's default heuristic classifier
 unless they say otherwise; `test_custom_model_and_effort` and `test_classify_one_frame` call the
-real Claude classifier (slow, and costs usage). This file's name doesn't match pytest's
-`test_*.py` / `*_test.py` collection patterns, so running `pytest` from the project root collects
-nothing from here.
+real Claude classifier (slow, and costs usage). A bare `pytest` from the
+project root collects nothing from here (`testpaths` in pyproject.toml is `tests`).
 
 Output goes under `.runtime/_playground/<run_name>/`, with downloads in
 `.runtime/_playground/downloads/`. Paths are resolved from this file's location, not the cwd.

@@ -2,7 +2,7 @@
 title: "Upload Extracted Memes to Telegram"
 status: implemented
 created: 2026-09-18
-updated: 2026-09-18
+updated: 2026-10-04
 author: ""
 depends-on: ["extraction-pipeline", "batch-cleaning"]
 ---
@@ -127,6 +127,50 @@ upload step.
       reaches `pipeline.run` with `upload_to="telegram"` and the resolved values passed through;
       `--upload-to telegram --no-images` exits 2.
 
+### Iteration: thumbnail and title on the parent post (2026-10-04)
+
+Amends AC1, AC5 and AC6 above.
+
+- [x] AC15: `downloader.py` defines `SourceInfo(title: str | None, thumbnail_url: str | None)` (frozen
+      dataclass) and `fetch_source_info(source, proxy=None) -> SourceInfo | None`: a metadata-only
+      yt-dlp request (`download=False`) returning the video's title and thumbnail URL, or `None`
+      for a local-file source without touching yt-dlp.
+- [x] AC16: `Uploader.upload_all` gains a third parameter `info: SourceInfo | None = None`.
+      `pipeline.run` calls `uploader.upload_all(saved, source, info)` once (AC5 otherwise
+      unchanged), with `info` from `fetch_source_info(source, proxy=proxy)`. If that raises, `run`
+      prints `Could not fetch the video's title and thumbnail: <error>` and passes `info=None`;
+      the upload still happens.
+- [x] AC17: `TelegramUploader.upload_all` posts the parent message (AC6) as a `sendPhoto` of
+      `info.thumbnail_url` (Telegram fetches the URL itself) with caption `<title>\n<source>`,
+      the title cut so the caption stays within Telegram's 1024-character limit. Albums reply to
+      it as before. Fallbacks, in order, each tried only if the previous failed: a `sendMessage`
+      of `<title>\n<source>` (only when a title is known), then a `sendMessage` of the bare
+      `source`; each failed attempt prints `Failed to post the source link: <error>`. If all
+      fail, the albums send without a reply (AC6). With `info=None` the behavior is exactly AC6's
+      original: one bare-link `sendMessage`.
+- [x] AC18: Tests: `tests/test_downloader.py` covers AC15; `tests/test_telegram_uploader.py` covers
+      the photo post, caption truncation and each fallback; `tests/test_pipeline.py` covers AC16
+      (info passed, local file gives `None`, failed fetch still uploads).
+
+### Iteration: albums as comments (2026-10-04)
+
+Amends AC6 above.
+
+- [x] AC19: After the parent post succeeds, `TelegramUploader` calls `getChat` on the target chat.
+      If it reports a `linked_chat_id` (a channel with a discussion group), the uploader reads
+      `getUpdates` (long-polling, up to 30 s) for the automatic forward of the parent post in that
+      group: a message in `linked_chat_id` with `is_automatic_forward` whose `forward_origin` is
+      the target channel and the parent's message id. The albums are then sent to the discussion
+      group with `reply_to_message_id` set to the forwarded message, so they appear as comments
+      under the post. The bot must be an admin of the discussion group to see the forward.
+- [x] AC20: Fallbacks keep AC6's behavior: no `linked_chat_id` (silently), a failed `getChat` or
+      `getUpdates`, or no matching forward within the wait (a printed line each) all send the
+      albums as replies to the parent in the target chat, as before. No lookup happens if the
+      parent post itself failed.
+- [x] AC21: `tests/test_telegram_uploader.py` covers comments delivery (including chunking), skipping
+      stale and unrelated forwards, the timeout fallback, and the no-discussion-group and
+      failed-parent cases, all with `requests.post` mocked.
+
 ## Out of Scope
 
 - **Discord, Slack, or any messenger besides Telegram.** The `Uploader` ABC is designed for this,
@@ -134,6 +178,8 @@ upload step.
   its own spec alongside `meme-classifier`.
 - **A standalone upload command** decoupled from a pipeline run (considered and rejected —
   [ADR 014](../../decisions/014-telegram-upload-as-pipeline-stage.md)).
+- **Thumbnail/title on the timecode channel's parent post** (`TelegramTimecodeSender`); only the
+  meme upload got it.
 - **Retry/backoff on a failed album.** One attempt per album; a failure is logged, not retried.
 - **Dedup or skip-if-already-uploaded across separate runs of the same video.** Re-running the same
   `run_name` re-posts everything again (a new source message, new albums); there is no
@@ -148,11 +194,8 @@ upload step.
   documented API) returned `"Unknown error"` for every attempt during live testing, including a
   trivial 1x1 test image sent with `curl` outside this codebase, indicating the endpoint itself is
   unreliable rather than anything about our images or request shape.
-- **Posting to a channel's linked discussion group so images show as "comments"** under a channel
-  post. Tried and rejected for now: it requires the target channel to have a discussion group
-  linked (`getChat`'s `linked_chat_id`), which the chat tested against didn't have, and would also
-  need polling for Telegram's auto-forwarded copy of the channel post to reply into. Left for a
-  later iteration if a channel with a linked discussion group is the actual target.
+- **A webhook-based forward lookup.** `getUpdates` is used (AC19); it can't run while the bot has a
+  webhook set, nor share updates with another `getUpdates` consumer.
 
 ## Technical Notes
 
@@ -254,3 +297,18 @@ Resolved by the user (2026-09-18):
     unchanged since the CLI's flags and `pipeline.run` call signature didn't move.
   - **Verified:** `pytest -m "not slow"` — 180 passed, still no network access in the offline
     suite. All ACs re-checked against the new behavior. Status remains `implemented`.
+- 2026-10-04: The user asked for the parent post to carry the source video's thumbnail and title
+  as well as the link. Added AC15–AC18: `fetch_source_info` (separate metadata-only yt-dlp call,
+  so `download()`'s return type and its many callers stay untouched), an `info` argument on
+  `upload_all`, and a `sendPhoto` parent post with caption `<title>\n<link>` that falls back to
+  title+link text, then the bare link. The thumbnail is passed to Telegram as a URL rather than
+  downloaded and re-uploaded. The timecode channel is unchanged. The user said "go for it" without
+  answering the two open choices, so the defaults were used. Also extended
+  `playground/telegram_playground_test.py` with a sample `SourceInfo`.
+- 2026-10-04: The user asked for the albums to appear in the comments section under the parent
+  post. This was previously rejected because the tested chat had no discussion group; the user's
+  channel `test` now has one (`getChat` returned `linked_chat_id`). Added AC19–AC21: find the
+  auto-forwarded copy of the post via `getUpdates` and send the albums to the discussion group as
+  replies to it, falling back to the old reply-in-channel behavior. The user didn't choose between
+  falling back and failing loudly, so the fallback was used. The Out of Scope entry for this was
+  replaced. Not yet verified against live Telegram; run `playground/telegram_playground_test.py`.

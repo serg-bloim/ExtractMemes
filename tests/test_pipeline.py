@@ -12,6 +12,7 @@ from extract_memes.classifier import FrameClassifier
 from extract_memes.downloader import download
 from extract_memes.pipeline import MEME_LABEL, default_run_name, format_timecode, run
 from extract_memes.timecode_sender import TimecodeSender
+from extract_memes.downloader import SourceInfo
 from extract_memes.uploader import Uploader
 
 TEST_VIDEO_URL = "https://youtu.be/AElGyY97k_0"
@@ -64,9 +65,11 @@ class FakeUploader(Uploader):
     def __init__(self, error: Exception | None = None) -> None:
         self.error = error
         self.calls: list[tuple[list[Path], str]] = []
+        self.infos: list[SourceInfo | None] = []
 
-    def upload_all(self, image_paths: list[Path], source: str) -> None:
+    def upload_all(self, image_paths: list[Path], source: str, info: SourceInfo | None = None) -> None:
         self.calls.append((list(image_paths), source))
+        self.infos.append(info)
         if self.error:
             raise self.error
 
@@ -913,3 +916,32 @@ def test_explicit_timecode_sender_ignores_send_timecodes_to(short_video, tmp_pat
 
     telegram_sender.assert_not_called()
     assert len(sender.calls) == 1
+
+
+def test_uploader_receives_the_fetched_source_info(short_video, tmp_path):
+    info = SourceInfo(title="A title", thumbnail_url="https://img/t.jpg")
+    uploader = FakeUploader()
+
+    with mock.patch("extract_memes.pipeline.fetch_source_info", return_value=info) as fetch:
+        run(str(short_video), runtime_dir=tmp_path, fps=1.0, classifier=EveryNth(10), uploader=uploader, proxy="p")
+
+    fetch.assert_called_once_with(str(short_video), proxy="p")
+    assert uploader.infos == [info]
+
+
+def test_a_local_file_source_has_no_info(short_video, tmp_path):
+    uploader = FakeUploader()
+
+    run(str(short_video), runtime_dir=tmp_path, fps=1.0, classifier=EveryNth(10), uploader=uploader)
+
+    assert uploader.infos == [None]
+
+
+def test_a_failed_info_fetch_still_uploads_without_info(short_video, tmp_path, capsys):
+    uploader = FakeUploader()
+
+    with mock.patch("extract_memes.pipeline.fetch_source_info", side_effect=RuntimeError("blocked")):
+        run(str(short_video), runtime_dir=tmp_path, fps=1.0, classifier=EveryNth(10), uploader=uploader)
+
+    assert uploader.infos == [None]
+    assert "Could not fetch the video's title and thumbnail: blocked" in capsys.readouterr().out

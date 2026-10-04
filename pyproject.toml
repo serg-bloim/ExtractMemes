@@ -26,4 +26,6 @@ extract-memes = "extract_memes.__main__:main"
 where = ["src"]
 
 [tool.pytest.ini_options]
+# A bare `pytest` only collects tests/; playground/ files still run when given explicitly (IDE run icon).
+testpaths = ["tests"]
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]

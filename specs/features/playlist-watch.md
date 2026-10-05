@@ -92,7 +92,14 @@ publishing a new video doesn't require me to manually find and launch a run.
            with `TELEGRAM_BOT_TOKEN` (repo secret) and `TELEGRAM_CHAT_ID` (repo variable).
       7. If step 6 succeeded: run
          `python -m extract_memes.playlist_watch mark-processed "$video_id" --processed-file data-branch/processed_vids.txt`.
-      8. If `data-branch/processed_vids.txt` has uncommitted changes: `cd data-branch`, commit (bot
+      7a. Opt-in image saving: the `extract-memes` call in step 6 always passes
+         `--run-name "$video_id"`; when the repo variable `vars.SAVE_IMAGES` equals `true` it also
+         passes `--save-low-res --save-high-res`, and a following step copies
+         `.runtime/$video_id/low-res` to `data-branch/$video_id/lowres` and
+         `.runtime/$video_id/high-res` to `data-branch/$video_id/highres`. With the variable unset
+         or any other value, nothing is saved and the workflow behaves as before.
+      8. If `data-branch` has uncommitted changes (the processed file and, when enabled, the saved
+         images): `cd data-branch`, commit (bot
          identity, e.g. `github-actions[bot]`) and push — to the `data` branch, independently of
          whatever ref triggered the workflow on the code checkout.
       A run where `find` returns nothing does only steps 1–5 and ends there — no error.
@@ -186,6 +193,11 @@ Resolved by the user (2026-09-18):
 
 ## Changelog
 
+- 2026-10-04: The user asked for an opt-in way to keep the meme images from a workflow run. Added the
+  `vars.SAVE_IMAGES` repo variable (`true` enables it): the run saves low-res and high-res images,
+  and they are committed to the `data` branch under `<video-id>/lowres` and `<video-id>/highres`
+  alongside `processed_vids.txt`. The commit step now stages the whole `data-branch` checkout.
+  Updated AC7. Not run on real GitHub Actions in this session.
 - 2026-09-18: The user asked to run the pipeline via GitHub Actions, triggered by a new script that
   checks a playlist (metadata only, latest 5–10 videos) against a repo-tracked
   `data/processed_vids.txt`, and launches the main pipeline on the oldest unprocessed video found.

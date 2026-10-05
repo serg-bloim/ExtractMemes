@@ -15,18 +15,20 @@ _MARGIN = _WIDTH // 5
 
 @dataclass(frozen=True)
 class FrameScores:
-    """How much a frame's left and right margins look like a glitch card's surroundings."""
+    """How much a frame's left and right margins look like a glitch card's surroundings.
+
+    Only `band` decides whether a frame is a card; `texture` is kept for diagnostics.
+    """
 
     band: float  # brightest row's mean brightness minus the median row brightness
     texture: float  # mean saturation change between vertically adjacent pixels
 
 
 class HeuristicClassifier(FrameClassifier):
-    """Flags glitch-framed meme cards: bright horizontal bands crossing multicolored static."""
+    """Flags glitch-framed meme cards: bright horizontal bands in the margins."""
 
-    def __init__(self, band_threshold: float = 180.0, texture_threshold: float = 18.0) -> None:
+    def __init__(self, band_threshold: float = 180.0) -> None:
         self.band_threshold = band_threshold
-        self.texture_threshold = texture_threshold
 
     @staticmethod
     def scores(frame: np.ndarray) -> FrameScores:
@@ -43,8 +45,7 @@ class HeuristicClassifier(FrameClassifier):
         return FrameScores(band=band, texture=texture)
 
     def is_meme_frame(self, frame: np.ndarray) -> bool:
-        scores = self.scores(frame)
-        return scores.band > self.band_threshold and scores.texture > self.texture_threshold
+        return self.scores(frame).band > self.band_threshold
 
     def is_meme(self, image_path: Path) -> bool:
         frame = cv2.imread(str(image_path))

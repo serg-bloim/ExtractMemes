@@ -27,12 +27,13 @@ def test_static_without_band_is_not_meme():
     assert not HeuristicClassifier().is_meme_frame(glitch_card(band=False))
 
 
-def test_band_on_flat_background_is_not_meme():
+def test_band_on_flat_background_is_meme():
+    # Texture no longer guards this: the bright band alone is enough.
     frame = np.full((144, 256, 3), 40, dtype=np.uint8)
     frame[20:124, 64:192] = 230
     frame[100:106, :] = 255
 
-    assert not HeuristicClassifier().is_meme_frame(frame)
+    assert HeuristicClassifier().is_meme_frame(frame)
 
 
 @pytest.mark.parametrize("value", [0, 255])
@@ -47,10 +48,10 @@ def test_larger_frame_is_resized_before_scoring():
     assert HeuristicClassifier.scores(upscaled) == HeuristicClassifier.scores(card)
 
 
-def test_thresholds_are_configurable():
-    classifier = HeuristicClassifier(band_threshold=1000.0, texture_threshold=5.0)
+def test_threshold_is_configurable():
+    classifier = HeuristicClassifier(band_threshold=1000.0)
 
-    assert (classifier.band_threshold, classifier.texture_threshold) == (1000.0, 5.0)
+    assert classifier.band_threshold == 1000.0
     assert not classifier.is_meme_frame(glitch_card())
 
 

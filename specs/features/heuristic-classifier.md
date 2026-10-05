@@ -9,6 +9,9 @@ depends-on: ["meme-classifier", "extraction-pipeline", "dev-harness"]
 
 # Heuristic Meme Classifier (Iteration 2)
 
+> **Amended by [heuristic-band-only](heuristic-band-only.md):** the classifier now decides on `band`
+> alone. `texture_threshold` and the texture half of AC3 no longer apply.
+
 ## Problem Statement
 
 The Claude CLI classifier (iteration 1, [meme-classifier](meme-classifier.md)) judges glitch-framed

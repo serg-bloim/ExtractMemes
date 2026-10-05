@@ -58,23 +58,43 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+          SAVE_IMAGES: ${{ vars.SAVE_IMAGES }}
         run: |
+          save_args=()
+          if [ "$SAVE_IMAGES" = "true" ]; then
+            save_args=(--save-low-res --save-high-res)
+          fi
           extract-memes "https://youtu.be/${{ steps.find.outputs.video_id }}" \
             --classifier heuristic \
-            --upload-to telegram
+            --upload-to telegram \
+            --run-name "${{ steps.find.outputs.video_id }}" \
+            "${save_args[@]}"
+
+      - name: Copy the meme images into the data branch
+        if: steps.find.outputs.video_id != '' && vars.SAVE_IMAGES == 'true'
+        run: |
+          video_id="${{ steps.find.outputs.video_id }}"
+          run_dir=".runtime/$video_id"
+          mkdir -p "data-branch/$video_id"
+          if [ -d "$run_dir/low-res" ]; then
+            cp -r "$run_dir/low-res" "data-branch/$video_id/lowres"
+          fi
+          if [ -d "$run_dir/high-res" ]; then
+            cp -r "$run_dir/high-res" "data-branch/$video_id/highres"
+          fi
 
       - name: Mark the video as processed
         if: steps.find.outputs.video_id != ''
         run: python -m extract_memes.playlist_watch mark-processed "${{ steps.find.outputs.video_id }}" --processed-file data-branch/processed_vids.txt
 
-      - name: Commit and push the updated processed-videos file
+      - name: Commit and push the updated data branch
         if: steps.find.outputs.video_id != ''
         working-directory: data-branch
         run: |
-          if ! git diff --quiet -- processed_vids.txt; then
+          git add -A
+          if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add processed_vids.txt
             git commit -m "Mark ${{ steps.find.outputs.video_id }} as processed"
             git push
           fi

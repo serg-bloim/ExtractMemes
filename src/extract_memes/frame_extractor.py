@@ -20,6 +20,10 @@ def sample_frames(video_path: Path, fps: float = 2.0) -> Iterator[tuple[int, flo
 
     `step = max(1, round(native_fps / fps))`, so the effective rate is `native_fps / step`, which
     isn't always exactly `fps` (25 fps at `fps=2.0` gives step 12). Frames are BGR, as decoded.
+
+    The timestamp is the frame's own presentation time (`CAP_PROP_POS_MSEC`), not
+    `frame_index / native_fps`: some files have uneven frame spacing, so the header's nominal rate
+    drifts from the real time (15 s off after 3500 s on one 109-minute 144p file).
     """
     cap = _open(video_path)
     try:
@@ -32,7 +36,7 @@ def sample_frames(video_path: Path, fps: float = 2.0) -> Iterator[tuple[int, flo
             if not ok:
                 return
             if frame_index % step == 0:
-                yield frame_index, frame_index / native_fps, frame
+                yield frame_index, cap.get(cv2.CAP_PROP_POS_MSEC) / 1000, frame
             frame_index += 1
     finally:
         cap.release()

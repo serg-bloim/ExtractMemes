@@ -38,8 +38,10 @@ I can study every frame a meme is on screen for without paying the open-and-seek
 - [x] AC1: `src/extract_memes/frame_extractor.py` exposes
       `sample_frames(video_path: Path, fps: float = 2.0) -> Iterator[tuple[int, float, np.ndarray]]`,
       which yields `(frame_index, timestamp_seconds, frame)`. `frame_index` is the 0-based index of
-      the decoded frame in the source file (not a sample counter). `timestamp_seconds` is
-      `frame_index / native_fps`. Items come in strictly increasing order.
+      the decoded frame in the source file (not a sample counter). `timestamp_seconds` is the
+      frame's own presentation time, `cap.get(cv2.CAP_PROP_POS_MSEC) / 1000` read right after the
+      frame, not `frame_index / native_fps`: a file can have uneven frame spacing, so its nominal
+      rate drifts from real time. Items come in strictly increasing order.
 - [x] AC2: Sampling step: `native_fps = cap.get(cv2.CAP_PROP_FPS) or fps`,
       `step = max(1, round(native_fps / fps))` using Python's built-in `round` (half-to-even).
       Every `step`-th decoded frame is yielded, starting at index 0. So the effective rate is
@@ -202,3 +204,13 @@ All resolved:
   card at 99.56 s yields frames 2489–2498 (99.56–99.92 s) in 0.20 s, and the first frame is
   pixel-identical to `frame_at(path, 99.56)`. `sample_frames`, `frame_at`, and the pipeline are
   unchanged; status stays `implemented`.
+- 2026-10-05: `sample_frames` timestamps now come from each frame's own presentation time
+  (`CAP_PROP_POS_MSEC`) instead of `frame_index / native_fps` (AC1). The user reported low-res and high-res frames drifting apart, about
+  1 s at 4 min and 15 s at 3500 s. On `_RHAQmLk0Es`, the 144p file decodes 82305 frames though
+  its header implies 81945, because its frames are unevenly spaced (360 gaps of 40 ms among the
+  usual 80 ms) while the header states a nominal 12.5 fps; the 1080p copy is regular. The header's
+  frame count is only `duration × fps`, so counting frames from it could not show the difference.
+  Checked against the best copy at four points across the video: the scan frame at its new timestamp
+  matches the best frame at that time (mean difference about 3, against 22 to 71 ten seconds away).
+  `frames_from` keeps `frame_index / native_fps`, since the best copy's spacing is regular. Test:
+  mocked capture whose positions differ from `index / fps`.

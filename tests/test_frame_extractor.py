@@ -140,10 +140,11 @@ def test_capture_released_when_consumer_stops_early():
     capture.release.assert_called_once()
 
 
-def test_zero_native_fps_falls_back_to_requested_fps():
+def test_zero_native_fps_still_samples_at_the_requested_fps():
     capture = mock.Mock()
     capture.isOpened.return_value = True
-    capture.get.return_value = 0.0
+    positions = iter([0.0, 500.0, 1000.0, 1500.0])
+    capture.get.side_effect = lambda prop: 0.0 if prop == cv2.CAP_PROP_FPS else next(positions)
     frame = np.zeros((144, 256, 3), dtype=np.uint8)
     capture.read.side_effect = [(True, frame)] * 3 + [(False, None)]
 
@@ -152,3 +153,16 @@ def test_zero_native_fps_falls_back_to_requested_fps():
 
     assert samples == [(0, 0.0), (1, 0.5), (2, 1.0)]
     capture.release.assert_called_once()
+
+
+def test_sample_frames_timestamps_come_from_the_frames_not_the_nominal_rate():
+    cap = mock.MagicMock()
+    cap.isOpened.return_value = True
+    positions = iter([0.0, 90.0, 200.0, 290.0])
+    cap.read.side_effect = [(True, np.zeros((1, 1, 3), np.uint8))] * 4 + [(False, None)]
+    cap.get.side_effect = lambda prop: 10.0 if prop == cv2.CAP_PROP_FPS else next(positions)
+
+    with mock.patch("extract_memes.frame_extractor.cv2.VideoCapture", return_value=cap):
+        frames = list(sample_frames("ignored", fps=10.0))
+
+    assert [timestamp for _, timestamp, _ in frames] == pytest.approx([0.0, 0.09, 0.2, 0.29])

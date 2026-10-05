@@ -235,4 +235,4 @@ def test_compare_cleaners_on_short_video():
 
 
 if __name__ == "__main__":
-    test_progress_bars_demo()
+    test_full_video_run()

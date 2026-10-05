@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fps",
         type=float,
-        default=2.0,
+        default=3.0,
         help="frames to sample per second of video (default: %(default)s)",
     )
     parser.add_argument(
@@ -101,12 +101,32 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--merge-window",
+        type=float,
+        default=1.0,
+        metavar="SECONDS",
+        help=(
+            "flagged frames within this many seconds of a meme's first flagged frame count as the "
+            "same meme; 0 turns merging off (default: %(default)s)"
+        ),
+    )
+    parser.add_argument(
         "--clean-method",
         choices=("none", *batch_cleaner.METHODS),
         default=batch_cleaner.DEFAULT_METHOD,
         help=(
             "how to combine each meme's frames into one less distorted image in "
             "<runtime-dir>/<run-name>/clean/; 'none' skips cleaning (default: %(default)s)"
+        ),
+    )
+    parser.add_argument(
+        "--progress-delta",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "minimum time between progress-bar updates, for the downloads and the scan/extract "
+            "bars; raise it to keep CI logs short (default: the progress library's own, 0.1)"
         ),
     )
     parser.add_argument(
@@ -156,6 +176,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.source is None:
         parser.print_help()
         return
+    if args.progress_delta is not None and args.progress_delta < 0:
+        parser.error("--progress-delta must not be negative")
+    if args.merge_window < 0:
+        parser.error("--merge-window must not be negative")
     if args.no_images and args.save_high_res:
         parser.error("--no-images cannot be combined with --save-high-res")
     if args.upload_to == "telegram":
@@ -191,6 +215,7 @@ def main(argv: list[str] | None = None) -> None:
         save_frames=args.save_frames,
         save_low_res=args.save_low_res,
         clean_method=None if args.clean_method == "none" else args.clean_method,
+        merge_window=args.merge_window,
         save_high_res=args.save_high_res,
         save_timecodes=args.save_timecodes,
         timecode_offset=args.timecode_offset,
@@ -201,6 +226,7 @@ def main(argv: list[str] | None = None) -> None:
         send_timecodes_to=args.send_timecodes_to,
         timecode_chat_id=args.timecode_chat_id,
         proxy=proxy,
+        progress_delta=args.progress_delta,
     )
     for path in saved:
         print(path)

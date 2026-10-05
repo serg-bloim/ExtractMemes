@@ -42,13 +42,16 @@ def download(
     quality: Literal["worst", "best"],
     dest_dir: Path,
     proxy: str | None = None,
+    progress_delta: float | None = None,
 ) -> Path:
     """Return a local video file for `source` at the requested quality tier.
 
     An existing local file is returned unchanged. Anything else is downloaded with yt-dlp to
     `dest_dir/<video id>_<quality>.<ext>`, showing a `tqdm` progress bar. `proxy` (e.g.
     `socks5h://127.0.0.1:1080` or an `http://` URL), when given, is passed straight through to
-    yt-dlp; it's ignored for a local-file source, same as `quality` and `dest_dir`.
+    yt-dlp; it's ignored for a local-file source, same as `quality` and `dest_dir`. `progress_delta`,
+    when given, is the minimum number of seconds between progress updates, applied to both the
+    `tqdm` bar and yt-dlp's own progress events.
     """
     if Path(source).is_file():
         return Path(source)
@@ -61,7 +64,10 @@ def download(
     # Puts ffmpeg on PATH so yt-dlp can remux HLS output into a real MP4 container.
     static_ffmpeg.add_paths()
 
-    with tqdm(desc=f"Downloading ({quality})", unit="B", unit_scale=True, unit_divisor=1024) as bar:
+    bar_options = {} if progress_delta is None else {"mininterval": progress_delta}
+    with tqdm(
+        desc=f"Downloading ({quality})", unit="B", unit_scale=True, unit_divisor=1024, **bar_options
+    ) as bar:
         options = {
             "format": FORMAT_SELECTORS[quality],
             "outtmpl": str(dest_dir / f"%(id)s_{quality}.%(ext)s"),
@@ -72,6 +78,8 @@ def download(
         }
         if proxy:
             options["proxy"] = proxy
+        if progress_delta:
+            options["progress_delta"] = progress_delta
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
                 info = ydl.extract_info(source, download=True)

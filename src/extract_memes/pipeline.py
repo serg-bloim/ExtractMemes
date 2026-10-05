@@ -91,7 +91,7 @@ def run(
     downloads_dir: Path = Path("downloads"),
     runtime_dir: Path = Path(".runtime"),
     run_name: str | None = None,
-    fps: float = 2.0,
+    fps: float = 3.0,
     classifier: FrameClassifier | None = None,
     classifier_model: str = "claude-haiku-4-5-20251001",
     classifier_effort: str | None = "low",
@@ -99,6 +99,7 @@ def run(
     save_frames: bool = False,
     save_low_res: bool = False,
     window_seconds: float = 1.0,
+    merge_window: float = 1.0,
     clean_method: str | None = batch_cleaner.DEFAULT_METHOD,
     save_high_res: bool = False,
     save_timecodes: bool = False,
@@ -112,6 +113,7 @@ def run(
     send_timecodes_to: Literal["telegram"] | None = None,
     timecode_chat_id: str | None = None,
     proxy: str | None = None,
+    progress_delta: float | None = None,
 ) -> list[Path]:
     """Extract the memes in `source` and return one cleaned image path per meme, in video order.
 
@@ -119,8 +121,10 @@ def run(
     `<runtime_dir>/<run_name>/frames/`. Flagged frames are written to `low-res/` when
     `save_low_res=True`.
 
-    Each flagged timestamp becomes one batch: every best-quality frame within `window_seconds`
-    either side of it is downscaled to the scan resolution and given to the classifier, and the
+    Flagged scan frames within `merge_window` seconds of the first flagged frame of the latest meme
+    join that meme; the next one starts a new meme (`0` merges nothing). Each meme becomes one
+    batch: every best-quality frame within `window_seconds` either side of its first and last
+    flagged frames is downscaled to the scan resolution and given to the classifier, and the
     frames that also look like memes are combined into `clean/meme_<n:03d>.png` with `clean_method`
     (one of `batch_cleaner.METHODS`), which removes most of the glitch bands.
 
@@ -154,6 +158,8 @@ def run(
             classifier = ClaudeCliClassifier(model=classifier_model, effort=classifier_effort)
         else:
             raise ValueError(f"classifier_type must be 'heuristic' or 'claude', not {classifier_type!r}")
+    if merge_window < 0:
+        raise ValueError(f"merge_window must not be negative, not {merge_window!r}")
     if clean_method is not None and clean_method not in batch_cleaner.METHODS:
         raise ValueError(f"clean_method must be None or one of {batch_cleaner.METHODS}, not {clean_method!r}")
     if uploader is None and upload_to == "telegram":
@@ -186,16 +192,23 @@ def run(
     if clean_method is not None and not no_images:
         clean_dir.mkdir(parents=True, exist_ok=True)
 
-    scan_path = download(source, "worst", downloads_dir, proxy=proxy)
-    flagged: list[tuple[int, float]] = []
+    bar_options = {} if progress_delta is None else {"mininterval": progress_delta}
+    scan_path = download(source, "worst", downloads_dir, proxy=proxy, progress_delta=progress_delta)
+    # One (first, last) flagged timestamp pair per meme.
+    flagged: list[tuple[float, float]] = []
     scan_shape = (0, 0)
-    for index, timestamp, frame in tqdm(sample_frames(scan_path, fps=fps), desc="Scanning frames"):
+    for index, timestamp, frame in tqdm(
+        sample_frames(scan_path, fps=fps), desc="Scanning frames", **bar_options
+    ):
         scan_shape = frame.shape[:2]
         if save_frames:
             frame_path = frames_dir / _frame_name(index, timestamp)
             _write_image(frame_path, frame)
         if classifier.is_meme_frame(frame):
-            flagged.append((index, timestamp))
+            if flagged and timestamp - flagged[-1][0] <= merge_window:
+                flagged[-1] = (flagged[-1][0], timestamp)
+            else:
+                flagged.append((timestamp, timestamp))
             if save_low_res:
                 _write_image(low_res_dir / _frame_name(index, timestamp), frame)
 
@@ -207,7 +220,7 @@ def run(
         if save_timecodes or timecode_sender is not None:
             scan_timecodes = [
                 f"{format_timecode(timestamp + timecode_offset)} {MEME_LABEL} {meme_number}"
-                for meme_number, (_, timestamp) in enumerate(flagged, start=1)
+                for meme_number, (timestamp, _) in enumerate(flagged, start=1)
             ]
             if save_timecodes:
                 _write_timecodes(run_dir, scan_timecodes)
@@ -218,15 +231,16 @@ def run(
                     print(f"Timecode send failed: {exc}")
         return []
 
-    extract_path = download(source, "best", downloads_dir, proxy=proxy)
-    count = round(2 * window_seconds * _native_fps(extract_path)) + 1
+    extract_path = download(source, "best", downloads_dir, proxy=proxy, progress_delta=progress_delta)
+    native_fps = _native_fps(extract_path)
     saved: list[Path] = []
     timecodes: list[str] = []
-    for meme_number, (_, timestamp) in enumerate(tqdm(flagged, desc="Extracting memes"), start=1):
+    for meme_number, (first, last) in enumerate(tqdm(flagged, desc="Extracting memes", **bar_options), start=1):
         meme_dir = high_res_dir / f"meme_{meme_number:03d}"
         if save_high_res:
             meme_dir.mkdir(parents=True, exist_ok=True)
-        start = max(0.0, timestamp - window_seconds)
+        start = max(0.0, first - window_seconds)
+        count = round((last - first + 2 * window_seconds) * native_fps) + 1
         batch: list[np.ndarray] = []
         batch_start = 0.0
         for index, frame_timestamp, frame in frames_from(extract_path, start, count):

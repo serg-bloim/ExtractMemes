@@ -91,7 +91,7 @@ def run(
     downloads_dir: Path = Path("downloads"),
     runtime_dir: Path = Path(".runtime"),
     run_name: str | None = None,
-    fps: float = 2.0,
+    fps: float = 3.0,
     classifier: FrameClassifier | None = None,
     classifier_model: str = "claude-haiku-4-5-20251001",
     classifier_effort: str | None = "low",

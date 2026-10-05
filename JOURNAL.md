@@ -94,3 +94,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-05: Added playground/scan_playground.py for scan-only runs (no extraction) — [specs/features/dev-harness.md](specs/features/dev-harness.md).
 - 2026-10-05: Drafted a spec to make the heuristic classifier decide on band only, dropping the texture test — [specs/features/heuristic-band-only.md](specs/features/heuristic-band-only.md).
 - 2026-10-05: The heuristic classifier now decides on the band score alone, dropping the texture test (541 vs 445 flagged frames on the full video) — [specs/features/heuristic-band-only.md](specs/features/heuristic-band-only.md).
+- 2026-10-05: The default scan rate is now 3 fps (CLI and `pipeline.run`), which finds cards that 2 fps falls between — [specs/features/extraction-pipeline.md](specs/features/extraction-pipeline.md).

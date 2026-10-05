@@ -12,7 +12,7 @@ depends-on: ["extraction-pipeline", "batch-cleaning", "meme-timecodes", "no-imag
 ## Problem Statement
 
 A meme card that stays on screen for longer than the scan interval is flagged in several
-consecutive samples (at the default 2 fps, a 1.5 s card yields about three). The pipeline turns
+consecutive samples (at 2 fps, a 1.5 s card yields about three). The pipeline turns
 every flagged sample into its own meme: each gets a `meme_<n>` number, its own ±`window_seconds`
 extraction window, its own `clean/meme_<n>.png`, its own timecode line and its own upload. The
 windows overlap, so one card comes out as several near-identical images and timecodes. This is the

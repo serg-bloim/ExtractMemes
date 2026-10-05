@@ -38,7 +38,7 @@ def test_defaults_are_passed_to_pipeline(capsys, monkeypatch):
         downloads_dir=Path("downloads"),
         runtime_dir=Path(".runtime"),
         run_name=None,
-        fps=2.0,
+        fps=3.0,
         classifier_type="heuristic",
         classifier_model="claude-haiku-4-5-20251001",
         classifier_effort="low",

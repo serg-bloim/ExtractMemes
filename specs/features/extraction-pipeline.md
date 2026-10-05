@@ -35,7 +35,7 @@ so that I can check results (and stop early) without waiting for the whole run.
 ### Library: `pipeline.run`
 
 - [x] AC1: `src/extract_memes/pipeline.py` exposes
-      `run(source: str, downloads_dir: Path = Path("downloads"), runtime_dir: Path = Path(".runtime"), run_name: str | None = None, fps: float = 2.0, classifier: FrameClassifier | None = None, classifier_model: str = "claude-haiku-4-5-20251001", classifier_effort: str | None = "low") -> list[Path]`.
+      `run(source: str, downloads_dir: Path = Path("downloads"), runtime_dir: Path = Path(".runtime"), run_name: str | None = None, fps: float = 3.0, classifier: FrameClassifier | None = None, classifier_model: str = "claude-haiku-4-5-20251001", classifier_effort: str | None = "low") -> list[Path]`.
       If `classifier` is `None`, a `ClaudeCliClassifier(model=classifier_model, effort=classifier_effort)`
       is built inside `run`. Otherwise `classifier_model`/`classifier_effort` are ignored. Tests
       inject fakes without needing `claude` installed.
@@ -120,7 +120,7 @@ so that I can check results (and stop early) without waiting for the whole run.
 - [x] AC9: `src/extract_memes/__main__.py` builds an `argparse` parser (`prog="extract-memes"`, a
       description of the tool's purpose) with:
       - an **optional** positional `source` (`nargs="?"`), a YouTube URL or local video path;
-      - `--fps` (float, default 2.0);
+      - `--fps` (float, default 3.0);
       - `--downloads-dir` (Path, default `downloads`);
       - `--runtime-dir` (Path, default `.runtime`);
       - `--run-name` (default: derived per AC5);
@@ -323,3 +323,10 @@ All resolved:
   `progress_delta` option. Negative values are rejected. Added AC13 (video-download) and AC20
   (extraction-pipeline). Tests cover the CLI pass-through and rejection, the downloader options, and
   the pipeline bars. Verified: `pytest -m "not slow"` — 244 passed.
+- 2026-10-05: The default scan rate went from 2 fps to 3 fps, in both `pipeline.run` and the CLI's
+  `--fps` (AC1, AC9 amended). A 3 fps scan of the video `Ij427pW96aI` finds 10 memes that 2 fps
+  misses: cards last 5 native frames (0.4 s), and 2 fps samples every 0.48 s, so a card can fall
+  between two samples (ADR 008 register 58). On `sample/short.mp4` it also finds a third card, at
+  73.00 s, that 2 fps skips. Tests that depend on the 2 fps sampling pattern now pass `fps=2.0`
+  explicitly; the default-run test expects the third card. `sample_frames`'s own default stays 2.0.
+

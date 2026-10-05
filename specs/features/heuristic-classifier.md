@@ -129,7 +129,8 @@ on videos whose cards the heuristic doesn't recognize.
       - an unknown `classifier_type` raises `ValueError` and creates no run directory;
       - the CLI defaults to `heuristic` and passes `--classifier claude` through;
       - existing tests that relied on Claude being the default pass `classifier_type="claude"`.
-- [x] AC11: Offline end-to-end check (skipped when `sample/short.mp4` is absent):
+- [x] AC11 (amended: the default scan rate is now 3 fps, see [extraction-pipeline](extraction-pipeline.md);
+      `short.mp4` then has a third card, at 73.00 s, and the test expects three memes): Offline end-to-end check (skipped when `sample/short.mp4` is absent):
       `run("sample/short.mp4", downloads_dir=tmp, runtime_dir=tmp)` with every other argument at its
       default returns exactly `[<saved>/frame_000264_10.56s.jpg, <saved>/frame_000720_28.80s.jpg]`.
       It runs as part of `pytest -m "not slow"`, without `claude` on `PATH`. This replaces the

@@ -12,7 +12,7 @@ reaction video) and extracts those meme images as standalone files. The pipeline
 level:
 
 1. **Download** the source video at *worst* quality (yt-dlp; a local file path skips downloading).
-2. **Scan**: sample frames (default ~2 fps), save each one, and ask Claude through the `claude`
+2. **Scan**: sample frames (default ~3 fps), save each one, and ask Claude through the `claude`
    CLI whether it's a "glitch-framed meme card". Flagged frames are saved right away as
    scan-quality thumbnails.
 3. **Download** the same video again at *best* quality, but only if something was flagged.

@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fps",
         type=float,
-        default=2.0,
+        default=3.0,
         help="frames to sample per second of video (default: %(default)s)",
     )
     parser.add_argument(

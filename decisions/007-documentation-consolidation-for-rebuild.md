@@ -169,7 +169,7 @@ resolution.
 | 41 | The spec said `source` is a required positional; the code prints help when it's missing. | Optional positional; no argument prints help and exits 0. | Resolved (spec corrected) | pipeline AC10, Q4 |
 | 42 | Default paths resolve against the cwd, not the project root. | Accepted; run from the project root. | Documented | pipeline Technical Notes |
 | 43 | Where should downloads live: CLI `downloads/` or the dev runner's `.runtime/downloads/`? | Keep both as they are. Changing the CLI default would be a separate decision. | Documented | pipeline Q6, dev-harness AC3 |
-| 44 | The same meme can be flagged in consecutive samples (duplicates). | Dedup (ADR 002 M7) still deferred. With the v3 prompt at 2 fps, no duplicates on `short.mp4`. | Open | pipeline Out of Scope |
+| 44 | The same meme can be flagged in consecutive samples (duplicates). | Flagged frames within `--merge-window` (1 s) of a meme's first flagged frame are merged into one meme ([meme-merge-window](../specs/features/meme-merge-window.md)). Perceptual dedup (ADR 002 M7) still deferred. | Resolved | pipeline Out of Scope |
 | 45 | `--classifier-effort` can't express "omit effort" from the CLI. | Accepted; `None` is available from Python only. | Documented | pipeline Out of Scope |
 | 46 | Could a scan-file frame index mismatch the best file if the tiers' fps differ? | Seek by time (correct). The index in file names always refers to the scan file. | Documented | frame-extraction Technical Notes |
 

@@ -101,6 +101,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--merge-window",
+        type=float,
+        default=1.0,
+        metavar="SECONDS",
+        help=(
+            "flagged frames within this many seconds of a meme's first flagged frame count as the "
+            "same meme; 0 turns merging off (default: %(default)s)"
+        ),
+    )
+    parser.add_argument(
         "--clean-method",
         choices=("none", *batch_cleaner.METHODS),
         default=batch_cleaner.DEFAULT_METHOD,
@@ -168,6 +178,8 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.progress_delta is not None and args.progress_delta < 0:
         parser.error("--progress-delta must not be negative")
+    if args.merge_window < 0:
+        parser.error("--merge-window must not be negative")
     if args.no_images and args.save_high_res:
         parser.error("--no-images cannot be combined with --save-high-res")
     if args.upload_to == "telegram":
@@ -203,6 +215,7 @@ def main(argv: list[str] | None = None) -> None:
         save_frames=args.save_frames,
         save_low_res=args.save_low_res,
         clean_method=None if args.clean_method == "none" else args.clean_method,
+        merge_window=args.merge_window,
         save_high_res=args.save_high_res,
         save_timecodes=args.save_timecodes,
         timecode_offset=args.timecode_offset,

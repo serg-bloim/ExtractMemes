@@ -89,3 +89,5 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-04: The check-new-video workflow can now save each video's low-res and high-res images to the data branch under its video id, enabled by the `SAVE_IMAGES` repo variable — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
 - 2026-10-04: Added `--progress-delta SECONDS`, throttling the yt-dlp and tqdm progress updates — [specs/features/extraction-pipeline.md](specs/features/extraction-pipeline.md).
 - 2026-10-05: Scan-frame timestamps now come from each frame's own presentation time, fixing low-res/high-res drift on uneven-rate videos — [specs/features/frame-extraction.md](specs/features/frame-extraction.md).
+- 2026-10-05: Drafted a spec to merge flagged frames within a configurable window (`--merge-window`, 1 s default) into one meme — [specs/features/meme-merge-window.md](specs/features/meme-merge-window.md).
+- 2026-10-05: Added `--merge-window SECONDS` (1 s default), merging flagged frames within the window of a meme's first flagged frame into one meme — [specs/features/meme-merge-window.md](specs/features/meme-merge-window.md).

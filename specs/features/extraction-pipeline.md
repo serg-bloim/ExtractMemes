@@ -170,9 +170,7 @@ so that I can check results (and stop early) without waiting for the whole run.
   [batch-cleaning](batch-cleaning.md): each batch is combined into `clean/meme_<n:03d>.png`, which
   also changes what `run` returns (AC2 step 7, AC12, AC16, AC19 are amended there).
 - **A CLI flag for `window_seconds`.** It's available from Python only, like `classifier_effort=None`.
-- Deduplicating a meme that appears in several consecutive samples (ADR 002 M7, still deferred).
-  With the v3 prompt at 2 fps, each glitch card in `short.mp4` was flagged once, but that isn't
-  guaranteed.
+- Pixel-level deduplication (ADR 002 M7, still deferred). Consecutive samples of one meme are merged by time, see [meme-merge-window](meme-merge-window.md).
 - Cleaning up `downloads/` or `.runtime/`, during or across runs.
 - Resuming an interrupted run, or skipping frames that were already classified.
 - Concurrency: scanning and classification are sequential, and the best-quality download starts

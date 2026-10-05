@@ -13,6 +13,7 @@ from extract_memes.downloader import download
 from extract_memes.pipeline import MEME_LABEL, default_run_name, format_timecode, run
 from extract_memes.timecode_sender import TimecodeSender
 from extract_memes.downloader import SourceInfo
+from extract_memes.frame_extractor import sample_frames
 from extract_memes.uploader import Uploader
 
 TEST_VIDEO_URL = "https://youtu.be/AElGyY97k_0"
@@ -31,6 +32,26 @@ class EveryNth(FrameClassifier):
     def is_meme_frame(self, frame: np.ndarray) -> bool:
         self.frames.append(frame.copy())
         return (len(self.frames) - 1) % self.n == 0
+
+    def is_meme(self, image_path: Path) -> bool:
+        raise AssertionError("the pipeline must classify frames in memory, not files")
+
+
+class FlagsScanCalls(FrameClassifier):
+    """Flags the given scan calls (numbered from 0), then every call once the scan is over.
+
+    Records each frame it's given, so a test can count the extraction pass's frames.
+    """
+
+    def __init__(self, flagged: set[int], scan_calls: int) -> None:
+        self.flagged = flagged
+        self.scan_calls = scan_calls
+        self.calls = 0
+
+    def is_meme_frame(self, frame: np.ndarray) -> bool:
+        call = self.calls
+        self.calls += 1
+        return call in self.flagged or call >= self.scan_calls
 
     def is_meme(self, image_path: Path) -> bool:
         raise AssertionError("the pipeline must classify frames in memory, not files")
@@ -962,3 +983,130 @@ def test_a_failed_info_fetch_still_uploads_without_info(short_video, tmp_path, c
 
     assert uploader.infos == [None]
     assert "Could not fetch the video's title and thumbnail: blocked" in capsys.readouterr().out
+
+
+def scan_call_count(video: Path, fps: float = 2.0) -> int:
+    return sum(1 for _ in sample_frames(video, fps=fps))
+
+
+# At 2 fps on 25 fps video the scan samples every 0.48 s, so calls 0-2 are at 0, 0.48 and 0.96 s.
+CLOSE_RUNS = {0, 1, 2, 3, 10, 11}
+
+
+def timecode_lines(run_dir: Path) -> list[str]:
+    return (run_dir / "timecodes.txt").read_text(encoding="utf-8").splitlines()
+
+
+def test_flagged_frames_within_the_merge_window_are_one_meme(short_video, tmp_path):
+    # Flagged at 0, 0.48, 0.96 | 1.44 | 4.8, 5.28 s: the 1.44 s frame is 1.44 s from the first.
+    run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        run_name="merged",
+        classifier=FlagsScanCalls(CLOSE_RUNS, scan_call_count(short_video)),
+        save_low_res=True,
+        save_timecodes=True,
+        no_images=True,
+    )
+
+    run_dir = tmp_path / "merged"
+    assert len(names(run_dir / "low-res")) == len(CLOSE_RUNS)
+    assert [line.split(" ", 1)[0] for line in timecode_lines(run_dir)] == ["0:00", "0:01", "0:04"]
+    assert [line.split(" ", 1)[1] for line in timecode_lines(run_dir)] == [
+        f"{MEME_LABEL} {n}" for n in (1, 2, 3)
+    ]
+
+
+def test_merge_window_is_measured_from_the_first_flagged_frame(short_video, tmp_path):
+    # Every call 0-5 is flagged, spanning 0-2.4 s; a window of 1 s covers calls 0-2, 1.44 s starts the next.
+    run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        classifier=FlagsScanCalls(set(range(6)), scan_call_count(short_video)),
+        save_timecodes=True,
+        no_images=True,
+    )
+
+    assert [line.split(" ", 1)[0] for line in timecode_lines(tmp_path / "short")] == ["0:00", "0:01"]
+
+
+def test_merge_window_boundary_is_inclusive(short_video, tmp_path):
+    kwargs = dict(runtime_dir=tmp_path, save_timecodes=True, no_images=True)
+    classifier = lambda: FlagsScanCalls({0, 2}, scan_call_count(short_video))  # noqa: E731
+
+    run(str(short_video), run_name="equal", classifier=classifier(), merge_window=0.96, **kwargs)
+    run(str(short_video), run_name="below", classifier=classifier(), merge_window=0.95, **kwargs)
+
+    assert len(timecode_lines(tmp_path / "equal")) == 1
+    assert len(timecode_lines(tmp_path / "below")) == 2
+
+
+def test_merge_window_zero_merges_nothing(short_video, tmp_path):
+    run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        classifier=FlagsScanCalls(CLOSE_RUNS, scan_call_count(short_video)),
+        merge_window=0,
+        save_timecodes=True,
+        no_images=True,
+    )
+
+    assert len(timecode_lines(tmp_path / "short")) == len(CLOSE_RUNS)
+
+
+def test_a_merged_meme_is_extracted_once_over_the_extended_window(short_video, tmp_path):
+    # Scan hits at 4.8 and 5.28 s: one meme whose window runs 3.8 s to 6.28 s, 62 frames at 25 fps, plus one.
+    classifier = FlagsScanCalls({10, 11}, scan_call_count(short_video))
+    saved = run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        run_name="merged",
+        classifier=classifier,
+        save_high_res=True,
+    )
+
+    run_dir = tmp_path / "merged"
+    assert [path.name for path in batches(run_dir)] == ["meme_001"]
+    assert saved == [run_dir / "clean" / "meme_001.png"]
+    assert len(names(run_dir / "high-res" / "meme_001")) == 63
+    assert classifier.calls == classifier.scan_calls + 63
+
+
+def test_unmerged_hits_are_extracted_separately(short_video, tmp_path):
+    run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        run_name="split",
+        classifier=FlagsScanCalls({10, 11}, scan_call_count(short_video)),
+        merge_window=0,
+        save_high_res=True,
+    )
+
+    run_dir = tmp_path / "split"
+    assert [path.name for path in batches(run_dir)] == ["meme_001", "meme_002"]
+    assert len(names(run_dir / "high-res" / "meme_001")) == 51
+    assert len(names(run_dir / "high-res" / "meme_002")) == 51
+
+
+def test_merged_memes_are_uploaded_and_sent_once(short_video, tmp_path):
+    uploader = FakeUploader()
+    sender = FakeTimecodeSender()
+
+    saved = run(
+        str(short_video),
+        runtime_dir=tmp_path,
+        classifier=FlagsScanCalls({10, 11}, scan_call_count(short_video)),
+        uploader=uploader,
+        timecode_sender=sender,
+    )
+
+    assert len(saved) == 1
+    assert uploader.calls[0][0] == saved
+    assert len(sender.calls[0][0]) == 1
+
+
+def test_negative_merge_window_raises_before_creating_anything(short_video, tmp_path):
+    with pytest.raises(ValueError, match="merge_window"):
+        run(str(short_video), runtime_dir=tmp_path, classifier=EveryNth(10), merge_window=-0.1)
+
+    assert list(tmp_path.iterdir()) == []

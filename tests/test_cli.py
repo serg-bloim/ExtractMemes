@@ -45,6 +45,7 @@ def test_defaults_are_passed_to_pipeline(capsys, monkeypatch):
         save_frames=False,
         save_low_res=False,
         clean_method="clean_rows",
+        merge_window=1.0,
         save_high_res=False,
         save_timecodes=False,
         timecode_offset=0.0,
@@ -78,6 +79,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
             "--save-high-res",
             "--save-timecodes",
             "--timecode-offset", "-1.5",
+            "--merge-window", "2",
             "--upload-to", "telegram",
             "--telegram-bot-token", "token123",
             "--telegram-chat-id", "chat456",
@@ -99,6 +101,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         save_frames=True,
         save_low_res=True,
         clean_method="median",
+        merge_window=2.0,
         save_high_res=True,
         save_timecodes=True,
         timecode_offset=-1.5,
@@ -336,3 +339,19 @@ def test_negative_progress_delta_is_rejected(capsys):
 
     run.assert_not_called()
     assert "--progress-delta must not be negative" in capsys.readouterr().err
+
+
+def test_merge_window_is_passed_to_pipeline():
+    with mock.patch("extract_memes.pipeline.run", return_value=[]) as run:
+        main(["sample/short.mp4", "--merge-window", "2.5"])
+
+    assert run.call_args.kwargs["merge_window"] == 2.5
+
+
+def test_negative_merge_window_is_rejected(capsys):
+    with mock.patch("extract_memes.pipeline.run") as run:
+        with pytest.raises(SystemExit):
+            main(["sample/short.mp4", "--merge-window", "-1"])
+
+    run.assert_not_called()
+    assert "--merge-window must not be negative" in capsys.readouterr().err

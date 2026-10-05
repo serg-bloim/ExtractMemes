@@ -66,7 +66,8 @@ ExtractMemes/
 │       └── pipeline.py           ← Orchestrates download → scan → classify → extract → save
 ├── tests/                        ← pytest suite, mirrors src/extract_memes/ modules
 ├── playground/
-│   └── playground.py             ← Manual IDE entry points (not collected by pytest)
+│   ├── playground.py             ← Manual IDE entry points (not collected by pytest)
+│   └── scan_playground.py        ← Manual scan-only runs (no extraction)
 ├── run_real_video.py             ← Manual runner: real URL, real or fake classifier
 ├── tools/                        ← Host-environment utilities, outside the package
 │   └── lan_proxy_relay.py        ← Loopback→LAN TCP relay; lets a Homebrew interpreter reach a

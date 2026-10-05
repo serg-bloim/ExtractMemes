@@ -85,7 +85,7 @@ def test_different_fps():
 
 
 def test_full_video_run():
-    _run(FULL_VIDEO, "full_video", fps=0.5)
+    _run(FULL_VIDEO, "full_video", fps=2)
 
 
 def test_classify_one_frame():

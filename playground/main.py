@@ -1,0 +1,3 @@
+from playground import test_full_video_run, test_full_video_every_method
+
+test_full_video_every_method()

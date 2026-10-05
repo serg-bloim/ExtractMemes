@@ -91,5 +91,6 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-05: Scan-frame timestamps now come from each frame's own presentation time, fixing low-res/high-res drift on uneven-rate videos — [specs/features/frame-extraction.md](specs/features/frame-extraction.md).
 - 2026-10-05: Drafted a spec to merge flagged frames within a configurable window (`--merge-window`, 1 s default) into one meme — [specs/features/meme-merge-window.md](specs/features/meme-merge-window.md).
 - 2026-10-05: Added `--merge-window SECONDS` (1 s default), merging flagged frames within the window of a meme's first flagged frame into one meme — [specs/features/meme-merge-window.md](specs/features/meme-merge-window.md).
+- 2026-10-05: Added playground/scan_playground.py for scan-only runs (no extraction) — [specs/features/dev-harness.md](specs/features/dev-harness.md).
 - 2026-10-05: Drafted a spec to make the heuristic classifier decide on band only, dropping the texture test — [specs/features/heuristic-band-only.md](specs/features/heuristic-band-only.md).
 - 2026-10-05: The heuristic classifier now decides on the band score alone, dropping the texture test (541 vs 445 flagged frames on the full video) — [specs/features/heuristic-band-only.md](specs/features/heuristic-band-only.md).

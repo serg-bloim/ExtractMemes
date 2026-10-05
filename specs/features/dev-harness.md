@@ -138,3 +138,9 @@ All resolved:
   (`test_default_run`, `test_custom_model_and_effort`, `test_different_fps`,
   `test_full_video_run`) weren't run, because they only combine `pipeline.run` options that are
   already tested. All ACs checked; status `implemented`.
+- 2026-10-05: The user asked for a second playground file that runs only the scan phase. Added
+  `playground/scan_playground.py` with `test_scan_video_url`, `test_scan_video_url_different_fps`
+  (the video `Ij427pW96aI`, reusing its worst-quality copy in `.runtime/downloads/`) and
+  `test_scan_short_video`, each calling `pipeline.run(no_images=True)` with the frames, low-res
+  and timecodes saved under `.runtime/_playground/scan/`. Ran the URL entry: it flagged 71 memes
+  in about 5 s from the existing download, with no `clean/` or `high-res/` and no new download.

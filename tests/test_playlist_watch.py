@@ -1,3 +1,4 @@
+import datetime
 import importlib
 from unittest import mock
 
@@ -12,6 +13,7 @@ from extract_memes.playlist_watch import (
 )
 
 PLAYLIST_URL = "https://www.youtube.com/playlist?list=PLfake"
+SINCE = datetime.date(2026, 10, 1)
 
 
 @pytest.fixture
@@ -19,31 +21,46 @@ def fake_ytdl():
     with mock.patch("yt_dlp.YoutubeDL") as youtube_dl:
         ydl = youtube_dl.return_value.__enter__.return_value
         ydl.extract_info.return_value = {
-            "entries": [{"id": "newest"}, {"id": "middle"}, {"id": "oldest"}]
+            "entries": [
+                {"id": "newest", "upload_date": "20261004"},
+                {"id": "middle", "upload_date": "20261002"},
+                {"id": "oldest", "upload_date": "20261001"},
+                {"id": "too-old", "upload_date": "20260930"},
+            ]
         }
         yield youtube_dl
 
 
 def test_list_playlist_video_ids_uses_flat_extraction(fake_ytdl):
-    result = list_playlist_video_ids(PLAYLIST_URL, count=3)
+    result = list_playlist_video_ids(PLAYLIST_URL, SINCE)
 
     options = fake_ytdl.call_args.args[0]
     assert options["extract_flat"] == "in_playlist"
-    assert options["playlistend"] == 3
     ydl = fake_ytdl.return_value.__enter__.return_value
     ydl.extract_info.assert_called_once_with(PLAYLIST_URL, download=False)
     assert result == ["newest", "middle", "oldest"]
 
 
+def test_list_playlist_video_ids_fetches_date_when_flat_entry_lacks_it(fake_ytdl):
+    ydl = fake_ytdl.return_value.__enter__.return_value
+    ydl.extract_info.side_effect = [
+        {"entries": [{"id": "a"}, {"id": "b"}]},
+        {"upload_date": "20261003"},
+        {"upload_date": "20260901"},
+    ]
+
+    assert list_playlist_video_ids(PLAYLIST_URL, SINCE) == ["a"]
+
+
 def test_list_playlist_video_ids_passes_proxy_when_given(fake_ytdl):
-    list_playlist_video_ids(PLAYLIST_URL, count=3, proxy="socks5h://127.0.0.1:1080")
+    list_playlist_video_ids(PLAYLIST_URL, SINCE, proxy="socks5h://127.0.0.1:1080")
 
     options = fake_ytdl.call_args.args[0]
     assert options["proxy"] == "socks5h://127.0.0.1:1080"
 
 
 def test_list_playlist_video_ids_omits_proxy_when_unset(fake_ytdl):
-    list_playlist_video_ids(PLAYLIST_URL, count=3)
+    list_playlist_video_ids(PLAYLIST_URL, SINCE)
 
     options = fake_ytdl.call_args.args[0]
     assert "proxy" not in options
@@ -98,6 +115,8 @@ def test_cli_find_prints_next_unprocessed_id(tmp_path, capsys, fake_ytdl):
             "find",
             "--playlist-url",
             PLAYLIST_URL,
+            "--since",
+            "2026-10-01",
             "--processed-file",
             str(processed_file),
         ]
@@ -115,6 +134,8 @@ def test_cli_find_prints_nothing_when_all_processed(tmp_path, capsys, fake_ytdl)
             "find",
             "--playlist-url",
             PLAYLIST_URL,
+            "--since",
+            "2026-10-01",
             "--processed-file",
             str(processed_file),
         ]

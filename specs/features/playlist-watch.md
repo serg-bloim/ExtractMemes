@@ -28,10 +28,12 @@ publishing a new video doesn't require me to manually find and launch a run.
 
 ### Library: `src/extract_memes/playlist_watch.py`
 
-- [x] AC1: `list_playlist_video_ids(playlist_url: str, count: int, proxy: str | None = None) ->
-      list[str]` fetches metadata only (yt-dlp with `extract_flat="in_playlist"`,
-      `playlistend=count`, no per-video extraction and no download) and returns up to `count`
-      video ids in the order yt-dlp reports them. `yt_dlp` is imported lazily inside the function,
+- [x] AC1: `list_playlist_video_ids(playlist_url: str, since: datetime.date, proxy: str | None =
+      None) -> list[str]` fetches metadata (yt-dlp with `extract_flat="in_playlist"` and
+      `lazy_playlist=True`, no download) and returns the ids of videos uploaded on or after `since`,
+      in the order yt-dlp reports them (newest-first). It stops at the first video uploaded before
+      `since`. The upload date comes from the flat entry (`upload_date`/`timestamp`); if absent, that
+      one video's metadata is fetched. A video with no determinable date is kept. `yt_dlp` is imported lazily inside the function,
       matching `downloader.download`'s pattern, so importing `playlist_watch` has no import-time
       side effects. `proxy`, when given, is passed straight through as yt-dlp's `proxy` option
       (same as `downloader.download`'s `proxy` parameter, AC12 in
@@ -49,8 +51,8 @@ publishing a new video doesn't require me to manually find and launch a run.
 
 ### CLI: `python -m extract_memes.playlist_watch`
 
-- [x] AC5: `find --playlist-url URL [--count N] [--processed-file PATH] [--proxy URL]` (defaults:
-      `count=8`, `processed-file=data/processed_vids.txt`, `proxy` unset) combines AC1/AC2/AC4 and
+- [x] AC5: `find --playlist-url URL [--since DATE] [--processed-file PATH] [--proxy URL]` (defaults:
+      `since` = 7 days ago, `DATE` as `YYYY-MM-DD`, `processed-file=data/processed_vids.txt`, `proxy` unset) combines AC1/AC2/AC4 and
       prints the chosen video id to stdout with no other output — or prints nothing and exits 0 if
       none is found — so a workflow step can capture it directly. `--proxy` falls back to the
       `EXTRACT_MEMES_PROXY` env var when unset, the same flag name, env var, and precedence
@@ -80,8 +82,8 @@ publishing a new video doesn't require me to manually find and launch a run.
       5. Run
          `python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt`,
          capturing stdout into a step output (e.g. `video_id`) via `$GITHUB_OUTPUT`. If the repo
-         variable `vars.LOOKBACK_COUNT` is set and non-empty, also pass `--count "$LOOKBACK_COUNT"` as is (no
-         format check in the workflow); otherwise omit `--count` so `find`'s default (AC5) applies.
+         variable `vars.SINCE` is set and non-empty, also pass `--since "$SINCE"` as is (no
+         format check in the workflow); otherwise omit `--since` so `find`'s default (AC5) applies.
       6. Only if `video_id` is non-empty:
          - `actions/setup-node@v4` — Node.js is required by `extract-memes` itself for YouTube
            downloads (ADR 006); not needed for step 5's flat playlist listing.
@@ -110,7 +112,7 @@ publishing a new video doesn't require me to manually find and launch a run.
       `find_next_unprocessed` as pure functions (no network, no git) — missing processed-file,
       newest-first scanning order, "all already processed" returning `None`, and
       `list_playlist_video_ids` with yt-dlp's `YoutubeDL` faked out (never hits the network),
-      asserting the `extract_flat`/`playlistend` options passed, plus `proxy` passed through when
+      asserting the `extract_flat` option, the `since` cutoff passed, plus `proxy` passed through when
       given and omitted when not. CLI coverage includes `find --proxy` reaching
       `list_playlist_video_ids` and falling back to `EXTRACT_MEMES_PROXY`. Runs under
       `pytest -m "not slow"`.
@@ -167,7 +169,7 @@ publishing a new video doesn't require me to manually find and launch a run.
   `extract-memes` already falls back to (AC12 in [video-download.md](video-download.md)) — so both
   `playlist_watch find`'s yt-dlp metadata fetch and `extract-memes`'s yt-dlp downloads pick it up
   without a `--proxy` flag in either `run:` command.
-- `count` (playlist fetch depth) defaults to 8, inside the user-requested 5–10 range.
+- `since` (playlist fetch cutoff) defaults to 7 days ago. It replaced the earlier `count` depth (default 8).
 - **Why the install is split in two (`pip install yt-dlp` + `--no-deps -e .`, then the full
   `pip install -e .` only if a video was found):** raised by the user — if this workflow ends up
   triggered often (checking) while actually downloading/processing rarely, paying for
@@ -192,6 +194,14 @@ Resolved by the user (2026-09-18):
   its own follow-up rather than built now.
 
 ## Changelog
+
+- 2026-10-05: The user asked to replace `LOOKBACK_COUNT` with a `since` parameter holding a date.
+  `find --count N` became `find --since YYYY-MM-DD` (default 7 days ago), `list_playlist_video_ids`
+  takes a `since` date instead of `count`, and the workflow reads `vars.SINCE` instead of
+  `vars.LOOKBACK_COUNT`. Flat playlist entries may lack an upload date, so the walk falls back to
+  fetching that video's metadata and stops at the first video older than `since`. Updated AC1, AC5,
+  AC7, AC8 and Technical Notes. The old `LOOKBACK_COUNT` variable is ignored now; set `SINCE` in the
+  repo variables.
 
 - 2026-10-04: The user asked for an opt-in way to keep the meme images from a workflow run. Added the
   `vars.SAVE_IMAGES` repo variable (`true` enables it): the run saves low-res and high-res images,

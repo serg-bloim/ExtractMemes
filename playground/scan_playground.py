@@ -33,7 +33,7 @@ SHORT_VIDEO = PROJECT_ROOT / "sample" / "short.mp4"
 PLAYGROUND_DIR = PROJECT_ROOT / ".runtime" / "_playground"
 DOWNLOADS_DIR = PROJECT_ROOT / ".runtime" / "downloads"
 # The video whose worst-quality copy (`Ij427pW96aI_worst.mp4`) is already in `.runtime/downloads/`.
-VIDEO_URL = "https://www.youtube.com/watch?v=Ij427pW96aI"
+VIDEO_URL = "https://www.youtube.com/watch?v=lx011zFYIGU"
 RUN_NAME = "scan"
 
 

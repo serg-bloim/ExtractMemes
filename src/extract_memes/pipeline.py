@@ -112,6 +112,7 @@ def run(
     send_timecodes_to: Literal["telegram"] | None = None,
     timecode_chat_id: str | None = None,
     proxy: str | None = None,
+    progress_delta: float | None = None,
 ) -> list[Path]:
     """Extract the memes in `source` and return one cleaned image path per meme, in video order.
 
@@ -186,10 +187,13 @@ def run(
     if clean_method is not None and not no_images:
         clean_dir.mkdir(parents=True, exist_ok=True)
 
-    scan_path = download(source, "worst", downloads_dir, proxy=proxy)
+    bar_options = {} if progress_delta is None else {"mininterval": progress_delta}
+    scan_path = download(source, "worst", downloads_dir, proxy=proxy, progress_delta=progress_delta)
     flagged: list[tuple[int, float]] = []
     scan_shape = (0, 0)
-    for index, timestamp, frame in tqdm(sample_frames(scan_path, fps=fps), desc="Scanning frames"):
+    for index, timestamp, frame in tqdm(
+        sample_frames(scan_path, fps=fps), desc="Scanning frames", **bar_options
+    ):
         scan_shape = frame.shape[:2]
         if save_frames:
             frame_path = frames_dir / _frame_name(index, timestamp)
@@ -218,11 +222,11 @@ def run(
                     print(f"Timecode send failed: {exc}")
         return []
 
-    extract_path = download(source, "best", downloads_dir, proxy=proxy)
+    extract_path = download(source, "best", downloads_dir, proxy=proxy, progress_delta=progress_delta)
     count = round(2 * window_seconds * _native_fps(extract_path)) + 1
     saved: list[Path] = []
     timecodes: list[str] = []
-    for meme_number, (_, timestamp) in enumerate(tqdm(flagged, desc="Extracting memes"), start=1):
+    for meme_number, (_, timestamp) in enumerate(tqdm(flagged, desc="Extracting memes", **bar_options), start=1):
         meme_dir = high_res_dir / f"meme_{meme_number:03d}"
         if save_high_res:
             meme_dir.mkdir(parents=True, exist_ok=True)

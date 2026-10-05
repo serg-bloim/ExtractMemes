@@ -100,6 +100,12 @@ can validate the pipeline against `sample/short.mp4` without a network call.
       proxy — yt-dlp's own `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` environment handling still applies
       underneath when neither is set, since that's yt-dlp's existing default behavior, unchanged by
       this AC).
+- [x] AC13: `download` accepts an optional `progress_delta: float | None = None` keyword argument,
+      the minimum number of seconds between progress updates. When set it is passed to the AC11
+      `tqdm` bar as `mininterval`, and, when non-zero, to yt-dlp as `progress_delta` (which
+      throttles the `"downloading"` events its hooks receive). When `None` neither is set, so the
+      library defaults apply. `pipeline.run` passes its own `progress_delta` to both downloads; see
+      [extraction-pipeline.md](extraction-pipeline.md) AC20.
 
 ## Out of Scope
 
@@ -245,3 +251,10 @@ All resolved:
   [ADR 020](../../decisions/020-whole-video-download-stands.md). `download` is again the only
   download path and is unchanged; no AC here was ever affected. The Technical Notes gained the
   measured reason this path is fast, since it was not understood before.
+
+- 2026-10-04: The user asked for a `--progress-delta SECONDS` option used by both the yt-dlp
+  download and the custom progress bars. Added the `progress_delta` parameter to `download` and
+  `pipeline.run` and the CLI flag; it sets `tqdm`'s `mininterval` on every bar and yt-dlp's
+  `progress_delta` option. Negative values are rejected. Added AC13 (video-download) and AC20
+  (extraction-pipeline). Tests cover the CLI pass-through and rejection, the downloader options, and
+  the pipeline bars. Verified: `pytest -m "not slow"` — 244 passed.

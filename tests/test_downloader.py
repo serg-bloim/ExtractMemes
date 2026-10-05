@@ -77,6 +77,26 @@ def test_url_download_passes_proxy_through(tmp_path, fake_ytdl):
     assert options["proxy"] == "socks5h://127.0.0.1:1080"
 
 
+def test_url_download_passes_progress_delta_to_yt_dlp_and_the_bar(tmp_path, fake_ytdl):
+    youtube_dl, _ = fake_ytdl
+
+    with mock.patch("extract_memes.downloader.tqdm", wraps=tqdm) as bar:
+        download(TEST_VIDEO_URL, "worst", tmp_path, progress_delta=5.0)
+
+    assert ydl_options(youtube_dl)["progress_delta"] == 5.0
+    assert bar.call_args.kwargs["mininterval"] == 5.0
+
+
+def test_url_download_leaves_progress_delta_unset_by_default(tmp_path, fake_ytdl):
+    youtube_dl, _ = fake_ytdl
+
+    with mock.patch("extract_memes.downloader.tqdm", wraps=tqdm) as bar:
+        download(TEST_VIDEO_URL, "worst", tmp_path)
+
+    assert "progress_delta" not in ydl_options(youtube_dl)
+    assert "mininterval" not in bar.call_args.kwargs
+
+
 def test_url_download_omits_proxy_when_not_given(tmp_path, fake_ytdl):
     youtube_dl, _ = fake_ytdl
 

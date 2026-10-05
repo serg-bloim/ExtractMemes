@@ -110,6 +110,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--progress-delta",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "minimum time between progress-bar updates, for the downloads and the scan/extract "
+            "bars; raise it to keep CI logs short (default: the progress library's own, 0.1)"
+        ),
+    )
+    parser.add_argument(
         "--upload-to",
         choices=["telegram"],
         default=None,
@@ -156,6 +166,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.source is None:
         parser.print_help()
         return
+    if args.progress_delta is not None and args.progress_delta < 0:
+        parser.error("--progress-delta must not be negative")
     if args.no_images and args.save_high_res:
         parser.error("--no-images cannot be combined with --save-high-res")
     if args.upload_to == "telegram":
@@ -201,6 +213,7 @@ def main(argv: list[str] | None = None) -> None:
         send_timecodes_to=args.send_timecodes_to,
         timecode_chat_id=args.timecode_chat_id,
         proxy=proxy,
+        progress_delta=args.progress_delta,
     )
     for path in saved:
         print(path)

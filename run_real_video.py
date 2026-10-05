@@ -12,7 +12,7 @@ from pathlib import Path
 from extract_memes.classifier import ClaudeCliClassifier, FrameClassifier
 from extract_memes.pipeline import run
 
-DEFAULT_URL = "https://youtu.be/AElGyY97k_0"
+DEFAULT_URL = "https://youtu.be/lx011zFYIGU"
 
 
 class EveryNthClassifier(FrameClassifier):

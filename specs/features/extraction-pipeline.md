@@ -104,6 +104,11 @@ so that I can check results (and stop early) without waiting for the whole run.
       | `https://www.youtube.com/shorts/abc123` | `abc123` |
 - [x] AC6: Progress is shown with `tqdm`: `desc="Scanning frames"` wraps the sampled-frame iteration
       in step 3, and `desc="Extracting memes"` wraps the flagged list in step 6.
+- [x] AC20: `run` takes a trailing keyword parameter `progress_delta: float | None = None`, the
+      minimum number of seconds between progress updates. Both AC6 bars get it as `mininterval`
+      (unset when `None`) and both downloads receive it (video-download AC13). The CLI gains
+      `--progress-delta SECONDS` (default `None`), rejecting a negative value with a parser error.
+      It exists to keep CI logs short, where a bar is not redrawn in place.
 - [x] AC7: When `source` is a local file, the whole run makes no network access and uses that one
       file for both passes (per the video-download spec's passthrough).
 - [x] AC8: If `download`, `sample_frames`, `frames_from`, or the classifier raises, the exception
@@ -313,3 +318,10 @@ All resolved:
   extracted: `frame_000264_10.56s.jpg` and `frame_000720_28.80s.jpg`. There were no false
   positives on the portrait-video look-alikes at ≈31–38 s and ≈73–76 s. `saved/` holds the two
   best-quality frames plus their two thumbnails, and `frames/` holds all 164 samples.
+
+- 2026-10-04: The user asked for a `--progress-delta SECONDS` option used by both the yt-dlp
+  download and the custom progress bars. Added the `progress_delta` parameter to `download` and
+  `pipeline.run` and the CLI flag; it sets `tqdm`'s `mininterval` on every bar and yt-dlp's
+  `progress_delta` option. Negative values are rejected. Added AC13 (video-download) and AC20
+  (extraction-pipeline). Tests cover the CLI pass-through and rejection, the downloader options, and
+  the pipeline bars. Verified: `pytest -m "not slow"` — 244 passed.

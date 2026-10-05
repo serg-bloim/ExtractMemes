@@ -55,6 +55,7 @@ def test_defaults_are_passed_to_pipeline(capsys, monkeypatch):
         send_timecodes_to=None,
         timecode_chat_id=None,
         proxy=None,
+        progress_delta=None,
     )
     assert capsys.readouterr().out == ""
 
@@ -83,6 +84,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
             "--send-timecodes-to", "telegram",
             "--timecode-chat-id", "chat789",
             "--proxy", "socks5h://127.0.0.1:1080",
+            "--progress-delta", "2.5",
         ])  # fmt: skip
 
     run.assert_called_once_with(
@@ -107,6 +109,7 @@ def test_options_are_passed_to_pipeline_and_paths_printed(capsys):
         send_timecodes_to="telegram",
         timecode_chat_id="chat789",
         proxy="socks5h://127.0.0.1:1080",
+        progress_delta=2.5,
     )
     assert capsys.readouterr().out.splitlines() == [str(path) for path in saved]
 
@@ -324,3 +327,12 @@ def test_send_timecodes_to_telegram_with_no_images_is_not_rejected(monkeypatch):
 
     assert run.call_args.kwargs["send_timecodes_to"] == "telegram"
     assert run.call_args.kwargs["no_images"] is True
+
+
+def test_negative_progress_delta_is_rejected(capsys):
+    with mock.patch("extract_memes.pipeline.run") as run:
+        with pytest.raises(SystemExit):
+            main(["sample/short.mp4", "--progress-delta", "-1"])
+
+    run.assert_not_called()
+    assert "--progress-delta must not be negative" in capsys.readouterr().err

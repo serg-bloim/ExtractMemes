@@ -87,3 +87,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-04: The check-new-video workflow now uses the optional `LOOKBACK_COUNT` repo variable as `--count`, keeping the default when unset — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
 - 2026-10-04: The check-new-video workflow now reads `TELEGRAM_CHAT_ID` from repo variables instead of secrets — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
 - 2026-10-04: The check-new-video workflow can now save each video's low-res and high-res images to the data branch under its video id, enabled by the `SAVE_IMAGES` repo variable — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
+- 2026-10-04: Added `--progress-delta SECONDS`, throttling the yt-dlp and tqdm progress updates — [specs/features/extraction-pipeline.md](specs/features/extraction-pipeline.md).

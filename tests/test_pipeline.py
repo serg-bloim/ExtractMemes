@@ -386,6 +386,23 @@ def test_progress_bars(short_video, tmp_path):
     ]
 
 
+def test_progress_delta_reaches_the_bars_and_downloads(short_video, tmp_path):
+    with (
+        mock.patch("extract_memes.pipeline.tqdm", wraps=pipeline.tqdm) as progress,
+        mock.patch("extract_memes.pipeline.download", wraps=pipeline.download) as downloads,
+    ):
+        run(
+            str(short_video),
+            runtime_dir=tmp_path,
+            fps=0.5,
+            classifier=EveryNth(10),
+            progress_delta=3.0,
+        )
+
+    assert [call.kwargs["mininterval"] for call in progress.call_args_list] == [3.0, 3.0]
+    assert [call.kwargs["progress_delta"] for call in downloads.call_args_list] == [3.0, 3.0]
+
+
 def test_rerun_overwrites_and_keeps_other_files(short_video, tmp_path):
     kwargs = dict(runtime_dir=tmp_path, run_name="again", fps=0.5, save_high_res=True)
     run_dir = tmp_path / "again"

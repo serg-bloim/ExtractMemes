@@ -54,6 +54,12 @@ def test_list_playlist_video_ids_fetches_date_when_flat_entry_lacks_it(fake_ytdl
     assert list_playlist_video_ids(PLAYLIST_URL, SINCE) == ["a"]
 
 
+def test_list_playlist_video_ids_enables_the_node_js_runtime(fake_ytdl):
+    list_playlist_video_ids(PLAYLIST_URL, SINCE)
+
+    assert fake_ytdl.call_args.args[0]["js_runtimes"] == {"node": {}}
+
+
 def test_list_playlist_video_ids_passes_proxy_when_given(fake_ytdl):
     list_playlist_video_ids(PLAYLIST_URL, SINCE, proxy="socks5h://127.0.0.1:1080")
 
@@ -347,3 +353,71 @@ def test_cli_find_does_not_write_the_cache_when_nothing_was_added(tmp_path, fake
     )
 
     assert not cache_file.exists()
+
+
+def test_on_new_date_is_called_after_each_fetched_date_only(fake_ytdl):
+    flatless_ytdl(fake_ytdl, {"a": "20261003", "b": "20261002", "c": "20260901"})
+    cache = {"a": "2026-10-03"}
+    snapshots = []
+
+    list_playlist_video_ids(
+        PLAYLIST_URL, SINCE, upload_dates=cache, on_new_date=lambda: snapshots.append(dict(cache))
+    )
+
+    # `a` was cached, `b` and `c` were fetched; each call sees the date it was called for.
+    assert snapshots == [
+        {"a": "2026-10-03", "b": "2026-10-02"},
+        {"a": "2026-10-03", "b": "2026-10-02", "c": "2026-09-01"},
+    ]
+
+
+def test_on_new_date_is_not_called_for_an_undetermined_date(fake_ytdl):
+    ydl = fake_ytdl.return_value.__enter__.return_value
+    ydl.extract_info.side_effect = [{"entries": [{"id": "a"}]}, {}]
+    on_new_date = mock.Mock()
+
+    list_playlist_video_ids(PLAYLIST_URL, SINCE, upload_dates={}, on_new_date=on_new_date)
+
+    on_new_date.assert_not_called()
+
+
+def test_cli_find_writes_the_cache_after_every_fetched_date(tmp_path, fake_ytdl):
+    cache_file = tmp_path / "dates.json"
+    on_disk = []
+
+    def extract_info(url, download=False):
+        if url == PLAYLIST_URL:
+            return {"entries": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}
+        on_disk.append(sorted(load_upload_dates(cache_file)))
+        if url == "c":
+            raise RuntimeError("killed")
+        return {"upload_date": "20261003"}
+
+    fake_ytdl.return_value.__enter__.return_value.extract_info.side_effect = extract_info
+
+    with pytest.raises(RuntimeError, match="killed"):
+        playlist_watch.main(
+            [
+                "find",
+                "--playlist-url",
+                PLAYLIST_URL,
+                "--since",
+                "2026-10-01",
+                "--processed-file",
+                str(tmp_path / "processed.txt"),
+                "--dates-cache",
+                str(cache_file),
+            ]
+        )
+
+    # The file already held each earlier date when the next video was fetched.
+    assert on_disk == [[], ["a"], ["a", "b"]]
+
+
+def test_save_upload_dates_leaves_no_temporary_file_and_replaces_the_old_one(tmp_path):
+    path = tmp_path / "dates.json"
+    save_upload_dates(path, {"a": "2026-10-01"})
+    save_upload_dates(path, {"a": "2026-10-01", "b": "2026-10-02"})
+
+    assert load_upload_dates(path) == {"a": "2026-10-01", "b": "2026-10-02"}
+    assert [entry.name for entry in tmp_path.iterdir()] == ["dates.json"]

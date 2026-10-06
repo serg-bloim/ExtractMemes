@@ -29,7 +29,8 @@ publishing a new video doesn't require me to manually find and launch a run.
 ### Library: `src/extract_memes/playlist_watch.py`
 
 - [x] AC1: `list_playlist_video_ids(playlist_url: str, since: datetime.date, proxy: str | None =
-      None, upload_dates: dict[str, str] | None = None) -> list[str]` fetches metadata (yt-dlp with `extract_flat="in_playlist"` and
+      None, upload_dates: dict[str, str] | None = None, on_new_date: Callable[[], None] | None =
+      None) -> list[str]` fetches metadata (yt-dlp with `extract_flat="in_playlist"` and
       `lazy_playlist=True`, no download) and returns the ids of videos uploaded on or after `since`,
       in the order yt-dlp reports them (newest-first). It stops at the first video uploaded before
       `since`. The upload date comes from the flat entry (`upload_date`/`timestamp`); if absent, that
@@ -69,15 +70,25 @@ publishing a new video doesn't require me to manually find and launch a run.
       `load_upload_dates(path) -> dict[str, str]` returns `{}` if the file is missing, empty or not
       valid JSON (the last case prints a note to stderr, never stdout) and
       `save_upload_dates(path, dates)` writes it as indented JSON with sorted keys, creating parent
-      directories. `list_playlist_video_ids` (AC1) reads dates from the `upload_dates` dict it is
+      directories, and replaces the file in one step (temp file, then rename) so a process killed
+      mid-write leaves the previous cache intact. `list_playlist_video_ids` (AC1) reads dates from the `upload_dates` dict it is
       given and **adds every date it fetches to that same dict, in place**, so the caller still has
-      them if the call raises part-way. A date is cached only when it was determined; a video
+      them if the call raises part-way, and then calls `on_new_date()` (if given) right after each
+      such addition. A date is cached only when it was determined; a video
       without one is not cached and is tried again on the next run. Dates already in the cache are
       never fetched again and never overwritten.
-- [x] AC10: `find` (AC5) loads the cache **at its start** and saves it **when it finishes, even if
-      it fails** (a `finally`: a yt-dlp error, a network error or an interrupt still saves what was
-      fetched so far). It writes the file only if an entry was added, so a run with nothing new
-      leaves it untouched and creates no empty commit. stdout stays the chosen id alone (AC5).
+- [x] AC10: `find` (AC5) loads the cache **at its start** and saves it **after every date it
+      fetches** (it passes `on_new_date` of AC9 a function that calls `save_upload_dates`), not
+      once at the end and not in a `finally`: a cancelled workflow step is killed (SIGINT, then
+      SIGTERM and SIGKILL a few seconds later), so end-of-run code may never run. A yt-dlp error,
+      a network error or a kill therefore loses at most the date being fetched. A run that adds
+      nothing writes nothing, so it creates no empty commit. stdout stays the chosen id alone
+      (AC5).
+- [x] AC11: The yt-dlp options of `list_playlist_video_ids` include `js_runtimes={"node": {}}`, the
+      same as `downloader.download` (video-download AC5), so yt-dlp doesn't warn "No supported
+      JavaScript runtime could be found" on every extraction (only deno is enabled by default).
+      The `find` step relies on the runner's preinstalled Node.js, since `setup-node` runs only
+      after it.
 
 ### Workflow: `.github/workflows/check-new-video.yml`
 
@@ -138,8 +149,9 @@ publishing a new video doesn't require me to manually find and launch a run.
       asserting the `extract_flat` option, the `since` cutoff passed, plus `proxy` passed through when
       given and omitted when not; the upload-date cache (AC9, AC10) — a cached id is not fetched, a fetched
       date lands in the dict, an undetermined one doesn't, `load_upload_dates` on a missing, empty and
-      corrupt file, and `find` saving the cache even when the fetch raises and not writing it when
-      nothing was added. CLI coverage includes `find --proxy` reaching
+      corrupt file, `on_new_date` firing once per fetched date, `find` having written the file before
+      each next fetch (so a failure keeps the earlier dates), no write when nothing was added, a
+      save that leaves no temporary file, and the `js_runtimes` option (AC11). CLI coverage includes `find --proxy` reaching
       `list_playlist_video_ids` and falling back to `EXTRACT_MEMES_PROXY`. Runs under
       `pytest -m "not slow"`.
 
@@ -324,8 +336,8 @@ Resolved by the user (2026-09-18):
   every video in the `since` window costs one full yt-dlp extraction of about 2 s, and the same
   videos were fetched again on every run. The user chose to keep fetching dates but cache them: a
   `video id -> upload date` JSON map on the data branch, loaded when `find` starts and saved when it
-  ends, even on failure. Added AC9 (the cache and its load/save), AC10 (`find` reads at the start,
-  writes in a `finally`), `--dates-cache` to AC5, the cache parameter to AC1, an `if: always()` commit
+  ends, even on failure. Added AC9 (the cache and its load/save), AC10 (`find` reads at the start, writes
+  at the end — superseded below), `--dates-cache` to AC5, the cache parameter to AC1, an `if: always()` commit
   step and `--dates-cache` to AC7, and cache tests to AC8. Status `ready`; not implemented yet.
   - **Defaults I chose, say if you want them otherwise:** file `upload_dates.json` at the data
     branch root; ISO dates; a cached date is never refreshed (an upload date doesn't change);
@@ -344,3 +356,17 @@ Resolved by the user (2026-09-18):
   - **Side effect to know about:** because the commit step now runs after a failed pipeline step too,
     whatever that run wrote under `runs/<id>/` is pushed as well, including `clean/` since the step
     that deletes it is skipped on failure.
+- 2026-10-05: The user cancelled a workflow run mid-`find` and no dates reached the cache. A cancel
+  kills the step (SIGINT, then SIGTERM), so the `finally` of the first implementation can't be
+  relied on. `find` now saves the cache after every fetched date instead: `list_playlist_video_ids`
+  gained `on_new_date`, called after each addition; `save_upload_dates` became an atomic replace.
+  Rewrote AC10 and amended AC1/AC9. The earlier "Implemented" entry describing a `finally` is
+  superseded by this one. **Not confirmed:** that the `if: always()` commit step runs after a
+  cancel, so the saved file reaches the `data` branch; check it on the next cancelled run.
+- 2026-10-05: The user asked to fix the "No supported JavaScript runtime could be found" warning,
+  repeated once per video in the `find` step: `list_playlist_video_ids` never passed `js_runtimes`,
+  unlike the downloader, and only deno is on by default. Added AC11 and the option. A local run of
+  the real playlist fetch warned without it and didn't with it. (Re-applied after a branch recovery
+  lost the first copy of this fix.) The `find` step runs before `setup-node`, so it depends on
+  Node.js being preinstalled on `ubuntu-latest`; not run on GitHub.
+  - **Verified:** `pytest -m "not slow"`: 279 passed (274 before; 5 new tests in `tests/test_playlist_watch.py`).

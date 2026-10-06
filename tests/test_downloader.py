@@ -45,7 +45,10 @@ def test_local_file_is_passed_through(tmp_path, fake_ytdl):
 
 @pytest.mark.parametrize(
     ("quality", "selector"),
-    [("worst", "wv*[ext=mp4]/wv*"), ("best", "bv*[ext=mp4]/bv*")],
+    [
+        ("worst", "wv*[vcodec!^=av01][ext=mp4]/wv*[vcodec!^=av01]/wv*[ext=mp4]/wv*"),
+        ("best", "bv*[vcodec!^=av01][ext=mp4]/bv*[vcodec!^=av01]/bv*[ext=mp4]/bv*"),
+    ],
 )
 def test_url_download_options(tmp_path, fake_ytdl, quality, selector):
     youtube_dl, add_paths = fake_ytdl
@@ -66,6 +69,72 @@ def test_url_download_options(tmp_path, fake_ytdl, quality, selector):
     ydl = youtube_dl.return_value.__enter__.return_value
     ydl.extract_info.assert_called_once_with(TEST_VIDEO_URL, download=True)
     assert result == Path("/fake/abc123_worst.mp4")
+
+
+def _video_format(format_id: str, vcodec: str, height: int, ext: str = "mp4") -> dict:
+    return {
+        "format_id": format_id,
+        "vcodec": vcodec,
+        "acodec": "none",
+        "height": height,
+        "width": height * 16 // 9,
+        "ext": ext,
+        "tbr": height,
+        "protocol": "https",
+        "url": f"https://example.invalid/{format_id}",
+    }
+
+
+def _selected_format(quality: str, formats: list[dict]) -> str:
+    """Run the real yt-dlp format selection for `quality` over a made-up format list (no network)."""
+    import yt_dlp
+
+    ydl = yt_dlp.YoutubeDL({"quiet": True, "format": downloader.FORMAT_SELECTORS[quality]})
+    info = {
+        "id": "x",
+        "title": "t",
+        "extractor": "fake",
+        "extractor_key": "Fake",
+        "webpage_url": "https://example.invalid/x",
+        "formats": formats,
+    }
+    return ydl.process_video_result(info, download=False)["format_id"]
+
+
+def test_selectors_skip_av1_when_another_codec_is_offered():
+    formats = [
+        _video_format("av1_hi", "av01.0.08M.08", 1080),
+        _video_format("av1_lo", "av01.0.00M.08", 144),
+        _video_format("vp9_hi", "vp09.00.40.08", 720),
+        _video_format("avc_lo", "avc1.4D400C", 240),
+    ]
+
+    assert _selected_format("best", formats) == "vp9_hi"
+    assert _selected_format("worst", formats) == "avc_lo"
+
+
+def test_selectors_still_prefer_mp4_among_the_non_av1_formats():
+    formats = [
+        _video_format("vp9_webm", "vp9", 1080, ext="webm"),
+        _video_format("avc_mp4", "avc1.640028", 1080),
+        _video_format("av1_mp4", "av01.0.08M.08", 1080),
+    ]
+
+    assert _selected_format("best", formats) == "avc_mp4"
+
+
+def test_selectors_take_a_non_mp4_format_over_av1():
+    formats = [_video_format("av1_mp4", "av01.0.08M.08", 1080), _video_format("vp9_webm", "vp9", 144, ext="webm")]
+
+    assert _selected_format("best", formats) == "vp9_webm"
+    assert _selected_format("worst", formats) == "vp9_webm"
+
+
+def test_selectors_fall_back_to_av1_when_it_is_all_there_is():
+    formats = [_video_format("av1_hi", "av01.0.08M.08", 1080), _video_format("av1_lo", "av01.0.00M.08", 144)]
+
+    assert _selected_format("best", formats) == "av1_hi"
+    assert _selected_format("worst", formats) == "av1_lo"
 
 
 def test_url_download_passes_proxy_through(tmp_path, fake_ytdl):
@@ -234,3 +303,17 @@ def test_real_download_best_is_at_least_as_tall_as_worst(real_downloads):
             capture.release()
 
     assert frame_height(real_downloads["best"]) >= frame_height(real_downloads["worst"])
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("quality", ["worst", "best"])
+def test_real_download_is_not_av1(real_downloads, quality):
+    import cv2
+
+    capture = cv2.VideoCapture(str(real_downloads[quality]))
+    try:
+        fourcc = int(capture.get(cv2.CAP_PROP_FOURCC)).to_bytes(4, "little").decode(errors="replace")
+    finally:
+        capture.release()
+
+    assert fourcc != "AV01"

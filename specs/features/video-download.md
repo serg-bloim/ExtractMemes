@@ -43,6 +43,8 @@ can validate the pipeline against `sample/short.mp4` without a network call.
       format selectors:
       `worst` → `wv*[ext=mp4]/wv*`, `best` → `bv*[ext=mp4]/bv*`. That is, the worst/best format
       that contains video, preferring mp4. Audio isn't needed, and nothing is merged.
+      **Amended by [decodable-codec-download](decodable-codec-download.md):** AV1 formats are
+      skipped when any other codec is offered, so the selectors are longer than shown here.
 - [x] AC4: The downloaded file goes to `dest_dir/<video id>_<quality>.<ext>`, using yt-dlp output
       template `%(id)s_<quality>.%(ext)s`, e.g. `downloads/AElGyY97k_0_worst.mp4`. File names
       never contain `*` or other glob/shell metacharacters. Downloading the same URL at `worst`

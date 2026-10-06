@@ -1,6 +1,6 @@
 ---
 title: "Download a Codec OpenCV Can Decode"
-status: ready
+status: implemented
 created: 2026-10-05
 updated: 2026-10-05
 author: ""
@@ -26,16 +26,16 @@ run produces the same frames on a laptop and on a CI runner.
 
 ## Acceptance Criteria
 
-- [ ] AC1: For a URL source, neither `worst` nor `best` resolves to an AV1 (`av01`) format when
+- [x] AC1: For a URL source, neither `worst` nor `best` resolves to an AV1 (`av01`) format when
       the video offers any other video format.
-- [ ] AC2: Within that restriction, `worst` is still the lowest-quality and `best` the
+- [x] AC2: Within that restriction, `worst` is still the lowest-quality and `best` the
       highest-quality format, and a video-only format is still enough (no audio, nothing merged),
       as in video-download AC3.
-- [ ] AC3: If AV1 is the only video format offered, it is downloaded and the run carries on to try
+- [x] AC3: If AV1 is the only video format offered, it is downloaded and the run carries on to try
       to decode it, with no new failure or warning at the download step.
-- [ ] AC4: The offline downloader tests assert the selector for both `worst` and `best` and that
+- [x] AC4: The offline downloader tests assert the selector for both `worst` and `best` and that
       each excludes AV1 with a fallback that allows it (AC1, AC3); no network.
-- [ ] AC5: A `slow` test downloads the permanent test video at both qualities and checks that
+- [x] AC5: A `slow` test downloads the permanent test video at both qualities and checks that
       the codec of the saved file is not AV1.
 
 ## Out of Scope
@@ -50,9 +50,9 @@ run produces the same frames on a laptop and on a CI runner.
   the best-quality download larger.
 - Measured 2026-10-05 for `FtU4MuksCzE`: `worst` → 602 (VP9, 256x144), `best` → 399 (AV1, 1080p).
   For `lx011zFYIGU` both already resolve to VP9. The scan copy was never the problem.
-- A selector shaped like `bv*[vcodec!^=av01]/bv*` would satisfy AC1 and AC3 (the second branch is
-  the AV1 fallback), but the existing `[ext=mp4]` preference must be kept compatible with it.
-  Confirm the exact selector against yt-dlp before implementing.
+- The selectors (see Changelog for how they were checked): `worst` is
+  `wv*[vcodec!^=av01][ext=mp4]/wv*[vcodec!^=av01]/wv*[ext=mp4]/wv*` and `best` is the same with
+  `bv*`. The first two branches skip AV1 (mp4 preferred), the last two are the AV1 fallback.
 - `playground/ytdlp_playground.py` lists a video's formats.
 
 ## Open Questions
@@ -72,3 +72,13 @@ All resolved:
 - 2026-10-05: The user resolved both questions: only AV1 is excluded (Q1), and when nothing else is
   offered the AV1 copy is still downloaded and parsed, in case it decodes (Q2). Updated AC3 and
   the Open Questions, status `ready`. Not implemented yet, at the user's request.
+- 2026-10-05: Implemented. `FORMAT_SELECTORS` in `downloader.py` now exclude AV1 first and fall back
+  to it (see Technical Notes for the strings); video-download AC3 carries an amendment note.
+  **Checked against live yt-dlp:** `FtU4MuksCzE` `best` now resolves to format 614 (VP9, 1080p, mp4)
+  instead of AV1 399, `worst` stays 602 (VP9); `lx011zFYIGU` is VP9 for both; `AElGyY97k_0` gives
+  `worst` 269 (H.264) and `best` 605 (VP9). **Tests:** `tests/test_downloader.py` asserts the two
+  strings and runs yt-dlp's real format selection over made-up format lists (no network) for: AV1
+  skipped when anything else exists, mp4 still preferred among the rest, a non-mp4 format taken
+  over AV1, and AV1 used when it is the only codec (AC1–AC4). Two slow tests check that the real
+  `worst` and `best` files of the test video aren't AV1 (AC5). **Verified:** `pytest -m "not slow"`:
+  283 passed; `pytest tests/test_downloader.py -m slow`: 5 passed. Not run on GitHub Actions.

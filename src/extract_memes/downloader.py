@@ -7,10 +7,13 @@ from typing import Literal
 from tqdm import tqdm
 
 # yt-dlp format selectors for each quality tier. YouTube no longer serves pre-muxed formats, so pick
-# the worst/best format that contains video (audio isn't needed). See ADR 006.
+# the worst/best format that contains video (audio isn't needed). See ADR 006. AV1 is skipped when
+# any other codec is offered, because OpenCV's FFmpeg decodes it only with hardware acceleration,
+# which a CI runner lacks; if AV1 is all there is, it is still taken. Each tier prefers mp4 within
+# each of those two groups.
 FORMAT_SELECTORS: dict[str, str] = {
-    "worst": "wv*[ext=mp4]/wv*",
-    "best": "bv*[ext=mp4]/bv*",
+    "worst": "wv*[vcodec!^=av01][ext=mp4]/wv*[vcodec!^=av01]/wv*[ext=mp4]/wv*",
+    "best": "bv*[vcodec!^=av01][ext=mp4]/bv*[vcodec!^=av01]/bv*[ext=mp4]/bv*",
 }
 
 

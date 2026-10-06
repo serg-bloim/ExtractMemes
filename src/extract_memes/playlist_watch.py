@@ -5,32 +5,69 @@ Uploads playlist — not for an arbitrarily (hand-)ordered playlist.
 """
 
 import argparse
+import datetime
 import os
 from pathlib import Path
 
-DEFAULT_COUNT = 8
+DEFAULT_LOOKBACK_DAYS = 365
 DEFAULT_PROCESSED_FILE = Path("data/processed_vids.txt")
 
 
-def list_playlist_video_ids(playlist_url: str, count: int, proxy: str | None = None) -> list[str]:
-    """Return up to `count` video ids from `playlist_url`, metadata only, newest-first.
+def parse_since(value: str) -> datetime.date:
+    """Parse `YYYY-MM-DD` (or yt-dlp's `YYYYMMDD`) into a date."""
+    for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        try:
+            return datetime.datetime.strptime(value, fmt).date()
+        except ValueError:
+            pass
+    raise ValueError(f"invalid date {value!r}, expected YYYY-MM-DD")
 
-    `proxy` (e.g. `socks5h://127.0.0.1:1080` or an `http://` URL), when given, is passed straight
-    through to yt-dlp, same as `downloader.download`'s `proxy` parameter.
+
+def default_since() -> datetime.date:
+    return datetime.date.today() - datetime.timedelta(days=DEFAULT_LOOKBACK_DAYS)
+
+
+def _upload_date(entry: dict, ydl) -> datetime.date | None:
+    """Return the entry's upload date, fetching the video's metadata if the flat entry lacks it."""
+    upload_date = entry.get("upload_date")
+    if not upload_date:
+        timestamp = entry.get("timestamp")
+        if timestamp:
+            return datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc).date()
+        info = ydl.extract_info(entry["id"], download=False)
+        upload_date = info.get("upload_date")
+    return parse_since(upload_date) if upload_date else None
+
+
+def list_playlist_video_ids(
+    playlist_url: str, since: datetime.date, proxy: str | None = None
+) -> list[str]:
+    """Return the ids of videos in `playlist_url` uploaded on or after `since`, newest-first.
+
+    Walks the playlist from the newest entry and stops at the first video uploaded before `since`.
+    A video whose upload date can't be determined is kept. `proxy` (e.g.
+    `socks5h://127.0.0.1:1080` or an `http://` URL), when given, is passed straight through to
+    yt-dlp, same as `downloader.download`'s `proxy` parameter.
     """
     # Imported lazily so importing this module has no import-time side effects.
     import yt_dlp
 
     options = {
         "extract_flat": "in_playlist",
-        "playlistend": count,
+        "lazy_playlist": True,
         "quiet": True,
     }
     if proxy:
         options["proxy"] = proxy
+    video_ids = []
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(playlist_url, download=False)
-    return [entry["id"] for entry in info["entries"]]
+        for entry in info["entries"]:
+            uploaded = _upload_date(entry, ydl)
+            if uploaded is not None and uploaded < since:
+                break
+            video_ids.append(entry["id"])
+    return video_ids
 
 
 def read_processed(path: Path) -> set[str]:
@@ -57,7 +94,9 @@ def find_next_unprocessed(video_ids: list[str], processed: set[str]) -> str | No
 
 def _cmd_find(args: argparse.Namespace) -> None:
     proxy = args.proxy or os.environ.get("EXTRACT_MEMES_PROXY")
-    video_ids = list_playlist_video_ids(args.playlist_url, args.count, proxy=proxy)
+    if args.since is None:
+        args.since = default_since()
+    video_ids = list_playlist_video_ids(args.playlist_url, args.since, proxy=proxy)
     processed = read_processed(args.processed_file)
     next_id = find_next_unprocessed(video_ids, processed)
     if next_id is not None:
@@ -79,7 +118,15 @@ def build_parser() -> argparse.ArgumentParser:
         "find", help="print the oldest unprocessed video's id, or nothing if there is none"
     )
     find_parser.add_argument("--playlist-url", required=True)
-    find_parser.add_argument("--count", type=int, default=DEFAULT_COUNT, help="default: %(default)s")
+    find_parser.add_argument(
+        "--since",
+        type=parse_since,
+        default=None,
+        help=(
+            "only consider videos uploaded on or after this date (YYYY-MM-DD); "
+            f"default: {DEFAULT_LOOKBACK_DAYS} days ago"
+        ),
+    )
     find_parser.add_argument(
         "--processed-file", type=Path, default=DEFAULT_PROCESSED_FILE, help="default: %(default)s"
     )

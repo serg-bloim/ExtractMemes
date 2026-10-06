@@ -34,13 +34,13 @@ jobs:
       - name: Find the oldest unprocessed video
         id: find
         env:
-          LOOKBACK_COUNT: ${{ vars.LOOKBACK_COUNT }}
+          SINCE: ${{ vars.SINCE }}
         run: |
-          count_args=()
-          if [ -n "$LOOKBACK_COUNT" ]; then
-            count_args=(--count "$LOOKBACK_COUNT")
+          since_args=()
+          if [ -n "$SINCE" ]; then
+            since_args=(--since "$SINCE")
           fi
-          video_id=$(python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt "${count_args[@]}")
+          video_id=$(python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt "${since_args[@]}")
           echo "video_id=$video_id" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
@@ -58,30 +58,30 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
-          SAVE_IMAGES: ${{ vars.SAVE_IMAGES }}
+          SAVE_LOW_RES: ${{ vars.SAVE_LOW_RES }}
+          SAVE_HIGH_RES: ${{ vars.SAVE_HIGH_RES }}
+          SAVE_FRAMES: ${{ vars.SAVE_FRAMES }}
         run: |
           save_args=()
-          if [ "$SAVE_IMAGES" = "true" ]; then
-            save_args=(--save-low-res --save-high-res)
+          if [ "$SAVE_LOW_RES" = "true" ]; then
+            save_args+=(--save-low-res)
+          fi
+          if [ "$SAVE_HIGH_RES" = "true" ]; then
+            save_args+=(--save-high-res)
+          fi
+          if [ "$SAVE_FRAMES" = "true" ]; then
+            save_args+=(--save-frames)
           fi
           extract-memes "https://youtu.be/${{ steps.find.outputs.video_id }}" \
             --classifier heuristic \
             --upload-to telegram \
             --run-name "${{ steps.find.outputs.video_id }}" \
+            --runtime-dir data-branch/runs \
             "${save_args[@]}"
 
-      - name: Copy the meme images into the data branch
-        if: steps.find.outputs.video_id != '' && vars.SAVE_IMAGES == 'true'
-        run: |
-          video_id="${{ steps.find.outputs.video_id }}"
-          run_dir=".runtime/$video_id"
-          mkdir -p "data-branch/$video_id"
-          if [ -d "$run_dir/low-res" ]; then
-            cp -r "$run_dir/low-res" "data-branch/$video_id/lowres"
-          fi
-          if [ -d "$run_dir/high-res" ]; then
-            cp -r "$run_dir/high-res" "data-branch/$video_id/highres"
-          fi
+      - name: Drop the clean images from the data branch unless asked to keep them
+        if: steps.find.outputs.video_id != '' && vars.SAVE_CLEAN != 'true'
+        run: rm -rf "data-branch/runs/${{ steps.find.outputs.video_id }}/clean"
 
       - name: Mark the video as processed
         if: steps.find.outputs.video_id != ''

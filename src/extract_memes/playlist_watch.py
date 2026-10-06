@@ -9,6 +9,7 @@ import datetime
 import json
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 DEFAULT_LOOKBACK_DAYS = 365
@@ -48,15 +49,22 @@ def load_upload_dates(path: Path) -> dict[str, str]:
 
 
 def save_upload_dates(path: Path, dates: dict[str, str]) -> None:
-    """Write the upload-date cache as indented JSON with sorted keys, creating parent directories."""
+    """Write the upload-date cache as indented JSON with sorted keys, creating parent directories.
+
+    The file is replaced in one step, so a process killed mid-write leaves the old cache intact.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(dates, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(json.dumps(dates, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temp, path)
 
 
-def _upload_date(entry: dict, ydl, upload_dates: dict[str, str]) -> datetime.date | None:
+def _upload_date(
+    entry: dict, ydl, upload_dates: dict[str, str], on_new_date: Callable[[], None] | None = None
+) -> datetime.date | None:
     """Return the entry's upload date, fetching the video's metadata if neither the flat entry nor the cache has it.
 
-    A date that had to be fetched is added to `upload_dates`.
+    A date that had to be fetched is added to `upload_dates`, then `on_new_date` is called.
     """
     upload_date = entry.get("upload_date")
     if not upload_date:
@@ -69,6 +77,8 @@ def _upload_date(entry: dict, ydl, upload_dates: dict[str, str]) -> datetime.dat
         upload_date = info.get("upload_date")
         if upload_date:
             upload_dates[entry["id"]] = parse_since(upload_date).isoformat()
+            if on_new_date is not None:
+                on_new_date()
     return parse_since(upload_date) if upload_date else None
 
 
@@ -77,6 +87,7 @@ def list_playlist_video_ids(
     since: datetime.date,
     proxy: str | None = None,
     upload_dates: dict[str, str] | None = None,
+    on_new_date: Callable[[], None] | None = None,
 ) -> list[str]:
     """Return the ids of videos in `playlist_url` uploaded on or after `since`, newest-first.
 
@@ -87,6 +98,8 @@ def list_playlist_video_ids(
 
     `upload_dates` is a `video id -> YYYY-MM-DD` cache: an id found there is not fetched, and every
     date that is fetched is added to it in place, so the caller still has them if this raises.
+    `on_new_date`, when given, is called right after each such addition, so the caller can persist
+    the cache one video at a time.
     """
     # Imported lazily so importing this module has no import-time side effects.
     import yt_dlp
@@ -104,7 +117,7 @@ def list_playlist_video_ids(
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(playlist_url, download=False)
         for entry in info["entries"]:
-            uploaded = _upload_date(entry, ydl, upload_dates)
+            uploaded = _upload_date(entry, ydl, upload_dates, on_new_date)
             if uploaded is not None and uploaded < since:
                 break
             video_ids.append(entry["id"])
@@ -138,15 +151,15 @@ def _cmd_find(args: argparse.Namespace) -> None:
     if args.since is None:
         args.since = default_since()
     upload_dates = load_upload_dates(args.dates_cache)
-    known_dates = dict(upload_dates)
-    try:
-        video_ids = list_playlist_video_ids(
-            args.playlist_url, args.since, proxy=proxy, upload_dates=upload_dates
-        )
-    finally:
-        # Saved even when the fetch fails, so the dates fetched so far aren't looked up again.
-        if upload_dates != known_dates:
-            save_upload_dates(args.dates_cache, upload_dates)
+    # Saved after every fetched date, not at the end: a cancelled run is killed, so a `finally`
+    # may never run.
+    video_ids = list_playlist_video_ids(
+        args.playlist_url,
+        args.since,
+        proxy=proxy,
+        upload_dates=upload_dates,
+        on_new_date=lambda: save_upload_dates(args.dates_cache, upload_dates),
+    )
     processed = read_processed(args.processed_file)
     next_id = find_next_unprocessed(video_ids, processed)
     if next_id is not None:

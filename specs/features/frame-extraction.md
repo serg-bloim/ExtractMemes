@@ -60,6 +60,8 @@ I can study every frame a meme is on screen for without paying the open-and-seek
 - [x] AC6: If the video can't be opened (`not cap.isOpened()`: missing file, unsupported codec),
       both functions raise `RuntimeError("Could not open video file: <path>")`. `sample_frames` is a
       generator, so it raises on the first `next()`, not when it's called.
+      **Amended by [fail-on-undecodable-video](fail-on-undecodable-video.md) AC1:** `sample_frames` also
+      raises `RuntimeError` when the file opens but its first read fails.
 - [x] AC7: The `VideoCapture` is always released (`try/finally`), including when the consumer stops
       iterating early or an exception propagates.
 - [x] AC8: Frames are returned exactly as decoded: BGR `numpy.ndarray` at the file's native

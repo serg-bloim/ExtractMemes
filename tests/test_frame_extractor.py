@@ -166,3 +166,26 @@ def test_sample_frames_timestamps_come_from_the_frames_not_the_nominal_rate():
         frames = list(sample_frames("ignored", fps=10.0))
 
     assert [timestamp for _, timestamp, _ in frames] == pytest.approx([0.0, 0.09, 0.2, 0.29])
+
+
+def test_sample_frames_raises_when_the_first_read_fails():
+    capture = mock.Mock()
+    capture.isOpened.return_value = True
+    capture.get.return_value = 25.0
+    capture.read.return_value = (False, None)
+
+    with mock.patch("cv2.VideoCapture", return_value=capture):
+        with pytest.raises(RuntimeError, match="Could not decode any frame from video file: fake.mp4"):
+            list(sample_frames("fake.mp4"))
+
+    capture.release.assert_called_once()
+
+
+def test_sample_frames_treats_a_later_failed_read_as_the_end():
+    capture = mock.Mock()
+    capture.isOpened.return_value = True
+    capture.get.return_value = 25.0
+    capture.read.side_effect = [(True, np.zeros((1, 1, 3), np.uint8)), (False, None)]
+
+    with mock.patch("cv2.VideoCapture", return_value=capture):
+        assert len(list(sample_frames("fake.mp4"))) == 1

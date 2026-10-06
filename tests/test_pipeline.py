@@ -1,3 +1,4 @@
+import itertools
 import re
 from pathlib import Path
 from unittest import mock
@@ -1121,3 +1122,41 @@ def test_negative_merge_window_raises_before_creating_anything(short_video, tmp_
         run(str(short_video), runtime_dir=tmp_path, fps=2.0, classifier=EveryNth(10), merge_window=-0.1)
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_an_undecodable_scan_video_fails_the_run(short_video, tmp_path):
+    with (
+        mock.patch("extract_memes.pipeline.sample_frames", side_effect=RuntimeError("Could not decode any frame")),
+        pytest.raises(RuntimeError, match="Could not decode any frame"),
+    ):
+        run(str(short_video), runtime_dir=tmp_path, classifier=EveryNth(5))
+
+
+def test_an_undecodable_best_quality_video_fails_the_run_and_uploads_nothing(short_video, tmp_path):
+    uploader = mock.Mock(spec=Uploader)
+    sender = mock.Mock(spec=TimecodeSender)
+
+    with (
+        mock.patch("extract_memes.pipeline.frames_from", return_value=iter(())),
+        pytest.raises(RuntimeError, match=r"Could not decode any frame at \d+\.\d{2}s from .*short.mp4"),
+    ):
+        run(
+            str(short_video),
+            runtime_dir=tmp_path,
+            classifier=EveryNth(5),
+            uploader=uploader,
+            timecode_sender=sender,
+        )
+
+    uploader.upload_all.assert_not_called()
+    sender.send.assert_not_called()
+
+
+def test_decodable_windows_with_no_flagged_frame_are_not_an_error(short_video, tmp_path):
+    classifier = mock.Mock(spec=FrameClassifier)
+    # Flags only the scan's first frame; every best-quality frame is then classified as no meme.
+    classifier.is_meme_frame.side_effect = itertools.chain([True], itertools.repeat(False))
+
+    saved = run(str(short_video), runtime_dir=tmp_path, classifier=classifier)
+
+    assert saved == []

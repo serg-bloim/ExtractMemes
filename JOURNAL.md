@@ -103,3 +103,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-05: Settled the AV1 spec: exclude only AV1, still download it when it is the only codec; status `ready`, not implemented — [specs/features/decodable-codec-download.md](specs/features/decodable-codec-download.md).
 - 2026-10-05: Drafted a spec to fail the run when a video opens but no frames can be decoded — [specs/features/fail-on-undecodable-video.md](specs/features/fail-on-undecodable-video.md).
 - 2026-10-05: Settled the fail-on-undecodable-video spec (first bad window fails; no memes or no saved images is not an error); status `ready` — [specs/features/fail-on-undecodable-video.md](specs/features/fail-on-undecodable-video.md).
+- 2026-10-05: A run now fails when a video opens but no frame can be decoded, instead of finishing with no memes — [specs/features/fail-on-undecodable-video.md](specs/features/fail-on-undecodable-video.md).

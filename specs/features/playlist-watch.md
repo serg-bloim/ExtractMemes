@@ -1,6 +1,6 @@
 ---
 title: "Watch a Playlist and Run the Pipeline on the Oldest New Video"
-status: ready
+status: implemented
 created: 2026-09-18
 updated: 2026-10-05
 author: ""
@@ -63,7 +63,7 @@ publishing a new video doesn't require me to manually find and launch a run.
 - [x] AC6: `mark-processed VIDEO_ID [--processed-file PATH]` (default `processed-file` as above)
       calls `append_processed`.
 
-- [ ] AC9: Upload-date cache. A JSON file mapping a video id to its upload date as
+- [x] AC9: Upload-date cache. A JSON file mapping a video id to its upload date as
       `YYYY-MM-DD`, e.g. `{"0TSqnhLXYfA": "2026-09-15"}`, on the `data` branch as
       `upload_dates.json` (the workflow passes `--dates-cache data-branch/upload_dates.json`).
       `load_upload_dates(path) -> dict[str, str]` returns `{}` if the file is missing, empty or not
@@ -74,7 +74,7 @@ publishing a new video doesn't require me to manually find and launch a run.
       them if the call raises part-way. A date is cached only when it was determined; a video
       without one is not cached and is tried again on the next run. Dates already in the cache are
       never fetched again and never overwritten.
-- [ ] AC10: `find` (AC5) loads the cache **at its start** and saves it **when it finishes, even if
+- [x] AC10: `find` (AC5) loads the cache **at its start** and saves it **when it finishes, even if
       it fails** (a `finally`: a yt-dlp error, a network error or an interrupt still saves what was
       fetched so far). It writes the file only if an entry was added, so a run with nothing new
       leaves it untouched and creates no empty commit. stdout stays the chosen id alone (AC5).
@@ -332,3 +332,15 @@ Resolved by the user (2026-09-18):
     undetermined dates are not cached; no pruning of old entries.
   - **Not included:** stopping at the first processed id, a cap on lookups, passing `js_runtimes`
     to the playlist fetch, and the code default of 365 days that disagrees with AC5's 7 days.
+- 2026-10-05: Implemented the upload-date cache. `playlist_watch.py` gained `load_upload_dates`,
+  `save_upload_dates`, an `upload_dates` parameter on `list_playlist_video_ids` (a cached id is not
+  fetched; a fetched date is added in place, ISO formatted, and an undetermined one isn't) and
+  `find --dates-cache` (default `data/upload_dates.json`), which loads the cache first and saves it
+  in a `finally` only if an entry was added. Dates the flat entry already carries aren't cached,
+  since they cost nothing. The workflow passes `--dates-cache data-branch/upload_dates.json` and its
+  commit step now runs with `if: always()`, with the message `Update data for <id>` or `Update data`
+  (was `Mark <id> as processed`). **Verified:** `pytest -m "not slow"`: 274 passed (261 before, 13 new
+  in `tests/test_playlist_watch.py`). The workflow wasn't run on GitHub.
+  - **Side effect to know about:** because the commit step now runs after a failed pipeline step too,
+    whatever that run wrote under `runs/<id>/` is pushed as well, including `clean/` since the step
+    that deletes it is skipped on failure.

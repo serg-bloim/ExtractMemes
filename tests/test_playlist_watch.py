@@ -9,7 +9,9 @@ from extract_memes.playlist_watch import (
     append_processed,
     find_next_unprocessed,
     list_playlist_video_ids,
+    load_upload_dates,
     read_processed,
+    save_upload_dates,
 )
 
 PLAYLIST_URL = "https://www.youtube.com/playlist?list=PLfake"
@@ -182,3 +184,166 @@ def test_cli_mark_processed_appends_id(tmp_path):
     playlist_watch.main(["mark-processed", "abc123", "--processed-file", str(processed_file)])
 
     assert processed_file.read_text() == "abc123\n"
+
+
+def flatless_ytdl(fake_ytdl, dates: dict[str, str]):
+    """Make the playlist hold date-less entries `a`, `b`, … and answer each metadata fetch from `dates`."""
+    ydl = fake_ytdl.return_value.__enter__.return_value
+
+    def extract_info(url, download=False):
+        if url == PLAYLIST_URL:
+            return {"entries": [{"id": video_id} for video_id in dates]}
+        return {"upload_date": dates[url]}
+
+    ydl.extract_info.side_effect = extract_info
+    return ydl
+
+
+def test_a_cached_date_is_not_fetched(fake_ytdl):
+    ydl = flatless_ytdl(fake_ytdl, {"a": "20261003", "b": "20260901"})
+
+    result = list_playlist_video_ids(PLAYLIST_URL, SINCE, upload_dates={"a": "2026-10-03", "b": "2026-09-01"})
+
+    assert result == ["a"]
+    ydl.extract_info.assert_called_once_with(PLAYLIST_URL, download=False)
+
+
+def test_a_fetched_date_is_added_to_the_cache_in_place(fake_ytdl):
+    flatless_ytdl(fake_ytdl, {"a": "20261003", "b": "20260901"})
+    cache = {"a": "2026-10-03"}
+
+    list_playlist_video_ids(PLAYLIST_URL, SINCE, upload_dates=cache)
+
+    assert cache == {"a": "2026-10-03", "b": "2026-09-01"}
+
+
+def test_a_video_without_a_date_is_kept_and_not_cached(fake_ytdl):
+    ydl = fake_ytdl.return_value.__enter__.return_value
+    ydl.extract_info.side_effect = [{"entries": [{"id": "a"}]}, {}]
+    cache = {}
+
+    assert list_playlist_video_ids(PLAYLIST_URL, SINCE, upload_dates=cache) == ["a"]
+    assert cache == {}
+
+
+def test_a_cached_date_is_never_overwritten(fake_ytdl):
+    flatless_ytdl(fake_ytdl, {"a": "20250101"})
+    cache = {"a": "2026-10-03"}
+
+    list_playlist_video_ids(PLAYLIST_URL, SINCE, upload_dates=cache)
+
+    assert cache == {"a": "2026-10-03"}
+
+
+def test_dates_fetched_before_a_failure_stay_in_the_cache(fake_ytdl):
+    ydl = fake_ytdl.return_value.__enter__.return_value
+    ydl.extract_info.side_effect = [
+        {"entries": [{"id": "a"}, {"id": "b"}]},
+        {"upload_date": "20261003"},
+        RuntimeError("network down"),
+    ]
+    cache = {}
+
+    with pytest.raises(RuntimeError, match="network down"):
+        list_playlist_video_ids(PLAYLIST_URL, SINCE, upload_dates=cache)
+
+    assert cache == {"a": "2026-10-03"}
+
+
+def test_load_upload_dates_missing_or_empty_file_is_empty(tmp_path):
+    assert load_upload_dates(tmp_path / "missing.json") == {}
+    empty = tmp_path / "empty.json"
+    empty.write_text("  \n")
+    assert load_upload_dates(empty) == {}
+
+
+@pytest.mark.parametrize("text", ["{not json", "[1, 2]", '"text"'])
+def test_load_upload_dates_invalid_file_is_empty_and_noted_on_stderr(tmp_path, capsys, text):
+    path = tmp_path / "dates.json"
+    path.write_text(text)
+
+    assert load_upload_dates(path) == {}
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "upload-date cache" in captured.err
+
+
+def test_save_upload_dates_round_trips_sorted_and_creates_parents(tmp_path):
+    path = tmp_path / "nested" / "dates.json"
+
+    save_upload_dates(path, {"b": "2026-10-02", "a": "2026-10-01"})
+
+    assert path.read_text().index('"a"') < path.read_text().index('"b"')
+    assert load_upload_dates(path) == {"a": "2026-10-01", "b": "2026-10-02"}
+
+
+def test_cli_find_loads_and_saves_the_cache(tmp_path, capsys, fake_ytdl):
+    ydl = flatless_ytdl(fake_ytdl, {"a": "20261003", "b": "20261002"})
+    cache_file = tmp_path / "dates.json"
+    save_upload_dates(cache_file, {"a": "2026-10-03"})
+
+    playlist_watch.main(
+        [
+            "find",
+            "--playlist-url",
+            PLAYLIST_URL,
+            "--since",
+            "2026-10-01",
+            "--processed-file",
+            str(tmp_path / "processed.txt"),
+            "--dates-cache",
+            str(cache_file),
+        ]
+    )
+
+    assert capsys.readouterr().out == "b\n"
+    assert [call.args[0] for call in ydl.extract_info.call_args_list] == [PLAYLIST_URL, "b"]
+    assert load_upload_dates(cache_file) == {"a": "2026-10-03", "b": "2026-10-02"}
+
+
+def test_cli_find_saves_the_cache_even_when_the_fetch_fails(tmp_path, fake_ytdl):
+    ydl = fake_ytdl.return_value.__enter__.return_value
+    ydl.extract_info.side_effect = [
+        {"entries": [{"id": "a"}, {"id": "b"}]},
+        {"upload_date": "20261003"},
+        RuntimeError("network down"),
+    ]
+    cache_file = tmp_path / "dates.json"
+
+    with pytest.raises(RuntimeError, match="network down"):
+        playlist_watch.main(
+            [
+                "find",
+                "--playlist-url",
+                PLAYLIST_URL,
+                "--since",
+                "2026-10-01",
+                "--processed-file",
+                str(tmp_path / "processed.txt"),
+                "--dates-cache",
+                str(cache_file),
+            ]
+        )
+
+    assert load_upload_dates(cache_file) == {"a": "2026-10-03"}
+
+
+def test_cli_find_does_not_write_the_cache_when_nothing_was_added(tmp_path, fake_ytdl):
+    cache_file = tmp_path / "dates.json"
+
+    playlist_watch.main(
+        [
+            "find",
+            "--playlist-url",
+            PLAYLIST_URL,
+            "--since",
+            "2026-10-01",
+            "--processed-file",
+            str(tmp_path / "processed.txt"),
+            "--dates-cache",
+            str(cache_file),
+        ]
+    )
+
+    assert not cache_file.exists()

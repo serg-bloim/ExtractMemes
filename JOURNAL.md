@@ -105,3 +105,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-05: Settled the fail-on-undecodable-video spec (first bad window fails; no memes or no saved images is not an error); status `ready` — [specs/features/fail-on-undecodable-video.md](specs/features/fail-on-undecodable-video.md).
 - 2026-10-05: A run now fails when a video opens but no frame can be decoded, instead of finishing with no memes — [specs/features/fail-on-undecodable-video.md](specs/features/fail-on-undecodable-video.md).
 - 2026-10-05: Specified a data-branch cache of video upload dates so `find` stops re-fetching them every run; status `ready`, not implemented — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
+- 2026-10-05: `find` now caches each video's upload date on the data branch and saves it even when the run fails — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).

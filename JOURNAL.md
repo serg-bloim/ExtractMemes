@@ -98,3 +98,8 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-05: Replaced the `LOOKBACK_COUNT` count with a `--since` date (workflow variable `SINCE`) — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
 - 2026-10-05: The workflow now has separate `SAVE_LOW_RES`/`SAVE_HIGH_RES`/`SAVE_CLEAN`/`SAVE_FRAMES` variables and writes its run directory straight into the data branch — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
 - 2026-10-05: The workflow's run directories are now grouped under `runs/` on the data branch — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
+- 2026-10-05: Added playground/ytdlp_playground.py, which prints every yt-dlp format of a video — [specs/features/dev-harness.md](specs/features/dev-harness.md).
+- 2026-10-05: Drafted a spec to stop downloading AV1, which OpenCV can't decode on the GitHub runner — [specs/features/decodable-codec-download.md](specs/features/decodable-codec-download.md).
+- 2026-10-05: Settled the AV1 spec: exclude only AV1, still download it when it is the only codec; status `ready`, not implemented — [specs/features/decodable-codec-download.md](specs/features/decodable-codec-download.md).
+- 2026-10-05: Drafted a spec to fail the run when a video opens but no frames can be decoded — [specs/features/fail-on-undecodable-video.md](specs/features/fail-on-undecodable-video.md).
+- 2026-10-05: Settled the fail-on-undecodable-video spec (first bad window fails; no memes or no saved images is not an error); status `ready` — [specs/features/fail-on-undecodable-video.md](specs/features/fail-on-undecodable-video.md).

@@ -35,7 +35,7 @@ CLEAN_DIR = PLAYGROUND_DIR / "clean"
 # The 1080p download of the source of sample/full.mp4, and timestamps of cards it contains.
 REAL_VIDEO = PROJECT_ROOT / ".runtime" / "downloads" / "0TSqnhLXYfA_best.mp4"
 REAL_CARD_TIMES = (5.76, 99.56, 687.36, 2717.76, 2812.32)
-FULL_VIDEO_URL = "https://www.youtube.com/watch?v=Ij427pW96aI"
+FULL_VIDEO_URL = "https://www.youtube.com/watch?v=FtU4MuksCzE"
 
 
 class SlowEveryNthClassifier(FrameClassifier):

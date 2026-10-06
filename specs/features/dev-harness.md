@@ -144,3 +144,9 @@ All resolved:
   `test_scan_short_video`, each calling `pipeline.run(no_images=True)` with the frames, low-res
   and timecodes saved under `.runtime/_playground/scan/`. Ran the URL entry: it flagged 71 memes
   in about 5 s from the existing download, with no `clean/` or `high-res/` and no new download.
+- 2026-10-05: The user asked for a yt-dlp playground that prints every format of a video, to see which
+  codecs YouTube offers after an AV1 decode failure produced no frames. Added
+  `playground/ytdlp_playground.py` with `test_list_formats` (`yt_dlp` `extract_info(download=False)`,
+  honouring `EXTRACT_MEMES_PROXY`; prints id, ext, resolution, fps, codecs, protocol, size and note
+  per format, worst to best). Nothing is downloaded or written. Ran it on `lx011zFYIGU`: every
+  resolution tier from 144p to 1080p is offered in H.264, VP9 and AV1.

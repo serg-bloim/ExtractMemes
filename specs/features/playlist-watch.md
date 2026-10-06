@@ -95,11 +95,14 @@ publishing a new video doesn't require me to manually find and launch a run.
       7. If step 6 succeeded: run
          `python -m extract_memes.playlist_watch mark-processed "$video_id" --processed-file data-branch/processed_vids.txt`.
       7a. Opt-in image saving: the `extract-memes` call in step 6 always passes
-         `--run-name "$video_id"`; when the repo variable `vars.SAVE_IMAGES` equals `true` it also
-         passes `--save-low-res --save-high-res`, and a following step copies
-         `.runtime/$video_id/low-res` to `data-branch/$video_id/lowres` and
-         `.runtime/$video_id/high-res` to `data-branch/$video_id/highres`. With the variable unset
-         or any other value, nothing is saved and the workflow behaves as before.
+         `--run-name "$video_id" --runtime-dir data-branch/runs`, so the run directory is
+         `data-branch/runs/$video_id/` and nothing is copied afterwards. Four independent repo variables,
+         each enabled by the value `true`, choose what is kept there: `vars.SAVE_LOW_RES`
+         (`--save-low-res` → `low-res/`), `vars.SAVE_HIGH_RES` (`--save-high-res` → `high-res/`),
+         `vars.SAVE_CLEAN` (keeps `clean/`) and `vars.SAVE_FRAMES` (`--save-frames` → `frames/`).
+         The pipeline always writes `clean/` (the upload needs it), so a following step deletes
+         `data-branch/runs/$video_id/clean` unless `SAVE_CLEAN` is `true`. With none set, nothing is
+         kept and the workflow behaves as before. `vars.SAVE_IMAGES` is no longer read.
       8. If `data-branch` has uncommitted changes (the processed file and, when enabled, the saved
          images): `cd data-branch`, commit (bot
          identity, e.g. `github-actions[bot]`) and push — to the `data` branch, independently of
@@ -284,3 +287,12 @@ Resolved by the user (2026-09-18):
   validation.
 - 2026-10-04: `TELEGRAM_CHAT_ID` moved from repo secrets to repo variables (`vars.TELEGRAM_CHAT_ID`);
   `TELEGRAM_BOT_TOKEN` stays a secret. Workflow, this spec, and ADR 016 updated to match.
+- 2026-10-05: The user asked for per-kind switches instead of the single `SAVE_IMAGES` variable, and for
+  the run directory to go into `data/`. Replaced it with `SAVE_LOW_RES`, `SAVE_HIGH_RES`,
+  `SAVE_CLEAN` and `SAVE_FRAMES`, and pointed `--runtime-dir` at the `data-branch` checkout, which
+  removes the copy step. Saved folders are now `low-res/`, `high-res/`, `clean/`, `frames/` (were
+  `lowres/`, `highres/`). Interpretation: "data/" means the workflow's data branch, not a new CLI
+  default. Updated AC7. Not run on real GitHub Actions in this session.
+- 2026-10-05: The user asked for all run directories to be grouped in one folder. The workflow's
+  `--runtime-dir` is now `data-branch/runs`, so runs land in `runs/<video-id>/` on the data branch
+  (`processed_vids.txt` stays at the branch root). Updated AC7. Not run on real GitHub Actions.

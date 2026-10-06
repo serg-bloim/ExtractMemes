@@ -68,6 +68,12 @@ def test_scan_video_url_different_fps():
     _scan(VIDEO_URL, fps=2)
 
 
+def test_scan_video_url_with_proxy():
+    # Needs a reachable proxy: if it is down, yt-dlp fails and the run stops (no direct fallback).
+    non_existent_proxy = "socks5h://127.0.0.1:9999"
+    _scan(VIDEO_URL, proxy=non_existent_proxy)
+
+
 def test_scan_short_video():
     _scan(SHORT_VIDEO)
 

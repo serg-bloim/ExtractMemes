@@ -96,3 +96,5 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-05: The heuristic classifier now decides on the band score alone, dropping the texture test (541 vs 445 flagged frames on the full video) — [specs/features/heuristic-band-only.md](specs/features/heuristic-band-only.md).
 - 2026-10-05: The default scan rate is now 3 fps (CLI and `pipeline.run`), which finds cards that 2 fps falls between — [specs/features/extraction-pipeline.md](specs/features/extraction-pipeline.md).
 - 2026-10-05: Replaced the `LOOKBACK_COUNT` count with a `--since` date (workflow variable `SINCE`) — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
+- 2026-10-05: The workflow now has separate `SAVE_LOW_RES`/`SAVE_HIGH_RES`/`SAVE_CLEAN`/`SAVE_FRAMES` variables and writes its run directory straight into the data branch — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).
+- 2026-10-05: The workflow's run directories are now grouped under `runs/` on the data branch — [specs/features/playlist-watch.md](specs/features/playlist-watch.md).

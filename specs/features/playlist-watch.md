@@ -1,8 +1,8 @@
 ---
 title: "Watch a Playlist and Run the Pipeline on the Oldest New Video"
-status: implemented
+status: ready
 created: 2026-09-18
-updated: 2026-09-18
+updated: 2026-10-05
 author: ""
 depends-on: ["extraction-pipeline", "meme-upload"]
 ---
@@ -29,11 +29,12 @@ publishing a new video doesn't require me to manually find and launch a run.
 ### Library: `src/extract_memes/playlist_watch.py`
 
 - [x] AC1: `list_playlist_video_ids(playlist_url: str, since: datetime.date, proxy: str | None =
-      None) -> list[str]` fetches metadata (yt-dlp with `extract_flat="in_playlist"` and
+      None, upload_dates: dict[str, str] | None = None) -> list[str]` fetches metadata (yt-dlp with `extract_flat="in_playlist"` and
       `lazy_playlist=True`, no download) and returns the ids of videos uploaded on or after `since`,
       in the order yt-dlp reports them (newest-first). It stops at the first video uploaded before
       `since`. The upload date comes from the flat entry (`upload_date`/`timestamp`); if absent, that
-      one video's metadata is fetched. A video with no determinable date is kept. `yt_dlp` is imported lazily inside the function,
+      one video's metadata is fetched — unless AC9's `upload_dates` cache already holds that id, in
+      which case nothing is fetched. A video with no determinable date is kept. `yt_dlp` is imported lazily inside the function,
       matching `downloader.download`'s pattern, so importing `playlist_watch` has no import-time
       side effects. `proxy`, when given, is passed straight through as yt-dlp's `proxy` option
       (same as `downloader.download`'s `proxy` parameter, AC12 in
@@ -51,8 +52,8 @@ publishing a new video doesn't require me to manually find and launch a run.
 
 ### CLI: `python -m extract_memes.playlist_watch`
 
-- [x] AC5: `find --playlist-url URL [--since DATE] [--processed-file PATH] [--proxy URL]` (defaults:
-      `since` = 7 days ago, `DATE` as `YYYY-MM-DD`, `processed-file=data/processed_vids.txt`, `proxy` unset) combines AC1/AC2/AC4 and
+- [x] AC5: `find --playlist-url URL [--since DATE] [--processed-file PATH] [--dates-cache PATH] [--proxy URL]` (defaults:
+      `since` = 7 days ago, `DATE` as `YYYY-MM-DD`, `processed-file=data/processed_vids.txt`, `dates-cache=data/upload_dates.json`, `proxy` unset) combines AC1/AC2/AC4 and
       prints the chosen video id to stdout with no other output — or prints nothing and exits 0 if
       none is found — so a workflow step can capture it directly. `--proxy` falls back to the
       `EXTRACT_MEMES_PROXY` env var when unset, the same flag name, env var, and precedence
@@ -61,6 +62,22 @@ publishing a new video doesn't require me to manually find and launch a run.
       yt-dlp calls.
 - [x] AC6: `mark-processed VIDEO_ID [--processed-file PATH]` (default `processed-file` as above)
       calls `append_processed`.
+
+- [ ] AC9: Upload-date cache. A JSON file mapping a video id to its upload date as
+      `YYYY-MM-DD`, e.g. `{"0TSqnhLXYfA": "2026-09-15"}`, on the `data` branch as
+      `upload_dates.json` (the workflow passes `--dates-cache data-branch/upload_dates.json`).
+      `load_upload_dates(path) -> dict[str, str]` returns `{}` if the file is missing, empty or not
+      valid JSON (the last case prints a note to stderr, never stdout) and
+      `save_upload_dates(path, dates)` writes it as indented JSON with sorted keys, creating parent
+      directories. `list_playlist_video_ids` (AC1) reads dates from the `upload_dates` dict it is
+      given and **adds every date it fetches to that same dict, in place**, so the caller still has
+      them if the call raises part-way. A date is cached only when it was determined; a video
+      without one is not cached and is tried again on the next run. Dates already in the cache are
+      never fetched again and never overwritten.
+- [ ] AC10: `find` (AC5) loads the cache **at its start** and saves it **when it finishes, even if
+      it fails** (a `finally`: a yt-dlp error, a network error or an interrupt still saves what was
+      fetched so far). It writes the file only if an entry was added, so a run with nothing new
+      leaves it untouched and creates no empty commit. stdout stays the chosen id alone (AC5).
 
 ### Workflow: `.github/workflows/check-new-video.yml`
 
@@ -80,7 +97,7 @@ publishing a new video doesn't require me to manually find and launch a run.
          is importable), skipping `opencv-python-headless`/`numpy`/`static-ffmpeg`/`tqdm`/`requests`
          entirely for a run that finds nothing new (see Technical Notes).
       5. Run
-         `python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt`,
+         `python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt --dates-cache data-branch/upload_dates.json`,
          capturing stdout into a step output (e.g. `video_id`) via `$GITHUB_OUTPUT`. If the repo
          variable `vars.SINCE` is set and non-empty, also pass `--since "$SINCE"` as is (no
          format check in the workflow); otherwise omit `--since` so `find`'s default (AC5) applies.
@@ -103,10 +120,13 @@ publishing a new video doesn't require me to manually find and launch a run.
          The pipeline always writes `clean/` (the upload needs it), so a following step deletes
          `data-branch/runs/$video_id/clean` unless `SAVE_CLEAN` is `true`. With none set, nothing is
          kept and the workflow behaves as before. `vars.SAVE_IMAGES` is no longer read.
-      8. If `data-branch` has uncommitted changes (the processed file and, when enabled, the saved
-         images): `cd data-branch`, commit (bot
+      8. If `data-branch` has uncommitted changes (the processed file, the upload-date cache and,
+         when enabled, the saved images): `cd data-branch`, commit (bot
          identity, e.g. `github-actions[bot]`) and push — to the `data` branch, independently of
-         whatever ref triggered the workflow on the code checkout.
+         whatever ref triggered the workflow on the code checkout. This step runs with `if: always()`
+         so the upload-date cache (AC10) is pushed even when `find` or the pipeline failed; "Mark
+         the video as processed" (step 7) still runs only after a success. The commit message names
+         the video when there is one and is otherwise generic (e.g. `Update data`).
       A run where `find` returns nothing does only steps 1–5 and ends there — no error.
 
 ### Tests
@@ -116,7 +136,10 @@ publishing a new video doesn't require me to manually find and launch a run.
       newest-first scanning order, "all already processed" returning `None`, and
       `list_playlist_video_ids` with yt-dlp's `YoutubeDL` faked out (never hits the network),
       asserting the `extract_flat` option, the `since` cutoff passed, plus `proxy` passed through when
-      given and omitted when not. CLI coverage includes `find --proxy` reaching
+      given and omitted when not; the upload-date cache (AC9, AC10) — a cached id is not fetched, a fetched
+      date lands in the dict, an undetermined one doesn't, `load_upload_dates` on a missing, empty and
+      corrupt file, and `find` saving the cache even when the fetch raises and not writing it when
+      nothing was added. CLI coverage includes `find --proxy` reaching
       `list_playlist_video_ids` and falling back to `EXTRACT_MEMES_PROXY`. Runs under
       `pytest -m "not slow"`.
 
@@ -296,3 +319,16 @@ Resolved by the user (2026-09-18):
 - 2026-10-05: The user asked for all run directories to be grouped in one folder. The workflow's
   `--runtime-dir` is now `data-branch/runs`, so runs land in `runs/<video-id>/` on the data branch
   (`processed_vids.txt` stays at the branch root). Updated AC7. Not run on real GitHub Actions.
+- 2026-10-05: The `find` step looked stuck: flat playlist entries carry no upload date (checked on a
+  channel's uploads playlist and on the real playlist: `upload_date` and `timestamp` are `None`), so
+  every video in the `since` window costs one full yt-dlp extraction of about 2 s, and the same
+  videos were fetched again on every run. The user chose to keep fetching dates but cache them: a
+  `video id -> upload date` JSON map on the data branch, loaded when `find` starts and saved when it
+  ends, even on failure. Added AC9 (the cache and its load/save), AC10 (`find` reads at the start,
+  writes in a `finally`), `--dates-cache` to AC5, the cache parameter to AC1, an `if: always()` commit
+  step and `--dates-cache` to AC7, and cache tests to AC8. Status `ready`; not implemented yet.
+  - **Defaults I chose, say if you want them otherwise:** file `upload_dates.json` at the data
+    branch root; ISO dates; a cached date is never refreshed (an upload date doesn't change);
+    undetermined dates are not cached; no pruning of old entries.
+  - **Not included:** stopping at the first processed id, a cap on lookups, passing `js_runtimes`
+    to the playlist fetch, and the code default of 365 days that disagrees with AC5's 7 days.

@@ -110,6 +110,8 @@ def list_playlist_video_ids(
         "extract_flat": "in_playlist",
         "lazy_playlist": True,
         "quiet": True,
+        # Only deno is enabled by default; without a runtime yt-dlp warns on every extraction.
+        "js_runtimes": {"node": {}},
     }
     if proxy:
         options["proxy"] = proxy

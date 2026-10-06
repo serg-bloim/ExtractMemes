@@ -24,6 +24,10 @@ def sample_frames(video_path: Path, fps: float = 2.0) -> Iterator[tuple[int, flo
     The timestamp is the frame's own presentation time (`CAP_PROP_POS_MSEC`), not
     `frame_index / native_fps`: some files have uneven frame spacing, so the header's nominal rate
     drifts from the real time (15 s off after 3500 s on one 109-minute 144p file).
+
+    Raises `RuntimeError` when the file opens but its very first read fails, which is what an
+    undecodable codec (AV1 without a decoder) looks like; any later failed read is the end of the
+    video.
     """
     cap = _open(video_path)
     try:
@@ -34,6 +38,8 @@ def sample_frames(video_path: Path, fps: float = 2.0) -> Iterator[tuple[int, flo
         while True:
             ok, frame = cap.read()
             if not ok:
+                if frame_index == 0:
+                    raise RuntimeError(f"Could not decode any frame from video file: {video_path}")
                 return
             if frame_index % step == 0:
                 yield frame_index, cap.get(cv2.CAP_PROP_POS_MSEC) / 1000, frame

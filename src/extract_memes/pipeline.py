@@ -139,6 +139,11 @@ def run(
     `high-res/meme_<n:03d>/`. With `clean_method=None` nothing is cleaned and those frames are
     returned instead, so that combination requires `save_high_res=True`.
 
+    A video that opens but can't be decoded raises `RuntimeError`: in the scan when its first frame
+    can't be read, and in the extraction when no frame of a meme's window can; nothing is uploaded or
+    sent after that. A video that decodes but has no
+    memes, or none that survive the best-quality check, is a normal result.
+
     With `uploader` set (or `upload_to="telegram"`, which builds a `TelegramUploader` from
     `telegram_bot_token`/`telegram_chat_id`), `uploader.upload_all(saved, source, info)` is called once
     before `run` returns, `info` being the video's title and thumbnail (`None` for a local file or
@@ -243,7 +248,9 @@ def run(
         count = round((last - first + 2 * window_seconds) * native_fps) + 1
         batch: list[np.ndarray] = []
         batch_start = 0.0
+        decoded = 0
         for index, frame_timestamp, frame in frames_from(extract_path, start, count):
+            decoded += 1
             if not classifier.is_meme_frame(_to_scan_size(frame, scan_shape)):
                 continue
             if not batch:
@@ -254,6 +261,8 @@ def run(
                 _write_image(meme_path, frame)
                 if clean_method is None:
                     saved.append(meme_path)
+        if not decoded:
+            raise RuntimeError(f"Could not decode any frame at {start:.2f}s from {extract_path}")
         if batch:
             timecodes.append(f"{format_timecode(batch_start + timecode_offset)} {MEME_LABEL} {meme_number}")
         if clean_method is not None and batch:

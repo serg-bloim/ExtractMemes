@@ -40,7 +40,7 @@ jobs:
           if [ -n "$SINCE" ]; then
             since_args=(--since "$SINCE")
           fi
-          video_id=$(python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt "${since_args[@]}")
+          video_id=$(python -m extract_memes.playlist_watch find --playlist-url "${{ vars.PLAYLIST_URL }}" --processed-file data-branch/processed_vids.txt --dates-cache data-branch/upload_dates.json "${since_args[@]}")
           echo "video_id=$video_id" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
@@ -88,13 +88,19 @@ jobs:
         run: python -m extract_memes.playlist_watch mark-processed "${{ steps.find.outputs.video_id }}" --processed-file data-branch/processed_vids.txt
 
       - name: Commit and push the updated data branch
-        if: steps.find.outputs.video_id != ''
+        if: always()
         working-directory: data-branch
         run: |
           git add -A
           if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -m "Mark ${{ steps.find.outputs.video_id }} as processed"
+            video_id="${{ steps.find.outputs.video_id }}"
+            if [ -n "$video_id" ]; then
+              message="Update data for $video_id"
+            else
+              message="Update data"
+            fi
+            git commit -m "$message"
             git push
           fi

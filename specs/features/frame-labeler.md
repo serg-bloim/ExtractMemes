@@ -93,7 +93,7 @@ classifier disagrees with me, and keep the result in the repo.
       shown, after filtering) from the last clicked row to this one; Cmd/Ctrl+click adds or removes
       one row. The selected rows are highlighted and counted, and the mark key then applies to all of
       them in one request: if every selected row is marked it unmarks them, otherwise it marks the
-      unmarked ones. Esc clears the selection and leaves no frame selected (the large view is empty and the mark keys do nothing until a frame is selected again; the arrow keys resume from the last frame). A plain click or keyboard navigation replaces the selection.
+      unmarked ones. The A key selects every row the strip shows (so, with filters, all the frames that pass them). Esc clears the selection and leaves no frame selected (the large view is empty and the mark keys do nothing until a frame is selected again; the arrow keys resume from the last frame). A plain click or keyboard navigation replaces the selection.
 - [ ] AC16: A second human label, **not a meme**, can be set on the selected frame or on a
       multi-selection with its own key (X) and button, and cleared the same way. A frame is a meme,
       a not-meme or unlabeled, never two: setting one replaces the other. Not-memes are saved to the
@@ -299,3 +299,5 @@ Resolved by the user (2026-10-07):
   past the target. The frame reader now decodes from the start when a seek can't get that early
   (AC8: the frame shown is the frame the index names). Checked 16 frames, early, late and in jumping
   order, against a sequential decode on `FtU4MuksCzE` format 269: all identical.
+- 2026-10-07: The user asked for a shortcut to select all. A selects every row the strip shows
+  (AC15), so it respects the filters; Cmd/Ctrl+A is left to the browser.

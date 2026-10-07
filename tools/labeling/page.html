@@ -123,7 +123,7 @@
     <div>
       <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <button id="copy" title="Copy video id, format id, timestamp and frame index">Copy locator (C)</button> <span id="err"></span></div>
       <div id="help">
-        <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>Shift</kbd>/<kbd>⌘</kbd>+click rows to select several (<kbd>Esc</kbd> clears) · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
+        <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>Shift</kbd>/<kbd>⌘</kbd>+click rows to select several (<kbd>A</kbd> selects all shown, <kbd>Esc</kbd> clears) · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
         <kbd>M</kbd> meme · <kbd>X</kbd> not a meme · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
         <kbd>C</kbd> copy locator · <kbd>H</kbd> frame/histogram · <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
       </div>
@@ -257,6 +257,15 @@ function scrollToSelection() {
   const strip = $("strip");
   if (i * ROW_H < strip.scrollTop || (i + 1) * ROW_H > strip.scrollTop + strip.clientHeight)
     strip.scrollTop = Math.max(0, i * ROW_H - strip.clientHeight / 2);
+}
+
+// A: select every row the strip shows (all of them, or those left by the filters).
+function selectAll() {
+  if (!view.length) return;
+  const keep = hasSel && view.includes(rowOf(sel)) ? sel : S.rows[view[0]];
+  multi = new Set(view);
+  anchorRow = view[0];
+  select(keep, false, true);
 }
 
 function clickRow(r, i, e) {
@@ -474,6 +483,7 @@ document.addEventListener("keydown", e => {
     case "Escape": deselectAll(); break;
     case "h": case "H": setView(!histOn); break;
     case "c": case "C": copyLocator(); break;
+    case "a": case "A": selectAll(); break;
     case "ArrowLeft": select(sel - big); break;
     case "ArrowRight": select(sel + big); break;
     case "ArrowUp": jumpInView(-1); break;

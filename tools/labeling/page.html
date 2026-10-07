@@ -14,11 +14,13 @@
   #filters { padding:8px; border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
   #profiles { padding:8px 8px 3px; border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
   #profiles .row { display:flex; gap:6px; align-items:center; margin-bottom:5px; }
-  #profiles label { color:var(--dim); min-width:78px; } #profiles select { flex:1; min-width:0; } #profiles input { width:110px; }
+  #profiles label { color:var(--dim); width:108px; flex:none; } #profiles select { flex:1; min-width:0; } #profiles input { width:110px; }
   #filters .row { display:flex; gap:6px; align-items:center; margin-bottom:5px; flex-wrap:wrap; }
-  #filters label { color:var(--dim); min-width:78px; }
-  #filters input[type=number] { width:62px; }
-  #filters .rst { margin-left:auto; padding:0 6px; line-height:1.3; } #filters .rst:disabled { opacity:.3; cursor:default; }
+  #filters .row:has(.rst) { flex-wrap:nowrap; }                       /* label | controls | not | reset, aligned on every line */
+  #filters .row > label:not(.inv) { color:var(--dim); flex:none; width:108px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #filters .row select, #filters .row input[type=number] { flex:1; min-width:0; width:0; }
+  #filters .inv { flex:none; display:flex; align-items:center; margin:0; } #filters .inv input { margin:0; }
+  #filters .rst { flex:none; width:26px; padding:0; line-height:1.3; } #filters .rst:disabled { opacity:.3; cursor:default; }
   select, input, button { background:var(--bg); color:var(--text); border:1px solid var(--line);
          border-radius:4px; padding:2px 5px; font:inherit; }
   button { cursor:pointer; } button:hover { border-color:var(--dim); }
@@ -95,10 +97,12 @@
   <div id="filters">
     <div class="row"><label>Human label</label>
       <select id="f-human"><option value="">any</option><option value="meme">meme</option><option value="not_meme">not a meme</option><option value="none">unlabeled</option><option value="other">anything but meme</option></select>
-      <button class="rst" data-for="f-human" title="Reset this filter">↺</button></div>
+<label class="inv" title="Show the frames that do NOT pass this filter"><input type="checkbox" id="inv-human"></label>
+      <button class="rst" data-for="f-human" data-inv="human" title="Reset this filter">↺</button></div>
     <div class="row"><label>Classifier</label>
       <select id="f-verdict"><option value="">any</option><option value="1">flagged</option><option value="0">not flagged</option></select>
-      <button class="rst" data-for="f-verdict" title="Reset this filter">↺</button></div>
+<label class="inv" title="Show the frames that do NOT pass this filter"><input type="checkbox" id="inv-verdict"></label>
+      <button class="rst" data-for="f-verdict" data-inv="verdict" title="Reset this filter">↺</button></div>
     <div id="f-criteria"></div>
     <div class="row">
       <button id="fp" title="Flagged by the classifier but not marked as a meme by me (unlabeled or not a meme)">False positives</button>
@@ -204,27 +208,39 @@ function applyLabels(labels) {
 const humanLabel = r => rowMarked[r] ? "meme" : rowNot[r] ? "not_meme" : "none";
 
 function filters() {
-  const f = {human: $("f-human").value, verdict: $("f-verdict").value, ranges: {}};
+  const f = {human: $("f-human").value, verdict: $("f-verdict").value, ranges: {},
+             invert: {human: $("inv-human").checked, verdict: $("inv-verdict").checked}};
   for (const c of S.criteria) {
     const lo = $("min-" + c.name).value, hi = $("max-" + c.name).value;
     if (lo !== "" || hi !== "") f.ranges[c.name] = [lo === "" ? -Infinity : +lo, hi === "" ? Infinity : +hi];
+    f.invert[c.name] = $("inv-" + c.name).checked;
   }
   return f;
 }
 
+// Whether a row passes the filters; a filter marked "not" passes the rows it would otherwise exclude.
 function matches(row, f) {
-  if (f.human === "other" ? humanLabel(row) === "meme" : f.human !== "" && humanLabel(row) !== f.human) return false;
-  if (f.verdict !== "" && String(S.verdict[row]) !== f.verdict) return false;
+  if (f.human !== "") {
+    const ok = f.human === "other" ? humanLabel(row) !== "meme" : humanLabel(row) === f.human;
+    if (ok === f.invert.human) return false;
+  }
+  if (f.verdict !== "" && (String(S.verdict[row]) === f.verdict) === f.invert.verdict) return false;
   for (const [name, [lo, hi]] of Object.entries(f.ranges)) {
     const v = S.scores[name][row];
-    if (v < lo || v > hi) return false;
+    if ((v >= lo && v <= hi) === !!f.invert[name]) return false;
   }
   return true;
 }
 
+// A filter at its default has nothing to reset or invert; "not" is cleared then, so it can't linger
+// and invert the next value typed in.
 function syncResets() {
-  for (const b of document.querySelectorAll("#filters .rst"))
-    b.disabled = b.dataset.for.split(",").every(id => $(id).value === "");
+  for (const b of document.querySelectorAll("#filters .rst")) {
+    const isDefault = b.dataset.for.split(",").every(id => $(id).value === ""), box = $("inv-" + b.dataset.inv);
+    if (isDefault) box.checked = false;
+    box.disabled = isDefault;
+    b.disabled = isDefault;
+  }
 }
 
 function refilter() {
@@ -520,19 +536,22 @@ function buildFilterInputs() {
     row.className = "row";
     row.innerHTML = "<label>" + c.name + "</label><input type='number' step='any' id='min-" + c.name +
                     "' placeholder='min'><input type='number' step='any' id='max-" + c.name + "' placeholder='max'>" +
-                    "<button class='rst' data-for='min-" + c.name + ",max-" + c.name + "' title='Reset this filter'>↺</button>";
+                    "<label class='inv' title='Show the frames that do NOT pass this filter'><input type='checkbox' id='inv-" + c.name + "'></label>" +
+                    "<button class='rst' data-for='min-" + c.name + ",max-" + c.name + "' data-inv='" + c.name + "' title='Reset this filter'>↺</button>";
     box.appendChild(row);
   }
   for (const el of document.querySelectorAll("#filters select, #filters input")) el.onchange = refilter;
   for (const b of document.querySelectorAll("#filters .rst"))
-    b.onclick = () => { for (const id of b.dataset.for.split(",")) $(id).value = ""; refilter(); };
+    b.onclick = () => { for (const id of b.dataset.for.split(",")) $(id).value = ""; $("inv-" + b.dataset.inv).checked = false; refilter(); };
   $("fp").onclick = () => { resetFilters(); $("f-verdict").value = "1"; $("f-human").value = "other"; refilter(); };
   $("miss").onclick = () => { resetFilters(); $("f-verdict").value = "0"; $("f-human").value = "meme"; refilter(); };
   $("reset").onclick = () => { resetFilters(); refilter(); };
 }
 
 function resetFilters() {
-  for (const el of document.querySelectorAll("#filters select, #filters input")) el.value = "";
+  for (const el of document.querySelectorAll("#filters select, #filters input")) {
+    if (el.type === "checkbox") el.checked = false; else el.value = "";
+  }
 }
 
 $("toggle").onclick = toggleMark;
@@ -590,7 +609,8 @@ function histogramScope(metric) {
   delete f.ranges[metric.name];
   const base = [];
   for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) base.push(r);
-  const rows = own ? base.filter(r => metric.values[r] >= own[0] && metric.values[r] <= own[1]) : base;
+  const inverted = !!f.invert[metric.name];
+  const rows = own ? base.filter(r => (metric.values[r] >= own[0] && metric.values[r] <= own[1]) !== inverted) : base;
   const inside = new Set(rows);
   const outside = own ? base.filter(r => !inside.has(r)) : null;                   // dimmed on the chart
   const text = rows.length === S.rows.length ? "all " + S.rows.length + " scanned frames"
@@ -662,12 +682,19 @@ function renderHistogram() {
       svg += `<line x1="${x(t.value)}" x2="${x(t.value)}" y1="${T}" y2="${T + ph}" stroke="#ff6b6b" stroke-dasharray="5 4"/>` +
              `<text x="${x(t.value) + 4}" y="${T + 12}" fill="#ff6b6b" font-size="11">${t.op} ${t.value}</text>`;
   const active = activeRange(metric.name);                              // the strip filter on this metric
-  if (active && active.max >= lo && active.min <= hi) {
-    const a = x(Math.max(lo, active.min)), b = x(Math.min(hi, active.max));
-    svg += `<rect x="${a}" y="${T}" width="${Math.max(1, b - a)}" height="${ph}" fill="#3b82f6" fill-opacity=".18" pointer-events="none"/>` +
-           `<line x1="${a}" x2="${a}" y1="${T}" y2="${T + ph}" stroke="#3b82f6" pointer-events="none"/>` +
-           `<line x1="${b}" x2="${b}" y1="${T}" y2="${T + ph}" stroke="#3b82f6" pointer-events="none"/>` +
-           `<text x="${(a + b) / 2}" y="${T + ph - 6}" text-anchor="middle" fill="#9cc2ff" font-size="11" pointer-events="none">strip filter ${num(Math.max(lo, active.min))} – ${num(Math.min(hi, active.max))}</text>`;
+  if (active) {
+    // the band the filter keeps: inside [min, max], or everything outside it when inverted
+    const spans = active.invert
+      ? [[lo, Math.min(hi, active.min)], [Math.max(lo, active.max), hi]].filter(([a, b]) => b > a)
+      : active.max >= lo && active.min <= hi ? [[Math.max(lo, active.min), Math.min(hi, active.max)]] : [];
+    const label = (active.invert ? "strip filter not " : "strip filter ") + num(Math.max(lo, active.min)) + " – " + num(Math.min(hi, active.max));
+    spans.forEach(([from, to], i) => {
+      const a = x(from), b = x(to);
+      svg += `<rect x="${a}" y="${T}" width="${Math.max(1, b - a)}" height="${ph}" fill="#3b82f6" fill-opacity=".18" pointer-events="none"/>` +
+             `<line x1="${a}" x2="${a}" y1="${T}" y2="${T + ph}" stroke="#3b82f6" pointer-events="none"/>` +
+             `<line x1="${b}" x2="${b}" y1="${T}" y2="${T + ph}" stroke="#3b82f6" pointer-events="none"/>`;
+      if (i === 0) svg += `<text x="${(a + b) / 2}" y="${T + ph - 6}" text-anchor="middle" fill="#9cc2ff" font-size="11" pointer-events="none">${label}</text>`;
+    });
   }
   $("hist-clear").hidden = !active;
   const vals = scope.rows.map(r => all[r]);
@@ -700,7 +727,9 @@ function binRange(a, b, lo, hi, bins) {
 function activeRange(name) {
   const lo = $("min-" + name), hi = $("max-" + name);
   if (!lo || !hi || (lo.value === "" && hi.value === "")) return null;
-  return {min: lo.value === "" ? -Infinity : +lo.value, max: hi.value === "" ? Infinity : +hi.value};
+  const box = $("inv-" + name);
+  return {min: lo.value === "" ? -Infinity : +lo.value, max: hi.value === "" ? Infinity : +hi.value,
+          invert: !!(box && box.checked)};
 }
 
 function chartX(evt) {
@@ -733,6 +762,8 @@ function setRangeFilter(name, min, max) {
   if (!lo || !hi) { $("err").textContent = name + " can't be used as a strip filter"; return; }
   const text = v => v === null ? "" : String(+v.toPrecision(7));
   lo.value = text(min); hi.value = text(max);
+  const box = $("inv-" + name);
+  if (box) box.checked = false;                      // a dragged range selects what is inside it
   refilter();                                        // also redraws the histogram with the shaded range
 }
 
@@ -838,7 +869,11 @@ function profileFilters() {
     if (hi !== Infinity) bounds.max = hi;
     ranges[name] = bounds;
   }
-  return {human_label: HUMAN_TO_FILE[f.human], classifier: VERDICT_TO_FILE[f.verdict], ranges};
+  const invert = [];
+  if (f.human !== "" && f.invert.human) invert.push("human_label");
+  if (f.verdict !== "" && f.invert.verdict) invert.push("classifier");
+  for (const name of Object.keys(ranges)) if (f.invert[name]) invert.push(name);
+  return {human_label: HUMAN_TO_FILE[f.human], classifier: VERDICT_TO_FILE[f.verdict], ranges, invert};
 }
 
 function applyProfile(p) {
@@ -851,7 +886,11 @@ function applyProfile(p) {
     if (!lo || !hi) { skipped.push(name); continue; }                  // a criterion this build doesn't have
     lo.value = b.min ?? ""; hi.value = b.max ?? "";
   }
-  refilter();
+  const inverted = new Set(p.invert || []);
+  $("inv-human").checked = inverted.has("human_label");
+  $("inv-verdict").checked = inverted.has("classifier");
+  for (const name of Object.keys(p.ranges || {})) { const box = $("inv-" + name); if (box) box.checked = inverted.has(name); }
+  refilter();                                         // also clears "not" on any filter left at its default
   return skipped;
 }
 

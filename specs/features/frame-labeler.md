@@ -85,6 +85,10 @@ classifier disagrees with me, and keep the result in the repo.
       - by each criterion's score: a min/max range;
       - and combinations of these, so "flagged but not marked" (false positives) and "marked but
         not flagged" (misses) are one click each.
+      Each filter line also has a compact checkbox (no text; its tooltip says what it does) that inverts it: the strip then shows the frames
+      that do not pass that filter (for a criterion, the values outside its min/max). It is only
+      available while the filter is set, is cleared when the filter returns to its default, and the
+      histogram's shaded band shows the excluded range's complement while it is on.
       Each filter line has its own small reset button that puts only that filter back to its default
       (greyed out when it already is); "Reset" still clears them all.
       Prev/next-in-filter keys jump to the neighbouring matching row, and the filter survives
@@ -158,7 +162,8 @@ classifier disagrees with me, and keep the result in the repo.
       one picked (a criterion the build doesn't have is skipped and reported). The file is plain
       YAML with readable values (`human_label`: any / meme / not_meme / unlabeled /
       anything_but_meme; `classifier`: any / flagged / not_flagged; `ranges`: per criterion
-      `{min, max}`, a missing bound open) and a `schema` version. A name is 1-64 letters, digits,
+      `{min, max}`, a missing bound open; `invert`: the names of the inverted filters) and a
+      `schema` version. A name is 1-64 letters, digits,
       `_` or `-`, so nothing can be written outside that folder. Profiles belong to no video.
 - [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
@@ -316,3 +321,11 @@ Resolved by the user (2026-10-07):
   holds the file format; the API is `GET /api/profiles`, `GET`/`PUT /api/profiles/<name>`. The folder
   is under `data/datasets/`, which `.gitignore` already excludes, so profiles stay local unless that
   rule is changed.
+- 2026-10-07: The user asked for an invert checkbox next to each filter's reset button. Added to
+  AC14 ("not": matches the frames that don't pass that filter; for a range, outside min/max) and
+  to the profile file (`invert: [names]`, AC21a). Dragging a new range on the histogram clears that
+  metric's invert, since the drag selects the values inside.
+- 2026-10-07: The invert checkbox claimed a whole label column because the row-label style matched
+  its `<label>`, which broke the filter lines' alignment. The "not" text is gone (a tooltip remains)
+  and every filter line is now label | controls | checkbox | reset in fixed columns, with the label
+  column wide enough for `hue_consistency`. Checked on a headless-Chrome screenshot of the page.

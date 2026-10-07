@@ -9,6 +9,7 @@ Files live in data/datasets/profiles/classifier/<name>.yaml:
       classifier: flagged              # any | flagged | not_flagged
       ranges:                          # per criterion; a missing bound is open
         band: {min: 180.0}
+      invert: [band]                   # filters that match what does NOT pass them (omitted when none)
 """
 
 import math
@@ -74,7 +75,11 @@ def normalize(filters) -> dict:
             clean[key] = float(value)
         if clean:
             ranges[criterion] = clean
-    return {"human_label": human, "classifier": verdict, "ranges": ranges}
+    inverted = filters.get("invert")
+    inverted = [] if inverted is None else inverted
+    if not isinstance(inverted, list) or not all(isinstance(name, str) for name in inverted):
+        raise ProfileError("invert must be a list of filter names")
+    return {"human_label": human, "classifier": verdict, "ranges": ranges, "invert": sorted(set(inverted))}
 
 
 def save(name: str, filters, directory: Path = PROFILES_DIR) -> Path:
@@ -82,7 +87,10 @@ def save(name: str, filters, directory: Path = PROFILES_DIR) -> Path:
     import yaml
 
     path = profile_path(name, directory)
-    document = {"schema": SCHEMA, "name": name, "filters": normalize(filters)}
+    clean = normalize(filters)
+    if not clean["invert"]:
+        del clean["invert"]  # keep the file to what is set
+    document = {"schema": SCHEMA, "name": name, "filters": clean}
     directory.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(".yaml.tmp")
     temp.write_text(yaml.safe_dump(document, sort_keys=False, default_flow_style=False), encoding="utf-8")

@@ -29,15 +29,28 @@ def test_a_profile_round_trips_through_its_file(tmp_path):
     assert "schema: 1" in text and "name: profile1" in text and "human_label: anything_but_meme" in text
     loaded = profiles.load("profile1", tmp_path / "profiles" / "classifier")
     assert loaded == {"human_label": "anything_but_meme", "classifier": "flagged",
-                      "ranges": {"band": {"min": 180.0}, "margin_luma": {"min": 10.5, "max": 35.0}}}
+                      "ranges": {"band": {"min": 180.0}, "margin_luma": {"min": 10.5, "max": 35.0}},
+                      "invert": []}
+    assert "invert" not in text  # only written when something is inverted
 
 
 def test_defaults_fill_in_and_open_bounds_are_left_out(tmp_path):
     profiles.save("empty", {}, tmp_path)
     profiles.save("open", {"ranges": {"band": {"min": None, "max": 200}, "texture": {}}}, tmp_path)
 
-    assert profiles.load("empty", tmp_path) == {"human_label": "any", "classifier": "any", "ranges": {}}
+    assert profiles.load("empty", tmp_path) == {"human_label": "any", "classifier": "any", "ranges": {}, "invert": []}
     assert profiles.load("open", tmp_path)["ranges"] == {"band": {"max": 200.0}}
+
+
+def test_inverted_filters_are_saved_by_name_sorted_and_deduplicated(tmp_path):
+    path = profiles.save("inv", {**FILTERS, "invert": ["classifier", "band", "band"]}, tmp_path)
+
+    assert "invert:\n  - band\n  - classifier" in path.read_text()
+    assert profiles.load("inv", tmp_path)["invert"] == ["band", "classifier"]
+    with pytest.raises(profiles.ProfileError, match="invert"):
+        profiles.save("bad", {"invert": "band"}, tmp_path)
+    with pytest.raises(profiles.ProfileError, match="invert"):
+        profiles.save("bad", {"invert": [1]}, tmp_path)
 
 
 def test_saving_again_replaces_and_the_list_is_sorted(tmp_path):

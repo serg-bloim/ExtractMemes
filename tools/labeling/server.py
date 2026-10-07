@@ -73,6 +73,19 @@ class LabelerApp:
             self._save()
         return self.memes()
 
+    def mark_many(self, frames, on) -> list[dict]:
+        if not isinstance(frames, list) or not frames:
+            raise ValueError("frames must be a non-empty list")
+        frames = [self._check_frame(f) for f in frames]
+        with self._lock:
+            for frame in frames:
+                if on:
+                    self.dataset.add(frame, float(self.index.pts[frame]))
+                else:
+                    self.dataset.remove(frame)
+            self._save()  # once for the whole batch
+        return self.memes()
+
     def move(self, old, new) -> list[dict]:
         old, new = self._check_frame(old), self._check_frame(new)
         with self._lock:
@@ -147,13 +160,15 @@ def make_handler(app: LabelerApp, port_getter) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:
             if not self._host_ok():
                 return self._send(403, b"forbidden", "text/plain")
-            if self.path not in ("/api/mark", "/api/move"):
+            if self.path not in ("/api/mark", "/api/mark_many", "/api/move"):
                 return self._not_found()
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(length) or b"{}")
                 if self.path == "/api/mark":
                     memes = app.mark(body.get("frame"), bool(body.get("on")))
+                elif self.path == "/api/mark_many":
+                    memes = app.mark_many(body.get("frames"), bool(body.get("on")))
                 else:
                     memes = app.move(body.get("from"), body.get("to"))
             except (ValueError, TypeError) as exc:

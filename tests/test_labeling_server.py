@@ -136,6 +136,28 @@ def test_marking_writes_the_dataset_on_every_change(labeler):
     assert ds.load(dataset_file).memes[0].meme_ts == pytest.approx(14 / FPS, abs=0.001)
 
 
+def test_marking_many_frames_is_one_save_and_unmarking_many_removes_them(labeler):
+    app, base, dataset_file = labeler
+
+    memes = post(base, "/api/mark_many", {"frames": [30, 5, 10], "on": True})["memes"]
+    assert [m["frame"] for m in memes] == [5, 10, 30]
+    assert [m.meme_frame for m in ds.load(dataset_file).memes] == [5, 10, 30]
+
+    memes = post(base, "/api/mark_many", {"frames": [5, 30], "on": False})["memes"]
+    assert [m["frame"] for m in memes] == [10]
+    assert [m.meme_frame for m in ds.load(dataset_file).memes] == [10]
+
+
+def test_a_bad_frame_in_a_batch_marks_nothing(labeler):
+    _, base, dataset_file = labeler
+
+    for body in ({"frames": [5, 999], "on": True}, {"frames": [], "on": True}, {"frames": "5", "on": True}):
+        with pytest.raises(urllib.error.HTTPError) as error:
+            post(base, "/api/mark_many", body)
+        assert error.value.code == 400
+    assert not dataset_file.exists()
+
+
 def test_bad_mark_requests_are_rejected(labeler):
     _, base, dataset_file = labeler
 

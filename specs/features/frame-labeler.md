@@ -84,7 +84,12 @@ classifier disagrees with me, and keep the result in the repo.
         not flagged" (misses) are one click each.
       Prev/next-in-filter keys jump to the neighbouring matching row, and the filter survives
       marking and unmarking (a row that stops matching disappears after the change, not during it).
-- [ ] AC15: Offline tests cover the server's frame, thumbnail and label endpoints against a small
+- [ ] AC15: **Multi-selection.** Shift+click on a strip row selects every row (of those currently
+      shown, after filtering) from the last clicked row to this one; Cmd/Ctrl+click adds or removes
+      one row. The selected rows are highlighted and counted, and the mark key then applies to all of
+      them in one request: if every selected row is marked it unmarks them, otherwise it marks the
+      unmarked ones. Esc, a plain click or keyboard navigation clears the selection.
+- [ ] AC16: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
 
@@ -153,3 +158,7 @@ Resolved by the user (2026-10-07):
   strip's effective rate is 3.125 fps because of the step rule). **Not verified yet:** the page's
   JavaScript was only syntax-checked (the Chrome extension wasn't connected), so AC15 stays
   unchecked and the status stays `in-progress` until the page has been used by hand.
+- 2026-10-07: The user asked to select multiple frames by holding shift. Added AC15 (shift-click
+  range and Cmd/Ctrl-click toggle in the strip, one bulk mark request; Shift+arrows keep their
+  1 s step); the test criterion is now AC16. The shift-click range works on strip rows, since
+  those are the frames the classifier sees.

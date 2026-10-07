@@ -25,6 +25,8 @@
          border-bottom:1px solid var(--line); cursor:pointer; align-items:center; }
   .row-item:hover { background:#242832; }
   .row-item.sel { background:#1f3556; outline:1px solid var(--sel); }
+  .row-item.multi { background:#2a3f66; }
+  #strip { user-select:none; }
   .row-item img { width:96px; height:54px; object-fit:cover; background:#000; flex:none; }
   .row-item .meta { font-size:11px; line-height:1.35; min-width:0; }
   .row-item .ts { font-weight:600; }
@@ -70,7 +72,7 @@
     <div>
       <div><button id="toggle">Mark as meme (M)</button> <span id="err"></span></div>
       <div id="help">
-        <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
+        <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>Shift</kbd>/<kbd>⌘</kbd>+click rows to select several (<kbd>Esc</kbd> clears) · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
         <kbd>M</kbd> mark · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
         <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
       </div>
@@ -88,6 +90,8 @@ let view = [];               // strip row numbers (into S.rows) that match the f
 let memeFrames = new Set();
 let rowMarked = [];          // per strip row: is there a mark mapped to it
 let loadToken = 0;
+let multi = new Set();       // strip rows selected with shift/cmd+click
+let anchorRow = 0;           // where a shift+click range starts
 
 const $ = id => document.getElementById(id);
 const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ":" + s.toFixed(3).padStart(6, "0"); };
@@ -148,7 +152,7 @@ function renderStrip() {
   for (let i = first; i < last; i++) {
     const r = view[i], idx = S.rows[r];
     const el = document.createElement("div");
-    el.className = "row-item" + (r === selRow ? " sel" : "");
+    el.className = "row-item" + (r === selRow ? " sel" : "") + (multi.has(r) ? " multi" : "");
     el.style.top = i * ROW_H + "px";
     const scores = S.criteria.map(c => c.name.slice(0, 6) + " " + S.scores[c.name][r]).join(" · ");
     el.innerHTML = '<img loading="lazy" src="/thumb/' + idx + '.jpg">' +
@@ -156,7 +160,7 @@ function renderStrip() {
       (rowMarked[r] ? '<span class="star">★ meme</span> ' : '') +
       (S.verdict[r] ? '<span class="flag">⚑ flagged</span>' : '') + '</div>' +
       '<div class="dim">' + scores + '</div></div>';
-    el.onclick = () => select(idx);
+    el.onclick = e => clickRow(r, i, e);
     frag.appendChild(el);
   }
   spacer.replaceChildren(frag);
@@ -170,7 +174,25 @@ function scrollToSelection() {
     strip.scrollTop = Math.max(0, i * ROW_H - strip.clientHeight / 2);
 }
 
-function select(frame, scroll = true) {
+function clickRow(r, i, e) {
+  if (e.shiftKey) {                                   // range over the rows currently shown
+    const a = Math.max(0, view.indexOf(anchorRow));
+    const [lo, hi] = a <= i ? [a, i] : [i, a];
+    multi = new Set(view.slice(lo, hi + 1));
+    select(S.rows[r], false, true);
+  } else if (e.metaKey || e.ctrlKey) {
+    multi = new Set(multi.size ? multi : [rowOf(sel)]);
+    multi.has(r) ? multi.delete(r) : multi.add(r);
+    anchorRow = r;
+    select(S.rows[r], false, true);
+  } else {
+    anchorRow = r;
+    select(S.rows[r], false);
+  }
+}
+
+function select(frame, scroll = true, keepMulti = false) {
+  if (!keepMulti) multi = new Set();
   sel = Math.max(0, Math.min(S.frame_count - 1, frame));
   const token = ++loadToken;
   const img = new Image();
@@ -191,7 +213,9 @@ function renderInfo() {
   const r = rowOf(sel), onRow = S.rows[r] === sel;
   const marked = memeFrames.has(sel);
   $("view").classList.toggle("marked", marked);
-  $("toggle").textContent = (marked ? "Unmark meme" : "Mark as meme") + " (M)";
+  $("toggle").textContent = multi.size > 1
+    ? (Array.from(multi).every(x => rowMarked[x]) ? "Unmark " : "Mark ") + multi.size + " selected frames (M)"
+    : (marked ? "Unmark meme" : "Mark as meme") + " (M)";
   let html = "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td></tr>" +
     "<tr><td class='dim'>frame</td><td>#" + sel + (onRow ? "" : " <span class='dim'>(between scanned frames; scored row #" + S.rows[r] + ")</span>") + "</td></tr>" +
     "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : (rowMarked[r] ? "near a mark" : "unmarked")) + "</td></tr>" +
@@ -221,7 +245,20 @@ async function setMark(frame, on) {
   } catch (e) { $("err").textContent = String(e); }
 }
 
-function toggleMark() {
+async function toggleMark() {
+  if (multi.size > 1) {                                // one request for the whole selection
+    const rows = Array.from(multi);
+    const allMarked = rows.every(r => rowMarked[r]);
+    const frames = allMarked
+      ? S.memes.filter(m => multi.has(rowOf(m.frame))).map(m => m.frame)
+      : rows.filter(r => !rowMarked[r]).map(r => S.rows[r]);
+    try {
+      applyMemes((await api("/api/mark_many", {frames, on: !allMarked})).memes);
+      multi = new Set();
+      refilter(); renderInfo();
+    } catch (e) { $("err").textContent = String(e); }
+    return;
+  }
   return setMark(sel, !memeFrames.has(sel));
 }
 
@@ -277,6 +314,7 @@ document.addEventListener("keydown", e => {
   }
   const big = e.shiftKey ? Math.round(S.native_fps) : 1;
   switch (e.key) {
+    case "Escape": multi = new Set(); renderInfo(); renderStrip(); break;
     case "ArrowLeft": select(sel - big); break;
     case "ArrowRight": select(sel + big); break;
     case "ArrowUp": jumpInView(-1); break;

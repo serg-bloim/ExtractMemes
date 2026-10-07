@@ -112,3 +112,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: Drafted a spec for a local web page to label a video's memes frame by frame — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: Implemented the labeled-video dataset format and loader (`tools/labeling/dataset.py`) — [specs/features/labeled-video-dataset.md](specs/features/labeled-video-dataset.md).
 - 2026-10-07: Built the frame labeler (local server, scrollable strip, classifier scores and filters); page UI not yet verified by hand — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler can select several strip rows (shift+click range, Cmd/Ctrl+click toggle) and mark or unmark them in one request — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

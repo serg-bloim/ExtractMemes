@@ -9,6 +9,7 @@ missing, so adding a criterion computes just that criterion.
 import json
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,6 +52,7 @@ def build(
     cache_dir: Path,
     fps: float = 3.0,
     criteria: list[Criterion] | None = None,
+    progress: Callable[[str, float | None], None] | None = None,
 ) -> Index:
     """Load the cached index for `video_path`, running a pass over the video for what's missing."""
     criteria = criteria_module.CRITERIA if criteria is None else criteria
@@ -83,7 +85,7 @@ def build(
     )
 
     if need_pts or need_thumbs or stale_scores:
-        _run_pass(video_path, cache_dir, step, criteria, stale_scores, need_pts, need_thumbs, thumb_dir)
+        _run_pass(video_path, cache_dir, step, criteria, stale_scores, need_pts, need_thumbs, thumb_dir, progress)
         for name in stale_scores:
             hashes[name] = wanted[name]
         meta_path.write_text(json.dumps(meta))
@@ -105,7 +107,7 @@ def build(
     )
 
 
-def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumbs, thumb_dir) -> None:
+def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumbs, thumb_dir, progress=None) -> None:
     """One sequential decode that fills in whatever is missing."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -136,6 +138,8 @@ def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumb
                             verdicts.append(criteria_module.verdict(frame))
                 index += 1
                 bar.update(1)
+                if progress and total and index % 500 == 0:
+                    progress("Indexing video", min(1.0, index / total))
     finally:
         cap.release()
     if need_pts:

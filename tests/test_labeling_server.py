@@ -206,3 +206,183 @@ def test_only_the_page_and_its_api_are_served_to_this_host(labeler):
                                               {"Origin": "http://evil.example"})
         urllib.request.urlopen(post_request)
     assert cross_site.value.code == 403
+
+
+# --- opening a video from the page ----------------------------------------------------------------
+
+
+from tools.labeling.workspace import Workspace  # noqa: E402
+
+
+def make_labeler(tmp_path, video, video_id="abcdefghijk"):
+    width, height, fps, count = ds.probe(video)
+    dataset = Dataset(video=VideoInfo(f"https://www.youtube.com/watch?v={video_id}", video_id, "160",
+                                      "avc1", "mp4", width, height, fps, count))
+    index = build(video, tmp_path / f"cache_{video_id}", fps=5.0)
+    return LabelerApp(dataset, tmp_path / "datasets" / f"{video_id}.yaml", index, video)
+
+
+@pytest.fixture
+def empty_workspace(tmp_path, video):
+    """A workspace with nothing open; its opener hands out a labeler for the requested id."""
+    calls, gate = [], threading.Event()
+    gate.set()
+
+    def opener(source, format_id, progress):
+        calls.append((source, format_id))
+        progress("Downloading video", 0.5)
+        gate.wait(5)
+        if source.endswith("FAILFAILFAI"):
+            raise RuntimeError("no such video")
+        return make_labeler(tmp_path, video, video_id=source[-11:])
+
+    def inspector(url):
+        if url.endswith("FAILFAILFAI"):
+            raise ds.DatasetError("video unavailable")
+        return {"id": url[-11:], "title": "A title", "thumbnail": "https://i.ytimg.com/x.jpg",
+                "formats": [{"format_id": "160", "height": 144, "width": 256, "fps": 13},
+                              {"format_id": "401", "height": 1080, "width": 1920, "fps": 25}]}
+
+    workspace = Workspace(opener, datasets_dir=tmp_path / "datasets", inspector=inspector)
+    server = make_server("127.0.0.1", 0, create_flask_app(workspace), threaded=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield workspace, f"http://127.0.0.1:{server.server_address[1]}", calls, gate
+    server.shutdown()
+    server.server_close()
+
+
+def status_of(base):
+    return json.load(get(base + "/api/status"))
+
+
+def test_with_no_video_open_the_page_and_status_work_but_the_video_api_says_so(empty_workspace):
+    _, base, _, _ = empty_workspace
+
+    assert b"Open a video" in get(base + "/").read()
+    status = status_of(base)
+    assert status["state"] == "idle" and status["video"] is None and status["datasets"] == []
+    with pytest.raises(urllib.error.HTTPError) as no_state:
+        get(base + "/api/state")
+    assert no_state.value.code == 409
+    with pytest.raises(urllib.error.HTTPError) as no_frame:
+        get(base + "/frame/3.jpg")
+    assert no_frame.value.code == 404
+    with pytest.raises(urllib.error.HTTPError) as no_mark:
+        post(base, "/api/mark", {"frame": 1, "on": True})
+    assert no_mark.value.code == 409
+
+
+def test_opening_a_video_loads_it_in_the_background_then_serves_it(empty_workspace):
+    workspace, base, calls, _ = empty_workspace
+
+    reply = post(base, "/api/open", {"source": "https://youtu.be/AAAAAAAAAAA?t=5"})
+    assert reply["state"] == "loading"
+    workspace.wait(10)
+
+    status = status_of(base)
+    assert status["state"] == "ready" and status["video"] == "AAAAAAAAAAA"
+    assert calls == [("https://www.youtube.com/watch?v=AAAAAAAAAAA", None)]  # built from the id
+    assert json.load(get(base + "/api/state"))["video"]["id"] == "AAAAAAAAAAA"
+
+
+def test_loading_shows_progress_and_a_second_open_is_refused_until_it_finishes(empty_workspace):
+    workspace, base, _, gate = empty_workspace
+    gate.clear()
+
+    post(base, "/api/open", {"source": "BBBBBBBBBBB"})
+    for _ in range(100):
+        if status_of(base)["progress"] == 0.5:
+            break
+        threading.Event().wait(0.02)
+    status = status_of(base)
+    assert status["state"] == "loading" and status["message"] == "Downloading video"
+    assert status["progress"] == 0.5
+    with pytest.raises(urllib.error.HTTPError) as busy:
+        post(base, "/api/open", {"source": "CCCCCCCCCCC"})
+    assert busy.value.code == 409
+
+    gate.set()
+    workspace.wait(10)
+    assert status_of(base)["video"] == "BBBBBBBBBBB"
+
+
+def test_a_failed_open_is_reported_and_the_open_video_stays_open(empty_workspace):
+    workspace, base, _, _ = empty_workspace
+    post(base, "/api/open", {"source": "AAAAAAAAAAA"})
+    workspace.wait(10)
+
+    post(base, "/api/open", {"source": "FAILFAILFAI"})
+    workspace.wait(10)
+
+    status = status_of(base)
+    assert status["state"] == "error" and "no such video" in status["message"]
+    assert status["video"] == "AAAAAAAAAAA"
+    assert json.load(get(base + "/api/state"))["video"]["id"] == "AAAAAAAAAAA"
+    post(base, "/api/open", {"source": "DDDDDDDDDDD"})  # and another can be opened afterwards
+    workspace.wait(10)
+    assert status_of(base)["video"] == "DDDDDDDDDDD"
+
+
+@pytest.mark.parametrize("source", ["https://example.com/clip", "", None, 12, "short"])
+def test_only_youtube_ids_are_accepted(empty_workspace, source):
+    _, base, calls, _ = empty_workspace
+
+    with pytest.raises(urllib.error.HTTPError) as error:
+        post(base, "/api/open", {"source": source})
+
+    assert error.value.code == 400 and calls == []
+
+
+def test_existing_datasets_are_listed_for_the_page(empty_workspace, tmp_path, video):
+    _, base, _, _ = empty_workspace
+    labeler = make_labeler(tmp_path, video, video_id="EEEEEEEEEEE")
+    labeler.mark(10, True)
+    labeler.mark(20, True, "not_meme")
+
+    assert status_of(base)["datasets"] == [{"id": "EEEEEEEEEEE", "memes": 1, "not_memes": 1}]
+
+
+def test_inspect_returns_the_video_details_and_formats(empty_workspace):
+    _, base, calls, _ = empty_workspace
+
+    info = post(base, "/api/inspect", {"source": "https://youtu.be/AAAAAAAAAAA"})
+
+    assert info["id"] == "AAAAAAAAAAA" and info["title"] == "A title"
+    assert [f["format_id"] for f in info["formats"]] == ["160", "401"]
+    assert info["dataset"] is None
+    assert info["preselected"] == "401"  # the only 25+ fps format in the fake lookup
+    assert calls == []  # looking up doesn't load anything
+
+
+def test_inspect_reports_the_dataset_a_video_already_has(empty_workspace, tmp_path, video):
+    _, base, _, _ = empty_workspace
+    labeler = make_labeler(tmp_path, video, video_id="EEEEEEEEEEE")
+    labeler.mark(10, True)
+
+    info = post(base, "/api/inspect", {"source": "EEEEEEEEEEE"})
+
+    assert info["dataset"] == {"format_id": "160", "memes": 1, "not_memes": 0}
+
+
+@pytest.mark.parametrize("source", ["https://example.com/x", None, "FAILFAILFAI"])
+def test_inspect_rejects_bad_sources_and_failed_lookups(empty_workspace, source):
+    _, base, _, _ = empty_workspace
+
+    with pytest.raises(urllib.error.HTTPError) as error:
+        post(base, "/api/inspect", {"source": source})
+
+    assert error.value.code == 400
+
+
+def test_open_passes_the_chosen_format_and_refuses_format_expressions(empty_workspace):
+    workspace, base, calls, _ = empty_workspace
+
+    post(base, "/api/open", {"source": "AAAAAAAAAAA", "format_id": "401"})
+    workspace.wait(10)
+    assert calls == [("https://www.youtube.com/watch?v=AAAAAAAAAAA", "401")]
+
+    for bad in ("160+140", "bestvideo[height<=144]", "worst/best", 160):
+        with pytest.raises(urllib.error.HTTPError) as error:
+            post(base, "/api/open", {"source": "AAAAAAAAAAA", "format_id": bad})
+        assert error.value.code == 400
+    assert len(calls) == 1

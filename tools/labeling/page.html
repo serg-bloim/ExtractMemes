@@ -50,10 +50,28 @@
   #help { color:var(--dim); font-size:12px; }
   kbd { background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:0 4px; }
   #err { color:var(--flag); }
+  #bar { display:flex; gap:8px; align-items:center; padding:8px; border-bottom:1px solid var(--line); }
+  #vid { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  #opener { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; z-index:10; }
+  #opener[hidden] { display:none; }
+  #opener .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; width:min(560px, 92vw); }
+  #opener h3 { margin:0 0 10px; }
+  #opener .row { display:flex; gap:6px; margin-bottom:10px; } #opener input { flex:1; padding:5px 8px; }
+  #ds-list { max-height:200px; overflow:auto; margin-bottom:10px; }
+  #ds-list div { padding:4px 6px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; }
+  #ds-list div:hover { background:#242832; }
+  #open-bar { width:100%; } #open-msg, #lookup-msg { min-height:1.4em; }
+  #opener .card { display:flex; gap:12px; margin-bottom:10px; } #opener .card img { width:160px; height:90px; object-fit:cover; background:#000; flex:none; }
+  #opener .title { font-weight:600; font-size:14px; margin-bottom:3px; }
+  #fmt-list { max-height:220px; overflow:auto; margin-bottom:10px; border:1px solid var(--line); border-radius:4px; }
+  #fmt-list label { display:flex; gap:10px; padding:4px 8px; cursor:pointer; align-items:center; }
+  #fmt-list label:hover { background:#242832; } #fmt-list label.off { opacity:.45; cursor:default; }
+  .warn { color:var(--mark); } #ds-head { margin:8px 0 2px; }
 </style>
 </head>
 <body>
 <div id="side">
+  <div id="bar"><span id="vid">no video</span><button id="open-btn">Open video…</button></div>
   <div id="filters">
     <div class="row"><label>Human label</label>
       <select id="f-human"><option value="">any</option><option value="meme">meme</option><option value="not_meme">not a meme</option><option value="none">unlabeled</option><option value="other">anything but meme</option></select></div>
@@ -83,6 +101,24 @@
     <div><input id="goto" placeholder="jump to time (s or m:s)" size="20"></div>
   </div>
   <div id="marks"></div>
+</div>
+<div id="opener" hidden>
+  <div class="panel">
+    <h3>Open a video</h3>
+    <div class="row"><input id="src" placeholder="Paste a YouTube URL or video id" autocomplete="off">
+      <button id="src-go">Look up</button><button id="src-close">Close</button></div>
+    <div id="lookup-msg"></div>
+    <div id="card" hidden>
+      <div class="card"><img id="th" alt="">
+        <div><div id="ti" class="title"></div><div id="meta" class="dim"></div><div id="dsnote"></div></div></div>
+      <div id="fmt-list"></div>
+      <div class="row"><button id="load">Load selected format</button></div>
+    </div>
+    <div id="open-msg"></div>
+    <progress id="open-bar" max="1" hidden></progress>
+    <div id="ds-head" class="dim">Videos with a dataset</div>
+    <div id="ds-list"></div>
+  </div>
 </div>
 <script>
 "use strict";
@@ -378,7 +414,113 @@ $("toggle-not").onclick = () => toggleLabel("not_meme");
 $("strip").addEventListener("scroll", renderStrip);
 window.addEventListener("resize", renderStrip);
 
+// ---- opening a video -------------------------------------------------------------------------
+let polling = false;
+let looked = null;           // the video the modal is showing: {id, formats, dataset, ...}
+
+function showOpener(canCancel) {
+  $("src-close").hidden = !canCancel;
+  $("opener").hidden = false;
+  $("src").focus();
+}
+
+const mb = n => n ? (n / 1048576).toFixed(1) + " MB" : "size unknown";
+const dur = t => t ? Math.floor(t / 3600) + ":" + String(Math.floor(t % 3600 / 60)).padStart(2, "0") + ":" + String(Math.floor(t % 60)).padStart(2, "0") : "";
+
+function renderStatus(st) {
+  $("vid").textContent = st.video ? st.video : "no video";
+  $("ds-head").hidden = !st.datasets.length;
+  $("ds-list").replaceChildren(...st.datasets.map(d => {
+    const el = document.createElement("div");
+    el.innerHTML = "<span>" + d.id + (d.id === st.video ? " (open)" : "") + "</span><span class='dim'>" +
+                   d.memes + " memes · " + d.not_memes + " not memes</span>";
+    el.onclick = () => { $("src").value = d.id; lookup(d.id); };
+    return el;
+  }));
+  const loading = st.state === "loading";
+  $("open-msg").textContent = st.message || "";
+  $("open-msg").style.color = st.state === "error" ? "var(--flag)" : "";
+  const bar = $("open-bar");
+  bar.hidden = !loading;
+  if (loading) { st.progress == null ? bar.removeAttribute("value") : (bar.value = st.progress); }
+  $("src-go").disabled = loading; $("load").disabled = loading;
+  if (loading && st.progress != null) $("open-msg").textContent += " " + Math.round(st.progress * 100) + "%";
+}
+
+async function lookup(source) {
+  source = source.trim();
+  if (!source) return;
+  $("lookup-msg").textContent = "Looking up…"; $("lookup-msg").style.color = ""; $("card").hidden = true;
+  try {
+    looked = await api("/api/inspect", {source});
+  } catch (e) { $("lookup-msg").textContent = String(e); $("lookup-msg").style.color = "var(--flag)"; return; }
+  $("lookup-msg").textContent = "";
+  $("th").src = looked.thumbnail || "";
+  $("ti").textContent = looked.title || looked.id;
+  const date = looked.upload_date ? looked.upload_date.replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3") : "";
+  $("meta").textContent = [looked.uploader, dur(looked.duration), date,
+                           looked.view_count != null ? looked.view_count.toLocaleString() + " views" : "", looked.id]
+                          .filter(Boolean).join(" · ");
+  const pinned = looked.dataset ? looked.dataset.format_id : null;
+  $("dsnote").innerHTML = pinned
+    ? "<span class='warn'>Has a dataset (" + looked.dataset.memes + " memes, " + looked.dataset.not_memes +
+      " not memes) in format " + pinned + "; it can only be loaded in that format.</span>" : "";
+  const chosen = pinned || looked.preselected;
+  $("fmt-list").replaceChildren(...looked.formats.map(f => {
+    const label = document.createElement("label");
+    const off = pinned && f.format_id !== pinned;
+    label.className = off ? "off" : "";
+    label.innerHTML = "<input type='radio' name='fmt' value='" + f.format_id + "'" +
+      (f.format_id === chosen ? " checked" : "") + (off ? " disabled" : "") + "> " +
+      "<span>" + f.height + "p</span><span class='dim'>" + (f.fps ? f.fps + " fps · " : "") + f.ext + " · " +
+      (f.vcodec || "").split(".")[0] + " · " + mb(f.size) + " · id " + f.format_id + "</span>" +
+      (f.av1 ? "<span class='warn'>AV1: may not decode here</span>" : "");
+    return label;
+  }));
+  if (pinned && !looked.formats.some(f => f.format_id === pinned)) {
+    const note = document.createElement("div");
+    note.className = "warn"; note.style.padding = "4px 8px";
+    note.textContent = "The dataset's format " + pinned + " is no longer offered; the downloaded file is used if present.";
+    $("fmt-list").prepend(note);
+  }
+  $("card").hidden = false;
+}
+
+async function poll() {
+  if (polling) return;
+  polling = true;
+  try {
+    for (;;) {
+      const st = await api("/api/status");
+      renderStatus(st);
+      if (st.state === "ready") { location.reload(); return; }
+      if (st.state !== "loading") return;
+      await new Promise(r => setTimeout(r, 700));
+    }
+  } finally { polling = false; }
+}
+
+async function loadSelected() {
+  if (!looked) return;
+  const picked = document.querySelector("#fmt-list input:checked");
+  const format_id = looked.dataset ? null : (picked ? picked.value : null);   // a dataset pins its own
+  try {
+    await api("/api/open", {source: looked.id, format_id});
+  } catch (e) { $("open-msg").textContent = String(e); $("open-msg").style.color = "var(--flag)"; return; }
+  poll();
+}
+
+$("open-btn").onclick = () => showOpener(true);
+$("src-close").onclick = () => { $("opener").hidden = true; };
+$("src-go").onclick = () => lookup($("src").value);
+$("load").onclick = loadSelected;
+$("src").addEventListener("keydown", e => { if (e.key === "Enter") lookup($("src").value); e.stopPropagation(); });
+
 (async () => {
+  const st = await api("/api/status");
+  renderStatus(st);
+  if (st.state === "loading") { showOpener(!!st.video); poll(); }
+  if (!st.video) { if (st.state !== "loading") showOpener(false); return; }
   S = await api("/api/state");
   document.title = "Labeler — " + S.video.id;
   buildFilterInputs();

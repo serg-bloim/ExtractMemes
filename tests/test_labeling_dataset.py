@@ -103,7 +103,7 @@ def test_ensure_video_downloads_the_recorded_format_when_absent(tmp_path, video,
     dataset = Dataset(video=info_for(video))
     calls = []
 
-    def fake_download(url, selector, downloads_dir, proxy):
+    def fake_download(url, selector, downloads_dir, proxy, progress=None):
         calls.append((url, selector))
         return video, dataset.video
 
@@ -183,3 +183,22 @@ def test_not_meme_frames_are_found_by_index_even_next_to_a_mark(video):
     dataset.not_memes = [NotMeme(9.0, 22)]
     with pytest.raises(DatasetError, match="not the labeled video"):
         list(ds.not_meme_frames(dataset, video))
+
+
+def fmt(format_id, height, fps, av1=False, width=None):
+    return {"format_id": format_id, "height": height, "width": width or height * 16 // 9, "fps": fps, "av1": av1}
+
+
+def test_preferred_format_wants_25_fps_then_the_smallest_resolution_then_not_av1():
+    # 25+ fps beats everything else, even a larger picture
+    assert ds.preferred_format([fmt("a", 144, 13), fmt("b", 360, 25)]) == "b"
+    # among 25+ fps, the smallest resolution
+    assert ds.preferred_format([fmt("a", 360, 30), fmt("b", 144, 25), fmt("c", 144, 60)]) in ("b", "c")
+    # same fps class and resolution: not AV1 wins, whatever the order
+    assert ds.preferred_format([fmt("av", 144, 25, av1=True), fmt("h264", 144, 25)]) == "h264"
+    assert ds.preferred_format([fmt("h264", 144, 25), fmt("av", 144, 25, av1=True)]) == "h264"
+    # a smaller AV1 picture still beats a bigger non-AV1 one: resolution outranks codec
+    assert ds.preferred_format([fmt("big", 360, 25), fmt("av", 144, 25, av1=True)]) == "av"
+    # nothing reaches 25 fps (or the fps is unknown): fall back to resolution, then codec
+    assert ds.preferred_format([fmt("a", 360, 13), fmt("b", 144, None), fmt("c", 144, 13, av1=True)]) == "b"
+    assert ds.preferred_format([]) is None

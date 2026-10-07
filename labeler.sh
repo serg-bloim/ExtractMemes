@@ -2,13 +2,15 @@
 # Start the frame labeler dev server; it restarts when a Python file under tools/labeling/ changes
 # (refresh the browser tab after a restart; page.html edits need only a refresh).
 #
-#   ./labeler.sh <youtube-url-or-id> [--fps N] [--format-id ID] [--port N] [--proxy URL]
+#   ./labeler.sh [youtube-url-or-id] [--fps N] [--format-id ID] [--port N] [--proxy URL]
+#
+# Without a video, the page opens on a field where you enter one.
 #
 # Needs the labeling extra: pip install -e ".[labeling]"
 set -euo pipefail
 cd "$(dirname "$0")"
 
-usage() { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 source_arg=""
 port=8765
@@ -24,8 +26,7 @@ while [[ $# -gt 0 ]]; do
                  source_arg="$1"; shift ;;
   esac
 done
-[[ -n "$source_arg" ]] || { echo "Missing the YouTube URL or id" >&2; usage 1; }
-export LABELER_SOURCE="$source_arg"
+[[ -z "$source_arg" ]] || export LABELER_SOURCE="$source_arg"
 
 python=".venv/bin/python"
 [[ -x "$python" ]] || python="python3"

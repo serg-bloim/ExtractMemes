@@ -98,6 +98,22 @@ def video_id_from(source: str) -> str:
     return match.group(1)
 
 
+def canonical_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def list_datasets(datasets_dir: Path = DATASETS_DIR) -> list[dict]:
+    """`{id, memes, not_memes}` for every readable dataset file, so a page can offer them."""
+    found = []
+    for path in sorted(datasets_dir.glob("*.yaml")):
+        try:
+            dataset = load(path)
+        except (DatasetError, OSError, ValueError):
+            continue
+        found.append({"id": dataset.video.id, "memes": len(dataset.memes), "not_memes": len(dataset.not_memes)})
+    return found
+
+
 def save(dataset: Dataset, path: Path) -> None:
     """Write `dataset` to `path` as YAML, creating the folder, with one meme per line."""
     import yaml
@@ -202,12 +218,17 @@ def downloaded_path(video_id: str, format_id: str, ext: str, downloads_dir: Path
 
 
 def download_format(
-    url: str, format_selector: str, downloads_dir: Path = DOWNLOADS_DIR, proxy: str | None = None
+    url: str,
+    format_selector: str,
+    downloads_dir: Path = DOWNLOADS_DIR,
+    proxy: str | None = None,
+    progress: Callable[[str, float | None], None] | None = None,
 ) -> tuple[Path, VideoInfo]:
     """Download one yt-dlp format of `url` to `downloads_dir/<id>_<format_id>.<ext>`.
 
     `format_selector` is a yt-dlp format string, which for a dataset reload is the recorded
     `format_id`. Returns the file and what it is (frame count read from the downloaded file).
+    `progress(message, fraction)` is called as the download advances.
     """
     import static_ffmpeg
     import yt_dlp
@@ -222,6 +243,18 @@ def download_format(
     }
     if proxy:
         options["proxy"] = proxy
+    if progress:
+        def hook(status: dict) -> None:
+            if status.get("status") != "downloading":
+                return
+            if status.get("fragment_count"):
+                fraction = (status.get("fragment_index") or 0) / status["fragment_count"]
+            else:
+                total = status.get("total_bytes") or status.get("total_bytes_estimate")
+                fraction = status.get("downloaded_bytes", 0) / total if total else None
+            progress("Downloading video", fraction)
+
+        options["progress_hooks"] = [hook]
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -242,14 +275,76 @@ def download_format(
     )
 
 
+def preferred_format(formats: list[dict]) -> str | None:
+    """The format id to preselect: at least 25 fps first, then the smallest resolution, then not AV1.
+
+    Each rule only breaks ties of the one before, so a 25 fps AV1 format beats a 24 fps H.264 one
+    of the same size. Remaining ties keep the order given (smallest known file first).
+    """
+    if not formats:
+        return None
+    best = min(
+        formats,
+        key=lambda f: (
+            0 if (f.get("fps") or 0) >= 25 else 1,
+            (f.get("height") or 0) * (f.get("width") or 0),
+            1 if f.get("av1") else 0,
+        ),
+    )
+    return best["format_id"]
+
+
+def fetch_video_info(url: str, proxy: str | None = None) -> dict:
+    """What a YouTube video is and which video formats it offers; nothing is downloaded."""
+    import yt_dlp
+
+    options = {"quiet": True, "noprogress": True, "skip_download": True, "js_runtimes": {"node": {}}}
+    if proxy:
+        options["proxy"] = proxy
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as exc:
+        raise DatasetError(f"Could not look up {url!r}: {exc}") from exc
+    formats = []
+    for f in info.get("formats") or []:
+        if (f.get("vcodec") or "none") == "none" or not f.get("width"):
+            continue  # audio only, or a storyboard
+        formats.append({
+            "format_id": str(f["format_id"]),
+            "ext": f.get("ext"),
+            "vcodec": f.get("vcodec"),
+            "width": f.get("width"),
+            "height": f.get("height"),
+            "fps": f.get("fps"),
+            "size": f.get("filesize") or f.get("filesize_approx"),
+            "av1": str(f.get("vcodec") or "").startswith("av01"),
+        })
+    formats.sort(key=lambda f: (f["height"] or 0, f["size"] or 0))
+    return {
+        "id": info["id"],
+        "title": info.get("title"),
+        "thumbnail": info.get("thumbnail"),
+        "uploader": info.get("uploader"),
+        "duration": info.get("duration"),
+        "upload_date": info.get("upload_date"),
+        "view_count": info.get("view_count"),
+        "formats": formats,
+        "preselected": preferred_format(formats),
+    }
+
+
 def ensure_video(
-    dataset: Dataset, downloads_dir: Path = DOWNLOADS_DIR, proxy: str | None = None
+    dataset: Dataset,
+    downloads_dir: Path = DOWNLOADS_DIR,
+    proxy: str | None = None,
+    progress: Callable[[str, float | None], None] | None = None,
 ) -> Path:
     """The local file of the dataset's exact `format_id`, downloaded if absent, and validated."""
     video = dataset.video
     path = downloaded_path(video.id, video.format_id, video.ext, downloads_dir)
     if not path.is_file():
-        path, _ = download_format(video.url, video.format_id, downloads_dir, proxy)
+        path, _ = download_format(video.url, video.format_id, downloads_dir, proxy, progress)
     validate_video(video, path)
     return path
 

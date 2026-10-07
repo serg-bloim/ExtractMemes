@@ -15,6 +15,7 @@ from . import criteria as criteria_module
 from . import dataset as dataset_module
 from .dataset import Dataset
 from .index import FrameReader, Index
+from .workspace import BusyError, NoVideoError, Workspace
 
 PAGE = Path(__file__).with_name("page.html")
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
@@ -119,8 +120,13 @@ def _host_of(netloc: str | None) -> str | None:
     return urlsplit("//" + netloc).hostname if netloc else None
 
 
-def create_flask_app(labeler: LabelerApp) -> Flask:
-    """The HTTP interface of `labeler`: only the page, its API, thumbnails and frames."""
+def create_flask_app(workspace: Workspace | LabelerApp) -> Flask:
+    """The HTTP interface of the workspace: the page, its API, thumbnails and frames.
+
+    A bare `LabelerApp` is accepted and wrapped as an already-open video.
+    """
+    if isinstance(workspace, LabelerApp):
+        workspace = Workspace.ready(workspace)
     web = Flask(__name__)
 
     @web.before_request
@@ -137,23 +143,53 @@ def create_flask_app(labeler: LabelerApp) -> Flask:
         response.headers.setdefault("Cache-Control", "no-store")
         return response
 
+    @web.errorhandler(NoVideoError)
+    def no_video(exc):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": str(exc)}), 409
+        return Response("not found", 404, mimetype="text/plain")
+
     @web.get("/")
     def page():
         return Response(PAGE.read_bytes(), mimetype="text/html")
 
+    @web.get("/api/status")
+    def status():
+        return jsonify(workspace.status())
+
+    @web.post("/api/inspect")
+    def inspect_video():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(workspace.inspect(body.get("source")))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @web.post("/api/open")
+    def open_video():
+        body = request.get_json(silent=True) or {}
+        try:
+            workspace.open(body.get("source"), body.get("format_id"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except BusyError as exc:
+            return jsonify({"error": str(exc)}), 409
+        return jsonify(workspace.status()), 202
+
     @web.get("/api/state")
     def state():
-        return jsonify(labeler.state())
+        return jsonify(workspace.current.state())
 
     @web.get("/thumb/<int:frame>.jpg")
     def thumb(frame: int):
-        body = labeler.thumb(frame)
+        body = workspace.current.thumb(frame)
         if body is None:
             return Response("not found", 404, mimetype="text/plain")
         return Response(body, mimetype="image/jpeg", headers={"Cache-Control": "max-age=3600"})
 
     @web.get("/frame/<int:frame>.jpg")
     def full_frame(frame: int):
+        labeler = workspace.current
         try:
             body = labeler.frame_jpeg(frame)
         except (ValueError, IndexError):
@@ -164,23 +200,22 @@ def create_flask_app(labeler: LabelerApp) -> Flask:
 
     def post_labels(action):
         body = request.get_json(silent=True) or {}
+        labeler = workspace.current
         try:
-            return jsonify(action(body))
+            return jsonify(action(labeler, body))
         except (ValueError, TypeError) as exc:
             return jsonify({"error": str(exc)}), 400
 
     @web.post("/api/mark")
     def mark():
-        return post_labels(lambda b: labeler.mark(b.get("frame"), bool(b.get("on")), b.get("label", "meme")))
+        return post_labels(lambda l, b: l.mark(b.get("frame"), bool(b.get("on")), b.get("label", "meme")))
 
     @web.post("/api/mark_many")
     def mark_many():
-        return post_labels(
-            lambda b: labeler.mark_many(b.get("frames"), bool(b.get("on")), b.get("label", "meme"))
-        )
+        return post_labels(lambda l, b: l.mark_many(b.get("frames"), bool(b.get("on")), b.get("label", "meme")))
 
     @web.post("/api/move")
     def move():
-        return post_labels(lambda b: labeler.move(b.get("from"), b.get("to")))
+        return post_labels(lambda l, b: l.move(b.get("from"), b.get("to")))
 
     return web

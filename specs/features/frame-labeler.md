@@ -97,7 +97,21 @@ classifier disagrees with me, and keep the result in the repo.
 - [ ] AC17: `./labeler.sh <youtube-url-or-id> [--fps N] [--format-id ID] [--port N] [--proxy URL]`
       from anywhere starts the server with auto-reload: editing a Python file under `tools/labeling/`
       restarts it, and a browser refresh picks up `page.html`. Marks survive a restart.
-- [ ] AC18: Offline tests cover the server's frame, thumbnail and label endpoints against a small
+- [ ] AC18: **Choosing the video in the page.** An "Open video" button opens a modal where I paste
+      a YouTube URL or id. The server looks it up (metadata only, nothing downloaded) and the modal
+      shows the video's thumbnail, title, uploader, duration and upload date, and a list of its
+      video formats (resolution, fps, codec, container, size, format id; AV1 flagged as possibly not
+      decodable here), with one preselected by these priorities: at least 25 fps, then the smallest resolution, then not AV1. Picking a format and confirming
+      loads that video on the server in the background, showing what it is doing (downloading /
+      indexing, with a percentage), and switches the page to it when ready; a failure is shown in
+      the modal and the video that was open stays open. A video that already has a dataset is
+      shown with its dataset (counts of memes and not-memes) and can only be loaded in the format
+      the dataset records. The modal also lists the existing datasets for one-click opening. The
+      command and scripts may be started with no video at all (and reopen the last one when there
+      is one), in which case the page opens on the modal. Only YouTube video ids are accepted: the
+      server builds the URL itself from the id and never fetches an address supplied by the page,
+      and the format id is checked to be a plain id, not a yt-dlp format expression.
+- [ ] AC19: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
 
@@ -184,3 +198,14 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: Added `labeler-run.sh`: `./labeler.sh FtU4MuksCzE --fps 3 --port 8765` (the settings
   used so far), where a leading video id/URL replaces the default and any other options are
   passed through.
+- 2026-10-07: The user asked to provide the video URL in the UI. Added AC18 (an "Open video"
+  control with the list of existing datasets, background load with progress, switch when ready,
+  startup without a video); tests are now AC19. The server now holds a `Workspace` (current
+  labeler, load status) instead of a single labeler.
+- 2026-10-07: The user refined the control: a button that opens a modal where the URL/id is
+  pasted, then shows the thumbnail, title and other general info plus the list of downloadable
+  formats, and loading the selected one. AC18 rewritten (look-up step with `/api/inspect`, format
+  list, dataset-pinned format, last video reopened on a dev-server restart).
+- 2026-10-07: The user set the format preselection rule: at least 25 fps, then the smallest
+  resolution, then not AV1 (`preferred_format` in `dataset.py`, returned as `preselected` by the
+  look-up). Each rule only breaks ties of the previous one.

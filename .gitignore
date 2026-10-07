@@ -10,3 +10,4 @@ downloads/
 /.claude/settings.json
 /ExtractMemes-data/
 .DS_Store
+/data/datasets/

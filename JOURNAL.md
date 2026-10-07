@@ -110,3 +110,22 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-06: Downloads now skip AV1 formats unless AV1 is all a video offers, so OpenCV can decode them on the GitHub runner — [specs/features/decodable-codec-download.md](specs/features/decodable-codec-download.md).
 - 2026-10-07: Drafted specs for a labeled video dataset (video reference plus marked timestamps in `data/datasets/*.yaml`) — [specs/features/labeled-video-dataset.md](specs/features/labeled-video-dataset.md).
 - 2026-10-07: Drafted a spec for a local web page to label a video's memes frame by frame — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Implemented the labeled-video dataset format and loader (`tools/labeling/dataset.py`) — [specs/features/labeled-video-dataset.md](specs/features/labeled-video-dataset.md).
+- 2026-10-07: Built the frame labeler (local server, scrollable strip, classifier scores and filters); page UI not yet verified by hand — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler can select several strip rows (shift+click range, Cmd/Ctrl+click toggle) and mark or unmark them in one request — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Datasets and the labeler gained an explicit "not a meme" label (`not_memes`, key X) for hard negatives — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Moved the labeler server to Flask and added `labeler.sh`, a dev server that reloads on source edits — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Added `labeler-run.sh`, a one-command start of the labeler dev server with the usual settings — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler page gained an "Open video" modal: paste a URL/id, see the video's details and formats, load the chosen format — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The open-video modal preselects a format by fps ≥ 25, then smallest resolution, then not AV1 — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The open-video modal has a dropdown of processed videos (those with a dataset) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Esc in the labeler now deselects every frame, not only the range — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler has a histogram view of the classifier criteria's scores (all frames, or only the selection), stacked by human label — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Dragging a range on the labeler's histogram filters the strip to frames in that range — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler can copy the selected frame(s)' locator (video id, format id, timestamp, index) to the clipboard — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Each filter line in the labeler has its own reset button — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler's histogram now follows the strip's filters (the charted metric's own range fades bars instead of removing them) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler's histogram zooms with the trackpad two-finger scroll (around the pointer; horizontal scroll pans; "Reset zoom") — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler histogram's dimmed out-of-range bars keep their meme / not-a-meme / unlabeled colours — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Labeler criteria now depend on the production classifier (shared margin geometry, threshold read from it, cache invalidated when its source changes) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Moved all classifier criteria into `extract_memes.criteria` (one auto-discovered module each) with a rule layer (`Condition`/`AllOf`/`AnyOf`/`RuleClassifier`); the labeler reuses them with no copies, and a new criterion file shows up in it — [specs/features/classifier-criteria.md](specs/features/classifier-criteria.md).

@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frame Labeler</title>
+<style>
+  :root { --bg:#16181d; --panel:#1e2128; --line:#2f333d; --text:#e4e6eb; --dim:#8b909c;
+          --mark:#ffc933; --flag:#ff6b6b; --ok:#5dd39e; --sel:#3b82f6; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.4 system-ui, sans-serif;
+         display:grid; grid-template-columns: 330px 1fr; height:100vh; overflow:hidden; }
+  #side { display:flex; flex-direction:column; border-right:1px solid var(--line); min-height:0; }
+  #filters { padding:8px; border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
+  #filters .row { display:flex; gap:6px; align-items:center; margin-bottom:5px; flex-wrap:wrap; }
+  #filters label { color:var(--dim); min-width:78px; }
+  #filters input[type=number] { width:62px; }
+  #filters .rst { margin-left:auto; padding:0 6px; line-height:1.3; } #filters .rst:disabled { opacity:.3; cursor:default; }
+  select, input, button { background:var(--bg); color:var(--text); border:1px solid var(--line);
+         border-radius:4px; padding:2px 5px; font:inherit; }
+  button { cursor:pointer; } button:hover { border-color:var(--dim); }
+  #count { color:var(--dim); padding:4px 8px; border-bottom:1px solid var(--line); }
+  #strip { flex:1; overflow-y:scroll; position:relative; min-height:0; }
+  #spacer { position:relative; }
+  .row-item { position:absolute; left:0; right:0; height:68px; display:flex; gap:8px; padding:4px 8px;
+         border-bottom:1px solid var(--line); cursor:pointer; align-items:center; }
+  .row-item:hover { background:#242832; }
+  .row-item.sel { background:#1f3556; outline:1px solid var(--sel); }
+  .row-item.multi { background:#2a3f66; }
+  #strip { user-select:none; }
+  .row-item img { width:96px; height:54px; object-fit:cover; background:#000; flex:none; }
+  .row-item .meta { font-size:11px; line-height:1.35; min-width:0; }
+  .row-item .ts { font-weight:600; }
+  .star { color:var(--mark); font-weight:700; }
+  .flag { color:var(--flag); font-weight:700; }
+  .no { color:#7fb2ff; font-weight:700; }
+  .chip.neg { border-color:#37507a; }
+  #view.notmeme { border-color:#7fb2ff; box-shadow:0 0 0 2px #7fb2ff; }
+  .dim { color:var(--dim); }
+  #main { display:flex; flex-direction:column; min-width:0; min-height:0; padding:10px; gap:8px; }
+  #view { flex:1; min-height:0; display:flex; justify-content:center; align-items:center; background:#000;
+          border:1px solid var(--line); position:relative; }
+  #view.marked { border-color:var(--mark); box-shadow:0 0 0 2px var(--mark); }
+  #big { max-width:100%; max-height:100%; image-rendering:auto; }
+  #info { display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; }
+  #info table { border-collapse:collapse; } #info td { padding:1px 10px 1px 0; }
+  #marks { max-height:120px; overflow:auto; display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { border:1px solid var(--line); border-radius:12px; padding:1px 4px 1px 9px; cursor:pointer; background:var(--panel); }
+  .chip.cur { border-color:var(--mark); }
+  .chip b { margin-left:5px; color:var(--dim); cursor:pointer; padding:0 3px; } .chip b:hover { color:var(--flag); }
+  #help { color:var(--dim); font-size:12px; }
+  kbd { background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:0 4px; }
+  #err { color:var(--flag); }
+  #tabs { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  #tabs button.on { border-color:var(--sel); color:var(--sel); }
+  #tabs .sp { flex:1; }
+  #hist { flex:1; min-height:0; display:none; flex-direction:column; gap:6px; background:var(--panel); border:1px solid var(--line); padding:10px; overflow:auto; }
+  #hist.on { display:flex; }
+  #hist svg { width:100%; height:auto; max-height:100%; flex:1; min-height:200px; }
+  #hist-stats { color:var(--dim); font-size:12px; }
+  #hist-scope { font-weight:600; }
+  .legend span { margin-right:12px; } .legend i { display:inline-block; width:10px; height:10px; margin-right:4px; vertical-align:-1px; }
+  #hist input[type=number] { width:56px; }
+  #hist-svg { cursor:crosshair; user-select:none; }
+  #bar { display:flex; gap:8px; align-items:center; padding:8px; border-bottom:1px solid var(--line); }
+  #vid a { color:inherit; text-decoration:none; } #vid a:hover { text-decoration:underline; color:var(--sel); }
+  #vid { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  #opener { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; z-index:10; }
+  #opener[hidden] { display:none; }
+  #opener .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; width:min(560px, 92vw); }
+  #opener h3 { margin:0 0 10px; }
+  #opener .row { display:flex; gap:6px; margin-bottom:10px; } #opener input { flex:1; padding:5px 8px; }
+  #opener select { flex:1; padding:5px 8px; }
+  #open-bar { width:100%; } #open-msg, #lookup-msg { min-height:1.4em; }
+  #opener .card { display:flex; gap:12px; margin-bottom:10px; } #opener .card img { width:160px; height:90px; object-fit:cover; background:#000; flex:none; }
+  #opener .title { font-weight:600; font-size:14px; margin-bottom:3px; }
+  #fmt-list { max-height:220px; overflow:auto; margin-bottom:10px; border:1px solid var(--line); border-radius:4px; }
+  #fmt-list label { display:flex; gap:10px; padding:4px 8px; cursor:pointer; align-items:center; }
+  #fmt-list label:hover { background:#242832; } #fmt-list label.off { opacity:.45; cursor:default; }
+  .warn { color:var(--mark); }
+</style>
+</head>
+<body>
+<div id="side">
+  <div id="bar"><span id="vid">no video</span><button id="open-btn">Open video…</button></div>
+  <div id="filters">
+    <div class="row"><label>Human label</label>
+      <select id="f-human"><option value="">any</option><option value="meme">meme</option><option value="not_meme">not a meme</option><option value="none">unlabeled</option><option value="other">anything but meme</option></select>
+      <button class="rst" data-for="f-human" title="Reset this filter">↺</button></div>
+    <div class="row"><label>Classifier</label>
+      <select id="f-verdict"><option value="">any</option><option value="1">flagged</option><option value="0">not flagged</option></select>
+      <button class="rst" data-for="f-verdict" title="Reset this filter">↺</button></div>
+    <div id="f-criteria"></div>
+    <div class="row">
+      <button id="fp" title="Flagged by the classifier but not marked as a meme by me (unlabeled or not a meme)">False positives</button>
+      <button id="miss" title="Marked by me but not flagged by the classifier">Misses</button>
+      <button id="reset">Reset</button></div>
+  </div>
+  <div id="count"></div>
+  <div id="strip"><div id="spacer"></div></div>
+</div>
+<div id="main">
+  <div id="tabs">
+    <button id="tab-frame" class="on">Frame</button><button id="tab-hist" title="H">Histogram</button>
+    <span id="hist-controls" hidden>
+      <select id="metric"></select>
+      bins <input id="bins" type="number" min="5" max="200" value="40">
+      <label><input id="log" type="checkbox"> log scale</label>
+      <button id="hist-zoom-reset" hidden title="Show the whole range again">Reset zoom</button>
+      <button id="hist-clear" hidden title="Remove the range filter on this metric (or double-click the chart)">Clear range</button>
+    </span>
+    <span class="sp"></span>
+  </div>
+  <div id="view"><img id="big" alt=""><div id="none" class="dim" hidden>No frame selected</div></div>
+  <div id="hist">
+    <div id="hist-scope"></div>
+    <svg id="hist-svg" viewBox="0 0 820 380" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="legend"><span><i style="background:#ffc933"></i>meme</span><span><i style="background:#7fb2ff"></i>not a meme</span><span><i style="background:#5b6070"></i>unlabeled</span><span class="dim">scroll to zoom (two fingers), drag to filter the strip by a range</span></div>
+    <div id="hist-stats"></div>
+  </div>
+  <div id="info">
+    <table id="facts"></table>
+    <div>
+      <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <button id="copy" title="Copy video id, format id, timestamp and frame index">Copy locator (C)</button> <span id="err"></span></div>
+      <div id="help">
+        <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>Shift</kbd>/<kbd>⌘</kbd>+click rows to select several (<kbd>Esc</kbd> clears) · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
+        <kbd>M</kbd> meme · <kbd>X</kbd> not a meme · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
+        <kbd>C</kbd> copy locator · <kbd>H</kbd> frame/histogram · <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
+      </div>
+    </div>
+    <div><input id="goto" placeholder="jump to time (s or m:s)" size="20"></div>
+  </div>
+  <div id="marks"></div>
+</div>
+<div id="opener" hidden>
+  <div class="panel">
+    <h3>Open a video</h3>
+    <div class="row"><input id="src" placeholder="Paste a YouTube URL or video id" autocomplete="off">
+      <button id="src-go">Look up</button><button id="src-close">Close</button></div>
+    <div id="ds-row" class="row" hidden><select id="vid-select" title="Videos that already have labels"></select></div>
+    <div id="lookup-msg"></div>
+    <div id="card" hidden>
+      <div class="card"><img id="th" alt="">
+        <div><div id="ti" class="title"></div><div id="meta" class="dim"></div><div id="dsnote"></div></div></div>
+      <div id="fmt-list"></div>
+      <div class="row"><button id="load">Load selected format</button></div>
+    </div>
+    <div id="open-msg"></div>
+    <progress id="open-bar" max="1" hidden></progress>
+  </div>
+</div>
+<script>
+"use strict";
+const ROW_H = 68;
+let S;                       // server state
+let sel = 0;                 // selected native frame index
+let view = [];               // strip row numbers (into S.rows) that match the filters
+let memeFrames = new Set();
+let notFrames = new Set();
+let rowMarked = [];          // per strip row: is there a meme mark mapped to it
+let rowNot = [];             // per strip row: is there a not-a-meme mark mapped to it
+let loadToken = 0;
+let hasSel = true;           // false after Esc: no frame is selected (`sel` is only where the arrows resume)
+let multi = new Set();       // strip rows selected with shift/cmd+click
+let anchorRow = 0;           // where a shift+click range starts
+
+const $ = id => document.getElementById(id);
+const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ":" + s.toFixed(3).padStart(6, "0"); };
+
+async function api(path, body) {
+  const res = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"},
+                                        body: JSON.stringify(body)} : undefined);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.status);
+  return data;
+}
+
+// The strip row a native frame belongs to: the last scanned frame at or before it.
+const rowOf = frame => Math.min(S.rows.length - 1, Math.floor(frame / S.step));
+
+function applyLabels(labels) {
+  S.memes = labels.memes;
+  S.not_memes = labels.not_memes || [];
+  memeFrames = new Set(S.memes.map(m => m.frame));
+  notFrames = new Set(S.not_memes.map(m => m.frame));
+  rowMarked = new Array(S.rows.length).fill(false);
+  rowNot = new Array(S.rows.length).fill(false);
+  for (const m of S.memes) rowMarked[rowOf(m.frame)] = true;
+  for (const m of S.not_memes) rowNot[rowOf(m.frame)] = true;
+}
+
+const humanLabel = r => rowMarked[r] ? "meme" : rowNot[r] ? "not_meme" : "none";
+
+function filters() {
+  const f = {human: $("f-human").value, verdict: $("f-verdict").value, ranges: {}};
+  for (const c of S.criteria) {
+    const lo = $("min-" + c.name).value, hi = $("max-" + c.name).value;
+    if (lo !== "" || hi !== "") f.ranges[c.name] = [lo === "" ? -Infinity : +lo, hi === "" ? Infinity : +hi];
+  }
+  return f;
+}
+
+function matches(row, f) {
+  if (f.human === "other" ? humanLabel(row) === "meme" : f.human !== "" && humanLabel(row) !== f.human) return false;
+  if (f.verdict !== "" && String(S.verdict[row]) !== f.verdict) return false;
+  for (const [name, [lo, hi]] of Object.entries(f.ranges)) {
+    const v = S.scores[name][row];
+    if (v < lo || v > hi) return false;
+  }
+  return true;
+}
+
+function syncResets() {
+  for (const b of document.querySelectorAll("#filters .rst"))
+    b.disabled = b.dataset.for.split(",").every(id => $(id).value === "");
+}
+
+function refilter() {
+  syncResets();
+  const f = filters();
+  view = [];
+  for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) view.push(r);
+  $("count").textContent = view.length + " of " + S.rows.length + " scanned frames shown · " +
+                           S.memes.length + " marked";
+  $("spacer").style.height = view.length * ROW_H + "px";
+  renderStrip();
+  renderHistogram();
+}
+
+function renderStrip() {
+  const strip = $("strip"), spacer = $("spacer");
+  const first = Math.max(0, Math.floor(strip.scrollTop / ROW_H) - 3);
+  const last = Math.min(view.length, Math.ceil((strip.scrollTop + strip.clientHeight) / ROW_H) + 3);
+  const selRow = hasSel ? rowOf(sel) : -1;
+  const frag = document.createDocumentFragment();
+  for (let i = first; i < last; i++) {
+    const r = view[i], idx = S.rows[r];
+    const el = document.createElement("div");
+    el.className = "row-item" + (r === selRow ? " sel" : "") + (multi.has(r) ? " multi" : "");
+    el.style.top = i * ROW_H + "px";
+    const scores = S.criteria.map(c => c.name.slice(0, 6) + " " + S.scores[c.name][r]).join(" · ");
+    el.innerHTML = '<img loading="lazy" src="/thumb/' + idx + '.jpg">' +
+      '<div class="meta"><div><span class="ts">' + fmt(S.pts[idx]) + '</span> <span class="dim">#' + idx + '</span> ' +
+      (rowMarked[r] ? '<span class="star">★ meme</span> ' : '') +
+      (rowNot[r] ? '<span class="no">✗ not meme</span> ' : '') +
+      (S.verdict[r] ? '<span class="flag">⚑ flagged</span>' : '') + '</div>' +
+      '<div class="dim">' + scores + '</div></div>';
+    el.onclick = e => clickRow(r, i, e);
+    frag.appendChild(el);
+  }
+  spacer.replaceChildren(frag);
+}
+
+function scrollToSelection() {
+  const i = view.indexOf(rowOf(sel));
+  if (i < 0) return;
+  const strip = $("strip");
+  if (i * ROW_H < strip.scrollTop || (i + 1) * ROW_H > strip.scrollTop + strip.clientHeight)
+    strip.scrollTop = Math.max(0, i * ROW_H - strip.clientHeight / 2);
+}
+
+function clickRow(r, i, e) {
+  if (e.shiftKey) {                                   // range over the rows currently shown
+    const a = Math.max(0, view.indexOf(anchorRow));
+    const [lo, hi] = a <= i ? [a, i] : [i, a];
+    multi = new Set(view.slice(lo, hi + 1));
+    select(S.rows[r], false, true);
+  } else if (e.metaKey || e.ctrlKey) {
+    multi = new Set(multi.size ? multi : [rowOf(sel)]);
+    multi.has(r) ? multi.delete(r) : multi.add(r);
+    anchorRow = r;
+    select(S.rows[r], false, true);
+  } else {
+    anchorRow = r;
+    select(S.rows[r], false);
+  }
+}
+
+function select(frame, scroll = true, keepMulti = false) {
+  if (!keepMulti) multi = new Set();
+  hasSel = true;
+  sel = Math.max(0, Math.min(S.frame_count - 1, frame));
+  const token = ++loadToken;
+  const img = new Image();
+  img.onload = () => { if (token === loadToken) $("big").src = img.src; };
+  img.onerror = () => { if (token === loadToken) $("err").textContent = "could not load frame " + sel; };
+  img.src = "/frame/" + sel + ".jpg";
+  for (const d of [1, 2, 3, -1, -2]) {              // warm the neighbours so stepping feels instant
+    const n = sel + d;
+    if (n >= 0 && n < S.frame_count) new Image().src = "/frame/" + n + ".jpg";
+  }
+  $("err").textContent = "";
+  renderInfo();
+  if (scroll) scrollToSelection();
+  renderStrip();
+}
+
+function deselectAll() {
+  multi = new Set();
+  hasSel = false;
+  loadToken++;                                       // drop a frame that is still loading
+  $("big").removeAttribute("src");
+  renderInfo();
+  renderStrip();
+}
+
+function renderChips() {
+  const chip = (m, label) => {
+    const el = document.createElement("span");
+    el.className = "chip" + (label === "not_meme" ? " neg" : "") + (hasSel && m.frame === sel ? " cur" : "");
+    el.textContent = (label === "not_meme" ? "✗ " : "") + fmt(m.ts) + " #" + m.frame;
+    el.onclick = () => select(m.frame);
+    const x = document.createElement("b"); x.textContent = "✕"; x.title = "remove this label";
+    x.onclick = e => { e.stopPropagation(); setMark(m.frame, false, label); };
+    el.appendChild(x);
+    return el;
+  };
+  $("marks").replaceChildren(...S.memes.map(m => chip(m, "meme")), ...S.not_memes.map(m => chip(m, "not_meme")));
+}
+
+function renderInfo() {
+  renderInfoPanel();
+  renderHistogram();
+}
+
+function renderInfoPanel() {
+  $("big").hidden = !hasSel;
+  $("none").hidden = hasSel;
+  $("toggle").disabled = $("toggle-not").disabled = !hasSel;
+  const copies = locatorLines().length;
+  $("copy").disabled = copies === 0;
+  $("copy").textContent = copies > 1 ? "Copy " + copies + " locators (C)" : "Copy locator (C)";
+  if (!hasSel) {
+    $("view").classList.remove("marked", "notmeme");
+    $("toggle").textContent = "Mark as meme (M)";
+    $("toggle-not").textContent = "Mark as not a meme (X)";
+    $("facts").innerHTML = "<tr><td class='dim'>No frame selected</td></tr>";
+    renderChips();
+    return;
+  }
+  const r = rowOf(sel), onRow = S.rows[r] === sel;
+  const marked = memeFrames.has(sel);
+  const notMarked = notFrames.has(sel);
+  $("view").classList.toggle("marked", marked);
+  $("view").classList.toggle("notmeme", notMarked);
+  const many = multi.size > 1;
+  $("toggle").textContent = many
+    ? (Array.from(multi).every(x => rowMarked[x]) ? "Unmark " : "Mark ") + multi.size + " selected as meme (M)"
+    : (marked ? "Unmark meme" : "Mark as meme") + " (M)";
+  $("toggle-not").textContent = many
+    ? (Array.from(multi).every(x => rowNot[x]) ? "Unmark " : "Mark ") + multi.size + " selected as not a meme (X)"
+    : (notMarked ? "Unmark not-a-meme" : "Mark as not a meme") + " (X)";
+  let html = "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td></tr>" +
+    "<tr><td class='dim'>frame</td><td>#" + sel + (onRow ? "" : " <span class='dim'>(between scanned frames; scored row #" + S.rows[r] + ")</span>") + "</td></tr>" +
+    "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : notMarked ? "<span class='no'>✗ not a meme</span>" : (rowMarked[r] || rowNot[r] ? "near a mark" : "unlabeled")) + "</td></tr>" +
+    "<tr><td class='dim'>classifier</td><td>" + (S.verdict[r] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td></tr>";
+  for (const c of S.criteria)
+    html += "<tr><td class='dim'>" + c.name + "</td><td>" + S.scores[c.name][r] +
+            (c.thresholds.length ? " <span class='dim'>(classifier: " + c.thresholds.map(t => t.op + " " + t.value).join(", ") + ")</span>" : "") + "</td></tr>";
+  $("facts").innerHTML = html;
+  renderChips();
+}
+
+// Where the selected frame(s) are: one line per frame, ready to paste into a note or a script.
+function locatorLines() {
+  const frames = multi.size > 1
+    ? Array.from(multi).sort((a, b) => a - b).map(r => S.rows[r])
+    : hasSel ? [sel] : [];
+  return frames.map(f => "video=" + S.video.id + " format=" + S.video.format_id +
+                         " ts=" + S.pts[f].toFixed(3) + " frame=" + f);
+}
+
+async function copyLocator() {
+  const lines = locatorLines();
+  if (!lines.length) return;
+  const text = lines.join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {                                       // no clipboard API (e.g. an insecure context)
+    const box = document.createElement("textarea");
+    box.value = text; document.body.appendChild(box); box.select();
+    const ok = document.execCommand("copy");
+    box.remove();
+    if (!ok) { $("err").textContent = "could not copy to the clipboard"; return; }
+  }
+  $("copy").textContent = "Copied " + (lines.length > 1 ? lines.length + " lines" : "✓");
+  setTimeout(renderInfo, 1500);
+}
+
+async function setMark(frame, on, label = "meme") {
+  try {
+    applyLabels(await api("/api/mark", {frame, on, label}));
+    refilter();           // a row that stops matching drops out after the change
+    renderInfo();
+  } catch (e) { $("err").textContent = String(e); }
+}
+
+async function toggleLabel(label) {
+  if (!hasSel && multi.size <= 1) return;           // nothing is selected
+  const rowFlag = label === "meme" ? rowMarked : rowNot;
+  const frameSet = label === "meme" ? memeFrames : notFrames;
+  const list = label === "meme" ? S.memes : S.not_memes;
+  if (multi.size > 1) {                                // one request for the whole selection
+    const rows = Array.from(multi);
+    const allSet = rows.every(r => rowFlag[r]);
+    const frames = allSet
+      ? list.filter(m => multi.has(rowOf(m.frame))).map(m => m.frame)
+      : rows.filter(r => !rowFlag[r]).map(r => S.rows[r]);
+    try {
+      applyLabels(await api("/api/mark_many", {frames, on: !allSet, label}));
+      multi = new Set();
+      refilter(); renderInfo();
+    } catch (e) { $("err").textContent = String(e); }
+    return;
+  }
+  return setMark(sel, !frameSet.has(sel), label);
+}
+const toggleMark = () => toggleLabel("meme");
+
+// Shift+M: the same meme was marked on another frame; move that mark here instead of adding one.
+async function moveNearestMark() {
+  if (!hasSel) return;
+  const here = S.pts[sel];
+  const near = S.memes.filter(m => m.frame !== sel && Math.abs(m.ts - here) <= S.window)
+                      .sort((a, b) => Math.abs(a.ts - here) - Math.abs(b.ts - here))[0];
+  if (!near) { $("err").textContent = "no mark within " + S.window + " s to move"; return; }
+  try {
+    applyLabels(await api("/api/move", {from: near.frame, to: sel}));
+    refilter(); renderInfo();
+  } catch (e) { $("err").textContent = String(e); }
+}
+
+function jumpMark(dir) {
+  const sorted = S.memes.map(m => m.frame);
+  const next = dir > 0 ? sorted.find(f => f > sel) : [...sorted].reverse().find(f => f < sel);
+  if (next !== undefined) select(next);
+}
+
+function jumpUnlabeled() {
+  const near = ts => S.memes.some(m => Math.abs(m.ts - ts) <= S.window);
+  for (let r = rowOf(sel) + 1; r < S.rows.length; r++)
+    if (!near(S.pts[S.rows[r]])) return select(S.rows[r]);
+}
+
+function jumpInView(dir) {
+  const cur = rowOf(sel);
+  const r = dir > 0 ? view.find(v => v > cur) : [...view].reverse().find(v => v < cur);
+  if (r !== undefined) select(S.rows[r]);
+}
+
+function parseTime(text) {
+  const parts = text.trim().split(":").map(Number);
+  if (parts.some(isNaN)) return null;
+  return parts.reduce((acc, p) => acc * 60 + p, 0);
+}
+
+function gotoTime(t) {
+  let lo = 0, hi = S.pts.length - 1;       // first frame whose time is >= t
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (S.pts[mid] < t) lo = mid + 1; else hi = mid; }
+  select(lo);
+}
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") {
+    if (e.target.id === "goto" && e.key === "Enter") {
+      const t = parseTime(e.target.value);
+      if (t !== null) { gotoTime(t); e.target.blur(); }
+    }
+    return;
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;     // leave the browser's own shortcuts alone
+  const big = e.shiftKey ? Math.round(S.native_fps) : 1;
+  switch (e.key) {
+    case "Escape": deselectAll(); break;
+    case "h": case "H": setView(!histOn); break;
+    case "c": case "C": copyLocator(); break;
+    case "ArrowLeft": select(sel - big); break;
+    case "ArrowRight": select(sel + big); break;
+    case "ArrowUp": jumpInView(-1); break;
+    case "ArrowDown": jumpInView(1); break;
+    case "m": case "M": case " ": (e.shiftKey && e.key === "M" ? moveNearestMark() : toggleMark()); break;
+    case "x": case "X": toggleLabel("not_meme"); break;
+    case "n": case "N": jumpMark(1); break;
+    case "p": case "P": jumpMark(-1); break;
+    case "u": case "U": jumpUnlabeled(); break;
+    case "j": case "J": jumpInView(1); break;
+    case "k": case "K": jumpInView(-1); break;
+    case "g": case "G": $("goto").focus(); break;
+    default: return;
+  }
+  e.preventDefault();
+});
+
+function buildFilterInputs() {
+  const box = $("f-criteria");
+  for (const c of S.criteria) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = "<label>" + c.name + "</label><input type='number' step='any' id='min-" + c.name +
+                    "' placeholder='min'><input type='number' step='any' id='max-" + c.name + "' placeholder='max'>" +
+                    "<button class='rst' data-for='min-" + c.name + ",max-" + c.name + "' title='Reset this filter'>↺</button>";
+    box.appendChild(row);
+  }
+  for (const el of document.querySelectorAll("#filters select, #filters input")) el.onchange = refilter;
+  for (const b of document.querySelectorAll("#filters .rst"))
+    b.onclick = () => { for (const id of b.dataset.for.split(",")) $(id).value = ""; refilter(); };
+  $("fp").onclick = () => { resetFilters(); $("f-verdict").value = "1"; $("f-human").value = "other"; refilter(); };
+  $("miss").onclick = () => { resetFilters(); $("f-verdict").value = "0"; $("f-human").value = "meme"; refilter(); };
+  $("reset").onclick = () => { resetFilters(); refilter(); };
+}
+
+function resetFilters() {
+  for (const el of document.querySelectorAll("#filters select, #filters input")) el.value = "";
+}
+
+$("toggle").onclick = toggleMark;
+$("copy").onclick = copyLocator;
+$("toggle-not").onclick = () => toggleLabel("not_meme");
+$("strip").addEventListener("scroll", renderStrip);
+window.addEventListener("resize", renderStrip);
+
+// ---- histogram view ---------------------------------------------------------------------------
+let histOn = false;
+let histZoom = null;         // {name, lo, hi}: the visible x window while zoomed in; null = the whole range
+let zoomFrame = 0;           // pending animation frame while wheel events stream in
+let histGeom = null;         // the last drawn chart's geometry, for turning a drag into values
+let drag = null;
+const LABEL_COLOURS = {none: "#5b6070", not_meme: "#7fb2ff", meme: "#ffc933"};   // stacking order, bottom to top
+const STACK = ["none", "not_meme", "meme"];
+
+// The metrics that can be charted: {group, name, values (one per scanned row), thresholds [{op, value}] the classifier compares it with}. New kinds
+// of metric join this list.
+function metrics() {
+  return S.criteria.map(c => ({group: "Classifier criteria", name: c.name, values: S.scores[c.name], thresholds: c.thresholds, description: c.description}));
+}
+
+// Counts per bin and human label for `rows`, over the fixed range [lo, hi].
+function histogramData(values, rows, labelOf, lo, hi, bins) {
+  const counts = Array.from({length: bins}, () => ({none: 0, not_meme: 0, meme: 0, total: 0}));
+  const span = hi - lo || 1;
+  for (const r of rows) {
+    if (values[r] < lo || values[r] > hi) continue;                  // zoomed out of view
+    const b = Math.min(bins - 1, Math.floor((values[r] - lo) / span * bins));
+    counts[b][labelOf(r)]++; counts[b].total++;
+  }
+  return counts;
+}
+
+function summary(vals) {
+  if (!vals.length) return null;
+  const sorted = [...vals].sort((a, b) => a - b), n = sorted.length;
+  const mean = sorted.reduce((a, b) => a + b, 0) / n;
+  const median = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+  return {n, min: sorted[0], max: sorted[n - 1], mean, median};
+}
+
+// The frames the chart is about. A selection wins. Otherwise it is the frames the strip shows, except
+// that the charted metric's own range doesn't remove bars (`base` keeps them, to be drawn faded), so
+// the range can still be seen and changed on the chart.
+function histogramScope(metric) {
+  if (multi.size > 1) return {rows: Array.from(multi), base: null, outside: null, text: multi.size + " selected frames"};
+  if (hasSel) {
+    const r = rowOf(sel);
+    return {rows: [r], base: null, outside: null, text: "frame #" + sel + (S.rows[r] === sel ? "" : " (scored row #" + S.rows[r] + ")")};
+  }
+  const f = filters();
+  const own = f.ranges[metric.name];
+  delete f.ranges[metric.name];
+  const base = [];
+  for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) base.push(r);
+  const rows = own ? base.filter(r => metric.values[r] >= own[0] && metric.values[r] <= own[1]) : base;
+  const inside = new Set(rows);
+  const outside = own ? base.filter(r => !inside.has(r)) : null;                   // dimmed on the chart
+  const text = rows.length === S.rows.length ? "all " + S.rows.length + " scanned frames"
+    : rows.length + " of " + S.rows.length + " scanned frames (the strip's filters)";
+  return {rows, base: own ? base : null, outside, text};
+}
+
+const num = v => Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2);
+
+function renderHistogram() {
+  if (!histOn) return;
+  const metric = metrics().find(m => m.name === $("metric").value) || metrics()[0];
+  const bins = Math.max(5, Math.min(200, +$("bins").value || 40));
+  const logScale = $("log").checked;
+  const all = metric.values;
+  let flo = Infinity, fhi = -Infinity;
+  for (const v of all) { if (v < flo) flo = v; if (v > fhi) fhi = v; }   // the whole range of the metric
+  const zoomed = histZoom && histZoom.name === metric.name && histZoom.hi - histZoom.lo < fhi - flo;
+  const lo = zoomed ? histZoom.lo : flo, hi = zoomed ? histZoom.hi : fhi;   // what the x axis shows
+  $("hist-zoom-reset").hidden = !zoomed;
+  const scope = histogramScope(metric);
+  const counts = histogramData(all, scope.rows, humanLabel, lo, hi, bins);
+  const dim = scope.outside ? histogramData(all, scope.outside, humanLabel, lo, hi, bins) : null;   // outside the range
+  const sumAt = i => counts[i].total + (dim ? dim[i].total : 0);
+  const maxTotal = Math.max(1, ...counts.map((_, i) => sumAt(i)));
+  const yOf = n => logScale ? Math.log10(n + 1) / Math.log10(maxTotal + 1) : n / maxTotal;
+
+  const W = 820, H = 380, L = 54, R = 14, T = 12, B = 34, pw = W - L - R, ph = H - T - B;
+  const x = v => L + (v - lo) / ((hi - lo) || 1) * pw;
+  let svg = "";
+  let lastTick = -1;
+  for (let i = 0; i <= 4; i++) {                                       // y grid; whole counts, no repeats
+    const f = i / 4, n = logScale ? Math.round(Math.pow(maxTotal + 1, f) - 1) : Math.round(maxTotal * f);
+    if (n === lastTick) continue;
+    lastTick = n;
+    const y = T + ph * (1 - yOf(n));
+    svg += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="#2f333d"/><text x="${L - 6}" y="${y + 4}" text-anchor="end" fill="#8b909c" font-size="11">${n}</text>`;
+  }
+  for (let i = 0; i <= 5; i++) {                                       // x ticks
+    const v = lo + (hi - lo) * i / 5;
+    svg += `<text x="${x(v)}" y="${H - 12}" text-anchor="middle" fill="#8b909c" font-size="11">${num(v)}</text>`;
+  }
+  histGeom = {name: metric.name, L, T, pw, ph, lo, hi, bins, flo, fhi};
+  const bw = pw / bins;
+  // Each bin: the frames inside the range (full colour) and, on top, those outside it (the same label
+  // colours, dimmed). Without a range everything is inside.
+  counts.forEach((c, i) => {
+    const d = dim ? dim[i] : {none: 0, not_meme: 0, meme: 0, total: 0};
+    const sum = c.total + d.total;
+    if (!sum) return;
+    const full = yOf(sum) * ph;
+    let y = T + ph;
+    const tip = `${num(lo + (hi - lo) * i / bins)} – ${num(lo + (hi - lo) * (i + 1) / bins)}: ${sum} (` +
+                `meme ${c.meme + d.meme}, not a meme ${c.not_meme + d.not_meme}, unlabeled ${c.none + d.none})` +
+                (dim ? ` · ${c.total} inside the range` : "");
+    svg += `<g><title>${tip}</title>`;
+    for (const [part, opacity] of [[c, 1], [d, 0.3]])
+      for (const label of STACK) {
+        if (!part[label]) continue;
+        const h = full * part[label] / sum;
+        y -= h;
+        svg += `<rect x="${L + i * bw + 0.5}" y="${y}" width="${Math.max(0.5, bw - 1)}" height="${h}" fill="${LABEL_COLOURS[label]}" fill-opacity="${opacity}"/>`;
+      }
+    svg += "</g>";
+  });
+  svg += `<line x1="${L}" x2="${W - R}" y1="${T + ph}" y2="${T + ph}" stroke="#8b909c"/>`;
+  for (const t of metric.thresholds)                                   // where the classifier draws its line(s)
+    if (t.value >= lo && t.value <= hi)
+      svg += `<line x1="${x(t.value)}" x2="${x(t.value)}" y1="${T}" y2="${T + ph}" stroke="#ff6b6b" stroke-dasharray="5 4"/>` +
+             `<text x="${x(t.value) + 4}" y="${T + 12}" fill="#ff6b6b" font-size="11">${t.op} ${t.value}</text>`;
+  const active = activeRange(metric.name);                              // the strip filter on this metric
+  if (active && active.max >= lo && active.min <= hi) {
+    const a = x(Math.max(lo, active.min)), b = x(Math.min(hi, active.max));
+    svg += `<rect x="${a}" y="${T}" width="${Math.max(1, b - a)}" height="${ph}" fill="#3b82f6" fill-opacity=".18" pointer-events="none"/>` +
+           `<line x1="${a}" x2="${a}" y1="${T}" y2="${T + ph}" stroke="#3b82f6" pointer-events="none"/>` +
+           `<line x1="${b}" x2="${b}" y1="${T}" y2="${T + ph}" stroke="#3b82f6" pointer-events="none"/>` +
+           `<text x="${(a + b) / 2}" y="${T + ph - 6}" text-anchor="middle" fill="#9cc2ff" font-size="11" pointer-events="none">strip filter ${num(Math.max(lo, active.min))} – ${num(Math.min(hi, active.max))}</text>`;
+  }
+  $("hist-clear").hidden = !active;
+  const vals = scope.rows.map(r => all[r]);
+  if (vals.length <= 20)                                               // few values: mark each one
+    vals.forEach(v => { svg += `<line x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T + ph}" stroke="#ffffff" stroke-opacity=".8"/>`; });
+  if (vals.length === 1)
+    svg += `<text x="${Math.min(x(vals[0]) + 5, W - 70)}" y="${T + 26}" fill="#fff" font-size="12">${num(vals[0])}</text>`;
+  $("hist-svg").innerHTML = svg;
+
+  const per = {meme: 0, not_meme: 0, none: 0};
+  for (const r of scope.rows) per[humanLabel(r)]++;
+  const st = summary(vals);
+  const inView = zoomed ? vals.filter(v => v >= lo && v <= hi).length : null;
+  $("hist-scope").textContent = metric.name + " over " + scope.text +
+    (zoomed ? " · zoomed to " + num(lo) + " – " + num(hi) + " (" + inView + " in view)" : "") +
+    (scope.outside ? " · dimmed bars are outside the range" : "");
+  $("hist-stats").textContent = st
+    ? "n " + st.n + " · min " + num(st.min) + " · max " + num(st.max) + " · mean " + num(st.mean) +
+      " · median " + num(st.median) + "   |   meme " + per.meme + " · not a meme " + per.not_meme + " · unlabeled " + per.none
+    : "no frames";
+}
+
+// The value range covered by bins a..b (inclusive) of `bins` equal bins over [lo, hi]; the last bin
+// includes its upper edge, the others stop just short of the next bin's first value.
+function binRange(a, b, lo, hi, bins) {
+  const w = (hi - lo) / bins;
+  return {min: lo + a * w, max: b >= bins - 1 ? hi : lo + (b + 1) * w - w * 1e-9};
+}
+
+function activeRange(name) {
+  const lo = $("min-" + name), hi = $("max-" + name);
+  if (!lo || !hi || (lo.value === "" && hi.value === "")) return null;
+  return {min: lo.value === "" ? -Infinity : +lo.value, max: hi.value === "" ? Infinity : +hi.value};
+}
+
+function chartX(evt) {
+  const svg = $("hist-svg"), pt = svg.createSVGPoint();
+  pt.x = evt.clientX; pt.y = evt.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse()).x;
+}
+
+function binAt(x) {
+  const g = histGeom;
+  return Math.max(0, Math.min(g.bins - 1, Math.floor((x - g.L) / g.pw * g.bins)));
+}
+
+function drawDrag() {
+  const g = histGeom, svg = $("hist-svg");
+  let rect = svg.querySelector("#hist-drag");
+  if (!rect) {
+    rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.id = "hist-drag"; rect.setAttribute("fill", "#3b82f6"); rect.setAttribute("fill-opacity", ".3");
+    rect.setAttribute("pointer-events", "none");
+    svg.appendChild(rect);
+  }
+  const a = binAt(Math.min(drag.x0, drag.x1)), b = binAt(Math.max(drag.x0, drag.x1)), bw = g.pw / g.bins;
+  rect.setAttribute("x", g.L + a * bw); rect.setAttribute("width", (b - a + 1) * bw);
+  rect.setAttribute("y", g.T); rect.setAttribute("height", g.ph);
+}
+
+function setRangeFilter(name, min, max) {
+  const lo = $("min-" + name), hi = $("max-" + name);
+  if (!lo || !hi) { $("err").textContent = name + " can't be used as a strip filter"; return; }
+  const text = v => v === null ? "" : String(+v.toPrecision(7));
+  lo.value = text(min); hi.value = text(max);
+  refilter();                                        // also redraws the histogram with the shaded range
+}
+
+function commitDrag() {
+  const g = histGeom, d = drag;
+  drag = null;
+  if (!g || !d) return;
+  const {min, max} = binRange(binAt(Math.min(d.x0, d.x1)), binAt(Math.max(d.x0, d.x1)), g.lo, g.hi, g.bins);
+  setRangeFilter(g.name, min, max);
+}
+
+// The x window after one wheel event, or null for "the whole range". A vertical two-finger scroll (or a
+// pinch) zooms around the pointer, a horizontal one pans. Scrolling up zooms in. The window stays inside
+// the metric's whole range [g.flo, g.fhi] and is never narrower than 1/2000 of it.
+function nextWindow(g, ev) {
+  const span = g.hi - g.lo, full = g.fhi - g.flo;
+  let lo = g.lo, hi = g.hi;
+  if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {                  // pan
+    const shift = ev.deltaX / ev.pxPerUnit / g.pw * span;
+    lo += shift; hi += shift;
+  } else {                                                          // zoom around the pointer
+    const x = Math.max(g.L, Math.min(g.L + g.pw, ev.x));
+    const at = g.lo + (x - g.L) / g.pw * span;
+    const newSpan = Math.max(full / 2000, Math.min(full, span * Math.exp(ev.deltaY * (ev.ctrl ? 0.01 : 0.0025))));
+    lo = at - (at - g.lo) * newSpan / span;
+    hi = lo + newSpan;
+  }
+  const width = hi - lo;
+  if (lo < g.flo) { lo = g.flo; hi = lo + width; }
+  if (hi > g.fhi) { hi = g.fhi; lo = hi - width; }
+  return width >= full * 0.999 ? null : {lo, hi};
+}
+
+function zoomHistogram(e) {
+  const g = histGeom;
+  if (!g || !(g.fhi > g.flo)) return;
+  e.preventDefault();                                               // the page shouldn't scroll or zoom
+  const next = nextWindow(g, {deltaX: e.deltaX, deltaY: e.deltaY, ctrl: e.ctrlKey, x: chartX(e),
+                              pxPerUnit: $("hist-svg").getBoundingClientRect().width / 820});
+  histZoom = next && {name: g.name, lo: next.lo, hi: next.hi};
+  if (!zoomFrame) zoomFrame = requestAnimationFrame(() => { zoomFrame = 0; renderHistogram(); });
+}
+
+function setView(histogram) {
+  histOn = histogram;
+  $("view").style.display = histogram ? "none" : "";
+  $("hist").classList.toggle("on", histogram);
+  $("hist-controls").hidden = !histogram;
+  $("tab-frame").classList.toggle("on", !histogram);
+  $("tab-hist").classList.toggle("on", histogram);
+  renderHistogram();
+}
+
+function wireZoom() {
+  $("hist-svg").addEventListener("wheel", zoomHistogram, {passive: false});
+  $("hist-zoom-reset").onclick = () => { histZoom = null; renderHistogram(); };
+}
+
+function buildHistogramControls() {
+  $("metric").replaceChildren(...[...new Set(metrics().map(m => m.group))].map(group => {
+    const g = document.createElement("optgroup");
+    g.label = group;
+    for (const m of metrics().filter(x => x.group === group)) {
+      const o = new Option(m.name, m.name);
+      o.title = m.description || "";
+      g.appendChild(o);
+    }
+    return g;
+  }));
+  $("tab-frame").onclick = () => setView(false);
+  $("tab-hist").onclick = () => setView(true);
+  for (const id of ["bins", "log"]) $(id).onchange = renderHistogram;
+  $("metric").onchange = () => { histZoom = null; renderHistogram(); };   // another metric, another scale
+  wireZoom();
+  const svg = $("hist-svg");
+  svg.addEventListener("mousedown", e => {
+    if (!histGeom || e.button !== 0) return;
+    const x = chartX(e);
+    if (x < histGeom.L || x > histGeom.L + histGeom.pw) return;
+    drag = {x0: x, x1: x};
+    e.preventDefault();
+    drawDrag();
+  });
+  window.addEventListener("mousemove", e => { if (drag) { drag.x1 = chartX(e); drawDrag(); } });
+  window.addEventListener("mouseup", e => { if (drag) { drag.x1 = chartX(e); commitDrag(); } });
+  svg.addEventListener("dblclick", () => { if (histGeom) setRangeFilter(histGeom.name, null, null); });
+  $("hist-clear").onclick = () => { if (histGeom) setRangeFilter(histGeom.name, null, null); };
+  $("bins").oninput = renderHistogram;
+}
+
+// ---- opening a video -------------------------------------------------------------------------
+let polling = false;
+let looked = null;           // the video the modal is showing: {id, formats, dataset, ...}
+
+function showOpener(canCancel) {
+  $("src-close").hidden = !canCancel;
+  $("opener").hidden = false;
+  $("src").focus();
+}
+
+const mb = n => n ? (n / 1048576).toFixed(1) + " MB" : "size unknown";
+const dur = t => t ? Math.floor(t / 3600) + ":" + String(Math.floor(t % 3600 / 60)).padStart(2, "0") + ":" + String(Math.floor(t % 60)).padStart(2, "0") : "";
+
+function renderStatus(st) {
+  const vid = $("vid");
+  if (st.video) {
+    const link = document.createElement("a");
+    link.href = "https://www.youtube.com/watch?v=" + encodeURIComponent(st.video);
+    link.target = "_blank"; link.rel = "noopener noreferrer";
+    link.textContent = st.video; link.title = "Open on YouTube";
+    vid.replaceChildren(link);
+  } else vid.textContent = "no video";
+  const pick = $("vid-select");
+  $("ds-row").hidden = !st.datasets.length;
+  pick.replaceChildren(new Option("Processed videos (" + st.datasets.length + ") — pick one to look it up…", ""),
+    ...st.datasets.map(d => new Option(d.id + (d.id === st.video ? "  ✓ open" : "") + " — " + d.memes +
+                                       " memes · " + d.not_memes + " not memes", d.id)));
+  pick.value = "";
+  const loading = st.state === "loading";
+  $("open-msg").textContent = st.message || "";
+  $("open-msg").style.color = st.state === "error" ? "var(--flag)" : "";
+  const bar = $("open-bar");
+  bar.hidden = !loading;
+  if (loading) { st.progress == null ? bar.removeAttribute("value") : (bar.value = st.progress); }
+  $("src-go").disabled = loading; $("load").disabled = loading;
+  if (loading && st.progress != null) $("open-msg").textContent += " " + Math.round(st.progress * 100) + "%";
+}
+
+async function lookup(source) {
+  source = source.trim();
+  if (!source) return;
+  $("lookup-msg").textContent = "Looking up…"; $("lookup-msg").style.color = ""; $("card").hidden = true;
+  try {
+    looked = await api("/api/inspect", {source});
+  } catch (e) { $("lookup-msg").textContent = String(e); $("lookup-msg").style.color = "var(--flag)"; return; }
+  $("lookup-msg").textContent = "";
+  $("th").src = looked.thumbnail || "";
+  $("ti").textContent = looked.title || looked.id;
+  const date = looked.upload_date ? looked.upload_date.replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3") : "";
+  $("meta").textContent = [looked.uploader, dur(looked.duration), date,
+                           looked.view_count != null ? looked.view_count.toLocaleString() + " views" : "", looked.id]
+                          .filter(Boolean).join(" · ");
+  const pinned = looked.dataset ? looked.dataset.format_id : null;
+  $("dsnote").innerHTML = pinned
+    ? "<span class='warn'>Has a dataset (" + looked.dataset.memes + " memes, " + looked.dataset.not_memes +
+      " not memes) in format " + pinned + "; it can only be loaded in that format.</span>" : "";
+  const chosen = pinned || looked.preselected;
+  $("fmt-list").replaceChildren(...looked.formats.map(f => {
+    const label = document.createElement("label");
+    const off = pinned && f.format_id !== pinned;
+    label.className = off ? "off" : "";
+    label.innerHTML = "<input type='radio' name='fmt' value='" + f.format_id + "'" +
+      (f.format_id === chosen ? " checked" : "") + (off ? " disabled" : "") + "> " +
+      "<span>" + f.height + "p</span><span class='dim'>" + (f.fps ? f.fps + " fps · " : "") + f.ext + " · " +
+      (f.vcodec || "").split(".")[0] + " · " + mb(f.size) + " · id " + f.format_id + "</span>" +
+      (f.av1 ? "<span class='warn'>AV1: may not decode here</span>" : "");
+    return label;
+  }));
+  if (pinned && !looked.formats.some(f => f.format_id === pinned)) {
+    const note = document.createElement("div");
+    note.className = "warn"; note.style.padding = "4px 8px";
+    note.textContent = "The dataset's format " + pinned + " is no longer offered; the downloaded file is used if present.";
+    $("fmt-list").prepend(note);
+  }
+  $("card").hidden = false;
+}
+
+async function poll() {
+  if (polling) return;
+  polling = true;
+  try {
+    for (;;) {
+      const st = await api("/api/status");
+      renderStatus(st);
+      if (st.state === "ready") { location.reload(); return; }
+      if (st.state !== "loading") return;
+      await new Promise(r => setTimeout(r, 700));
+    }
+  } finally { polling = false; }
+}
+
+async function loadSelected() {
+  if (!looked) return;
+  const picked = document.querySelector("#fmt-list input:checked");
+  const format_id = looked.dataset ? null : (picked ? picked.value : null);   // a dataset pins its own
+  try {
+    await api("/api/open", {source: looked.id, format_id});
+  } catch (e) { $("open-msg").textContent = String(e); $("open-msg").style.color = "var(--flag)"; return; }
+  poll();
+}
+
+$("vid-select").onchange = e => {
+  const id = e.target.value;
+  e.target.blur();                                  // so the arrow keys step frames again
+  if (!id) return;
+  $("src").value = id;
+  lookup(id);                                       // shows its details and recorded format; then Load
+};
+$("open-btn").onclick = () => showOpener(true);
+$("src-close").onclick = () => { $("opener").hidden = true; };
+$("src-go").onclick = () => lookup($("src").value);
+$("load").onclick = loadSelected;
+$("src").addEventListener("keydown", e => { if (e.key === "Enter") lookup($("src").value); e.stopPropagation(); });
+
+(async () => {
+  const st = await api("/api/status");
+  renderStatus(st);
+  if (st.state === "loading") { showOpener(!!st.video); poll(); }
+  if (!st.video) { if (st.state !== "loading") showOpener(false); return; }
+  S = await api("/api/state");
+  document.title = "Labeler — " + S.video.id;
+  buildFilterInputs();
+  buildHistogramControls();
+  applyLabels(S);
+  refilter();
+  select(S.memes.length ? S.memes[0].frame : 0);
+})().catch(e => { $("err").textContent = String(e); });
+</script>
+</body>
+</html>

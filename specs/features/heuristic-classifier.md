@@ -156,6 +156,11 @@ on videos whose cards the heuristic doesn't recognize.
 
 ## Technical Notes
 
+- **Since 2026-10-07** the scoring lives in `extract_memes.criteria` (`band`, `texture`, ...) and
+  `HeuristicClassifier` is a `RuleClassifier` over it; behaviour is unchanged. See
+  [classifier-criteria](classifier-criteria.md).
+
+
 - **No new dependency.** `opencv-python-headless` and `numpy` are already declared
   (frame-extraction Technical Notes).
 - **Measured scores** (2026-09-16, the exact AC2 computation, opencv 5.0.0.93). Labeled frames are

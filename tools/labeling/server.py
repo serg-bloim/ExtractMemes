@@ -60,7 +60,11 @@ class LabelerApp:
 
     def labels(self) -> dict:
         return {
-            "memes": [{"ts": m.meme_ts, "frame": m.meme_frame} for m in self.dataset.memes],
+            "memes": [
+                {"ts": m.meme_ts, "frame": m.meme_frame, "start_ts": m.start_ts, "start_frame": m.start_frame,
+                 "end_ts": m.end_ts, "end_frame": m.end_frame}
+                for m in self.dataset.memes
+            ],
             "not_memes": [{"ts": n.not_meme_ts, "frame": n.not_meme_frame} for n in self.dataset.not_memes],
         }
 
@@ -97,14 +101,32 @@ class LabelerApp:
             raise ValueError("frames must be a non-empty list")
         frames, label = [self._check_frame(f) for f in frames], self._check_label(label)
         with self._lock:
-            for frame in frames:
-                self._apply(frame, on, label)
+            before = list(self.dataset.memes), list(self.dataset.not_memes)
+            try:
+                for frame in frames:
+                    self._apply(frame, on, label)
+            except ValueError:
+                self.dataset.memes, self.dataset.not_memes = before  # the batch is all or nothing
+                raise
             self._save()  # once for the whole batch
+        return self.labels()
+
+    def set_edge(self, frame, edge, window=dataset_module.EXCLUSION_WINDOW_SECONDS) -> dict:
+        """Make `frame` the start or end of the meme at/near it (within `window` s), or of a new meme."""
+        frame = self._check_frame(frame)
+        if isinstance(window, bool) or not isinstance(window, (int, float)) or not 0 <= window <= 60:
+            raise ValueError("window must be a number of seconds between 0 and 60")
+        with self._lock:
+            self.dataset.set_edge(frame, edge, lambda f: float(self.index.pts[f]), float(window))
+            self._save()
         return self.labels()
 
     def move(self, old, new) -> list[dict]:
         old, new = self._check_frame(old), self._check_frame(new)
         with self._lock:
+            meme = self.dataset.meme_at(old)
+            if meme and (meme.start_frame is not None or meme.end_frame is not None):
+                raise ValueError("that meme has a start/end; set them instead of moving it")
             self.dataset.remove(old)
             self.dataset.add(new, float(self.index.pts[new]))
             self._save()
@@ -117,6 +139,16 @@ class LabelerApp:
     def frame_jpeg(self, frame: int) -> bytes:
         ok, buffer = cv2.imencode(".jpg", self.reader.get(self._check_frame(frame)),
                                   [cv2.IMWRITE_JPEG_QUALITY, 92])
+        if not ok:
+            raise RuntimeError(f"Could not encode frame {frame}")
+        return buffer.tobytes()
+
+    def small_jpeg(self, frame: int, width: int = 160) -> bytes:
+        """A native frame shrunk to `width` pixels: the precise view's strip shows every frame."""
+        image = self.reader.get(self._check_frame(frame))
+        height = max(1, round(image.shape[0] * width / image.shape[1]))
+        ok, buffer = cv2.imencode(".jpg", cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA),
+                                  [cv2.IMWRITE_JPEG_QUALITY, 80])
         if not ok:
             raise RuntimeError(f"Could not encode frame {frame}")
         return buffer.tobytes()
@@ -205,6 +237,16 @@ def create_flask_app(workspace: Workspace | LabelerApp, profiles_dir: Path = pro
             return Response(str(exc), 500, mimetype="text/plain")
         return Response(body, mimetype="image/jpeg", headers={"Cache-Control": "max-age=3600"})
 
+    @web.get("/small/<int:frame>.jpg")
+    def small_frame(frame: int):
+        try:
+            body = workspace.current.small_jpeg(frame)
+        except (ValueError, IndexError):
+            return Response("not found", 404, mimetype="text/plain")
+        except Exception as exc:
+            return Response(str(exc), 500, mimetype="text/plain")
+        return Response(body, mimetype="image/jpeg", headers={"Cache-Control": "max-age=3600"})
+
     def post_labels(action):
         body = request.get_json(silent=True) or {}
         labeler = workspace.current
@@ -220,6 +262,11 @@ def create_flask_app(workspace: Workspace | LabelerApp, profiles_dir: Path = pro
     @web.post("/api/mark_many")
     def mark_many():
         return post_labels(lambda l, b: l.mark_many(b.get("frames"), bool(b.get("on")), b.get("label", "meme")))
+
+    @web.post("/api/edge")
+    def edge():
+        return post_labels(lambda l, b: l.set_edge(b.get("frame"), b.get("edge"),
+                                                   b.get("window", dataset_module.EXCLUSION_WINDOW_SECONDS)))
 
     @web.post("/api/move")
     def move():

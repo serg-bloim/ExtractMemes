@@ -165,13 +165,25 @@ classifier disagrees with me, and keep the result in the repo.
       `{min, max}`, a missing bound open; `invert`: the names of the inverted filters) and a
       `schema` version. A name is 1-64 letters, digits,
       `_` or `-`, so nothing can be written outside that folder. Profiles belong to no video.
+- [ ] AC24: **Precise view.** A "Precise" button beside Frame and Histogram switches the main area to
+      the large frame with a **horizontal strip of every native frame** under it (a thumbnail with its
+      index and timestamp, `/small/<n>.jpg`), scrollable over the whole video by trackpad, scrollbar or
+      mouse wheel, and centred on the selected frame whenever the selection moves (a click in the strip
+      selects without moving it). Clicking a frame selects it; Set start / Set end (`[` / `]`, available in this view) mark the selected frame as the start/end of the meme
+      that covers it or is nearest within ±1 s (or of a new meme), refusing a start after the end or an end before
+      the start; a meme with a start/end counts as a meme on every frame of the range (strip rows, large view,
+      unmarking any frame in it removes the whole meme); marking a not-meme inside a range, or moving a ranged
+      meme with Shift+M, is refused; ranges are saved on every change as optional `meme_start_ts/frame` and
+      `meme_end_ts/frame` on the meme ([labeled-video-dataset](labeled-video-dataset.md) AC3). Frames of a marked meme are outlined, its start and end carry a badge, and the
+      strip updates as the marks change.
 - [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
 
 ## Out of Scope
 
-- Precise mode (selecting a meme's start and end and labeling every frame in it).
+- Labeling every frame inside a precise range individually (a range is stored as start/end only), and a
+  strip with a row per native frame in precise mode (it keeps the scan-rate rows; the arrows step by frame).
 - Choosing the final classifier or its thresholds (a later spec); this one only displays scores and
   filters on them.
 - Auto-marking frames from a classifier: the human label is only ever set by the user.
@@ -336,3 +348,20 @@ Resolved by the user (2026-10-07):
   memes in both). Thumbnail and frame URLs now carry `?v=<video id>-<format>-<file size>-<mtime>-<step>`
   (AC8: the frame shown is the frame the index names, in whatever video is open).
 
+- 2026-10-07: The user asked for a precise mode with a settings modal (window ±1 s by default) in which a
+  meme's start and end (timestamp and frame) can be marked. Added AC23. Decision: a meme keeps its
+  `meme_ts`/`meme_frame` and gains optional start/end attributes, the file `mode` stays `standard`
+  (the loader's `precise` is still reserved). Server `POST /api/edge`; the dataset validates ordering and overlap. Offline
+  tests added (dataset round trip, edges, rejections, negative frames excluding the whole range).
+  The page was driven in headless Chrome against `FtU4MuksCzE` (precise on: 9,454 rows → 591; start/end
+  set at frames 250/256 gave one ranged meme, covered rows marked, unmarking inside removed it; precise off restored all rows); the settings modal's look was not
+  checked by eye, so AC23 stays unchecked until used by hand.
+- 2026-10-07: The user asked for a "Precise" button next to Frame and Histogram that shows a horizontal
+  strip of frames around the selected frame, scrollable, to pick a start and end frame. Added AC24 and
+  `GET /small/<n>.jpg` (a native frame at 160 px). Read as a third main-area view (large frame plus the
+  strip under it) since the request was cut off. Driven in headless Chrome on `FtU4MuksCzE`: the strip
+  rendered and loaded its images, a click selected without scrolling, stepping re-centred it, start/end at
+  frames 252/258 gave a ranged meme with start/end badges (screenshot checked). Not used by hand yet.
+- 2026-10-07: The user dropped the settings modal. Removed it together with the precise-mode setting and its
+  ±window filter of the strip (AC23 is folded into AC24); the Precise view stays and finds the meme for
+  Set start/end within a fixed ±1 s. Re-ran the headless check (strip, edges, unmark).

@@ -202,3 +202,67 @@ def test_preferred_format_wants_25_fps_then_the_smallest_resolution_then_not_av1
     # nothing reaches 25 fps (or the fps is unknown): fall back to resolution, then codec
     assert ds.preferred_format([fmt("a", 360, 13), fmt("b", 144, None), fmt("c", 144, 13, av1=True)]) == "b"
     assert ds.preferred_format([]) is None
+
+
+def test_a_meme_with_a_start_and_end_round_trips_and_covers_its_frames(tmp_path, video):
+    dataset = Dataset(video=info_for(video))
+    dataset.add(30, 1.2)
+    dataset.set_edge(27, "start", lambda f: f / FPS, 1.0)
+    dataset.set_edge(34, "end", lambda f: f / FPS, 1.0)
+    path = tmp_path / "d.yaml"
+
+    ds.save(dataset, path)
+    loaded = ds.load(path)
+
+    assert loaded == dataset
+    assert loaded.memes == [Meme(1.2, 30, 1.08, 27, 1.36, 34)]
+    assert all(loaded.meme_at(f) for f in range(27, 35)) and not loaded.meme_at(35)
+    assert "{meme_ts: 1.200, meme_frame: 30, meme_start_ts: 1.080, meme_start_frame: 27, meme_end_ts: 1.360, meme_end_frame: 34}" in path.read_text()
+
+
+def test_setting_an_edge_past_the_anchor_moves_the_anchor_into_the_range():
+    dataset = Dataset(video=None)
+    ts = lambda f: f / 10
+    dataset.add(30, 3.0)
+    dataset.set_edge(36, "start", ts, 1.0)       # nearest meme is the one at 30; its start moves past it
+    assert dataset.memes == [Meme(3.6, 36, 3.6, 36)]
+    dataset.set_edge(40, "end", ts, 1.0)
+    assert (dataset.memes[0].first, dataset.memes[0].last) == (36, 40)
+    dataset.set_edge(80, "end", ts, 1.0)          # too far from the meme: a new one, ending (and starting) at 80
+    assert [(m.first, m.last) for m in dataset.memes] == [(36, 40), (80, 80)]
+
+
+def test_a_range_can_neither_invert_nor_overlap_and_a_not_meme_cannot_sit_in_it():
+    ts = lambda f: f / 10
+    dataset = Dataset(video=None)
+    dataset.set_edge(20, "start", ts, 1.0)
+    dataset.set_edge(25, "end", ts, 1.0)
+    with pytest.raises(ValueError):
+        dataset.set_edge(15, "end", ts, 1.0)
+    with pytest.raises(ValueError):
+        dataset.set_edge(22, "bogus", ts, 1.0)
+    with pytest.raises(ValueError):
+        dataset.add_not_meme(22, 2.2)
+    dataset.memes.append(Meme(2.4, 24))          # a hand-made overlap: set_edge refuses to leave it overlapping
+    with pytest.raises(ValueError, match="overlap"):
+        dataset.set_edge(24, "end", ts, 1.0)
+
+
+def test_load_rejects_a_range_the_anchor_is_outside_of_or_that_overlaps(tmp_path, video):
+    good = Dataset(video=info_for(video), memes=[Meme(1.0, 25, 0.8, 20, 1.2, 30), Meme(2.0, 50)])
+    path = tmp_path / "d.yaml"
+    ds.save(good, path)
+    assert ds.load(path) == good
+    for bad in (Meme(1.0, 25, 1.1, 28, 1.2, 30), Meme(1.0, 25, 0.8, 20, 2.2, 55)):
+        ds.save(Dataset(video=info_for(video), memes=[bad, Meme(2.0, 50)]), path)
+        with pytest.raises(DatasetError, match="start and end"):
+            ds.load(path)
+
+
+def test_negative_frames_skip_a_memes_whole_range_plus_the_window(video):
+    dataset = Dataset(video=info_for(video), memes=[Meme(1.2, 30, 0.8, 20, 1.6, 40)])  # 0.8 s .. 1.6 s
+
+    kept = [i for i, _, _ in ds.negative_frames(dataset, video, fps=5.0, exclusion_window=0.5)]
+
+    assert not any(0.3 - 1e-9 <= i / FPS <= 2.1 + 1e-9 for i in kept)
+    assert 0 in kept and 55 in kept

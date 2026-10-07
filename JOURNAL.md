@@ -135,3 +135,6 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: Each labeler filter has a "not" checkbox that inverts it (also saved in profiles) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: Fixed the labeler's filter-line alignment and shrank the invert checkbox to a bare box — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: Fixed the labeler showing another video's thumbnails after a switch (browser-cached image URLs are now versioned per video) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler has a precise mode (settings modal, ±1 s window around memes) in which a meme's start and end can be marked — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler has a Precise view: a horizontal strip of every native frame around the selected one, for picking a meme's start and end — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Removed the labeler's settings modal and precise-mode filter; marking start/end is done in the Precise view — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

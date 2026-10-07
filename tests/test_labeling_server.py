@@ -124,12 +124,22 @@ def test_thumbnail_and_frame_endpoints_serve_jpegs(labeler):
     assert past_end.value.code == 404
 
 
+def test_small_frames_are_served_for_every_native_frame(labeler):
+    app, base, _ = labeler
+    image = cv2.imdecode(np.frombuffer(get(base + "/small/13.jpg").read(), np.uint8), cv2.IMREAD_COLOR)
+    assert image.shape[1] == 160 and image.shape[0] < image.shape[1]
+    with pytest.raises(urllib.error.HTTPError) as past_end:
+        get(base + "/small/999.jpg")
+    assert past_end.value.code == 404
+
+
 def test_marking_writes_the_dataset_on_every_change(labeler):
     app, base, dataset_file = labeler
     assert not dataset_file.exists()  # created on the first mark
 
     memes = post(base, "/api/mark", {"frame": 40, "on": True})["memes"]
-    assert memes == [{"ts": pytest.approx(40 / FPS, abs=0.001), "frame": 40}]
+    assert memes == [{"ts": pytest.approx(40 / FPS, abs=0.001), "frame": 40, "start_ts": None, "start_frame": None,
+                      "end_ts": None, "end_frame": None}]
     post(base, "/api/mark", {"frame": 12, "on": True})
     loaded = ds.load(dataset_file)
     assert [m.meme_frame for m in loaded.memes] == [12, 40]
@@ -140,6 +150,57 @@ def test_marking_writes_the_dataset_on_every_change(labeler):
     post(base, "/api/mark", {"frame": 40, "on": False})
     assert [m.meme_frame for m in ds.load(dataset_file).memes] == [14]
     assert ds.load(dataset_file).memes[0].meme_ts == pytest.approx(14 / FPS, abs=0.001)
+
+
+def test_start_and_end_of_a_meme_are_saved_and_the_range_is_one_meme(labeler):
+    app, base, dataset_file = labeler
+    post(base, "/api/mark", {"frame": 30, "on": True})
+
+    post(base, "/api/edge", {"frame": 27, "edge": "start", "window": 1})   # within 1 s of the mark: same meme
+    memes = post(base, "/api/edge", {"frame": 34, "edge": "end", "window": 1})["memes"]
+
+    assert [(m["start_frame"], m["frame"], m["end_frame"]) for m in memes] == [(27, 30, 34)]
+    saved = ds.load(dataset_file).memes
+    assert (saved[0].start_frame, saved[0].end_frame) == (27, 34)
+    assert saved[0].end_ts == pytest.approx(34 / FPS, abs=0.001)
+    assert "meme_start_frame: 27" in dataset_file.read_text()
+
+    post(base, "/api/edge", {"frame": 60, "edge": "start", "window": 1})   # far away: a new meme
+    assert [m.first for m in ds.load(dataset_file).memes] == [27, 60]
+
+    post(base, "/api/mark", {"frame": 31, "on": False})                    # unmarking inside the range removes it
+    assert [m.first for m in ds.load(dataset_file).memes] == [60]
+
+
+def test_bad_edges_are_rejected_and_change_nothing(labeler):
+    app, base, dataset_file = labeler
+    post(base, "/api/edge", {"frame": 20, "edge": "start"})
+    post(base, "/api/edge", {"frame": 24, "edge": "end"})
+    saved = dataset_file.read_text()
+
+    for body in ({"frame": 30, "edge": "end", "window": 100},   # window out of range
+                 {"frame": 20, "edge": "middle"},
+                 {"frame": 999, "edge": "end"},
+                 {"frame": 18, "edge": "end"},                  # the meme at 20..24 can't end before it starts
+                 {"frame": 26, "edge": "start"}):               # ...nor start after it ends
+        with pytest.raises(urllib.error.HTTPError) as bad:
+            post(base, "/api/edge", body)
+        assert bad.value.code == 400, body
+    assert dataset_file.read_text() == saved
+
+
+def test_a_not_meme_inside_a_range_is_refused_and_the_batch_is_all_or_nothing(labeler):
+    app, base, dataset_file = labeler
+    post(base, "/api/edge", {"frame": 20, "edge": "start"})
+    post(base, "/api/edge", {"frame": 24, "edge": "end"})
+    saved = dataset_file.read_text()
+
+    with pytest.raises(urllib.error.HTTPError) as bad:
+        post(base, "/api/mark_many", {"frames": [50, 22], "on": True, "label": "not_meme"})
+    assert bad.value.code == 400
+    assert dataset_file.read_text() == saved and app.dataset.not_memes == []
+    with pytest.raises(urllib.error.HTTPError):
+        post(base, "/api/move", {"from": 22, "to": 40})      # a range is edited, not moved
 
 
 def test_marking_many_frames_is_one_save_and_unmarking_many_removes_them(labeler):

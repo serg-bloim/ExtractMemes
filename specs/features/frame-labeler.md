@@ -174,6 +174,10 @@ classifier disagrees with me, and keep the result in the repo.
         scrollbar or mouse wheel;
       - **Tiles:** every native frame as a tile in rows filling the main area, scrolled vertically
         (no large frame).
+      Shift+click on a thumbnail in Gallery or Tiles selects every native frame from the last clicked one to
+      this one, Cmd/Ctrl+click adds or removes one, and a plain click replaces the selection; the selection
+      is the same as the strip's (AC15: highlighted and counted, mark / not-meme / copy-locator / histogram act
+      on it), so it carries between the strip and these views.
       In Gallery and Tiles the selected frame is outlined and kept in view whenever the selection moves
       (a click on a thumbnail selects without moving the view); the meme's frames are outlined and its
       start and end badged, updating as marks change. In every mode `[` / `]` (and the Set start / Set end
@@ -378,3 +382,8 @@ Resolved by the user (2026-10-07):
   switch, a tile click selects, start/end set a ranged meme with badges, histogram hides the mode buttons (screenshot of
   Tiles viewed). With a short window the Tiles area shows only a couple of rows because the info panel and marks list
   share the column. Not used by hand yet.
+- 2026-10-07: The user asked for multi-selection with Shift/Cmd in Gallery and Tiles. The multi-selection now holds
+  native frames instead of strip rows, shared by the strip, Gallery and Tiles (a strip row stands for its scanned frame; a
+  mark between two rows still counts for the row it is shown on, so the strip behaves as before). Checked in headless
+  Chrome: Shift range (also across tile rows), Cmd add/remove, plain click reset, mark and unmark of a selection, strip
+  shift-click and A.

@@ -32,6 +32,7 @@
   .row-item:hover { background:#242832; }
   .row-item.sel { background:#1f3556; outline:1px solid var(--sel); }
   .row-item.multi { background:#2a3f66; }
+  .pf.multi { background:#2a3f66; border-radius:3px; }
   #strip { user-select:none; }
   .row-item img { width:96px; height:54px; object-fit:cover; background:#000; flex:none; }
   .row-item .meta { font-size:11px; line-height:1.35; min-width:0; }
@@ -189,8 +190,8 @@ let rowMarked = [];          // per strip row: is there a meme mark mapped to it
 let rowNot = [];             // per strip row: is there a not-a-meme mark mapped to it
 let loadToken = 0;
 let hasSel = true;           // false after Esc: no frame is selected (`sel` is only where the arrows resume)
-let multi = new Set();       // strip rows selected with shift/cmd+click
-let anchorRow = 0;           // where a shift+click range starts
+let multi = new Set();       // native frames selected with shift/cmd+click (strip rows, gallery, tiles)
+let anchorFrame = 0;         // where a shift+click range starts
 
 
 const $ = id => document.getElementById(id);
@@ -283,7 +284,7 @@ function renderStrip() {
   for (let i = first; i < last; i++) {
     const r = view[i], idx = S.rows[r];
     const el = document.createElement("div");
-    el.className = "row-item" + (r === selRow ? " sel" : "") + (multi.has(r) ? " multi" : "");
+    el.className = "row-item" + (r === selRow ? " sel" : "") + (multi.has(idx) ? " multi" : "");
     el.style.top = i * ROW_H + "px";
     const scores = S.criteria.map(c => c.name.slice(0, 6) + " " + S.scores[c.name][r]).join(" · ");
     el.innerHTML = '<img loading="lazy" src="/thumb/' + idx + '.jpg?v=' + S.version + '">' +
@@ -310,26 +311,48 @@ function scrollToSelection() {
 function selectAll() {
   if (!view.length) return;
   const keep = hasSel && view.includes(rowOf(sel)) ? sel : S.rows[view[0]];
-  multi = new Set(view);
-  anchorRow = view[0];
+  multi = new Set(view.map(r => S.rows[r]));
+  anchorFrame = S.rows[view[0]];
   select(keep, false, true);
 }
 
 function clickRow(r, i, e) {
   if (e.shiftKey) {                                   // range over the rows currently shown
-    const a = Math.max(0, view.indexOf(anchorRow));
+    const a = Math.max(0, view.indexOf(rowOf(anchorFrame)));
     const [lo, hi] = a <= i ? [a, i] : [i, a];
-    multi = new Set(view.slice(lo, hi + 1));
+    multi = new Set(view.slice(lo, hi + 1).map(x => S.rows[x]));
     select(S.rows[r], false, true);
   } else if (e.metaKey || e.ctrlKey) {
-    multi = new Set(multi.size ? multi : [rowOf(sel)]);
-    multi.has(r) ? multi.delete(r) : multi.add(r);
-    anchorRow = r;
+    toggleInMulti(S.rows[r]);
     select(S.rows[r], false, true);
   } else {
-    anchorRow = r;
+    anchorFrame = S.rows[r];
     select(S.rows[r], false);
   }
+}
+
+// Cmd/Ctrl+click: add or remove one frame from the selection.
+function toggleInMulti(f) {
+  multi = new Set(multi.size ? multi : hasSel ? [sel] : []);
+  multi.has(f) ? multi.delete(f) : multi.add(f);
+  anchorFrame = f;
+}
+
+// Click on a gallery/tile thumbnail: plain selects, Shift selects every frame from the last click, Cmd/Ctrl toggles.
+function clickFrame(f, e) {
+  skipCenter = true;                                  // the view stays where the pointer is
+  if (e.shiftKey) {
+    const [lo, hi] = anchorFrame <= f ? [anchorFrame, f] : [f, anchorFrame];
+    multi = new Set(Array.from({length: hi - lo + 1}, (_, k) => lo + k));
+    select(f, false, true);
+  } else if (e.metaKey || e.ctrlKey) {
+    toggleInMulti(f);
+    select(f, false, true);
+  } else {
+    anchorFrame = f;
+    select(f, false);
+  }
+  skipCenter = false;
 }
 
 function select(frame, scroll = true, keepMulti = false) {
@@ -412,10 +435,10 @@ function renderInfoPanel() {
   $("view").classList.toggle("notmeme", notMarked);
   const many = multi.size > 1;
   $("toggle").textContent = many
-    ? (Array.from(multi).every(x => rowMarked[x]) ? "Unmark " : "Mark ") + multi.size + " selected as meme (M)"
+    ? (Array.from(multi).every(f => flagged(f, "meme")) ? "Unmark " : "Mark ") + multi.size + " selected as meme (M)"
     : (marked ? "Unmark meme" : "Mark as meme") + " (M)";
   $("toggle-not").textContent = many
-    ? (Array.from(multi).every(x => rowNot[x]) ? "Unmark " : "Mark ") + multi.size + " selected as not a meme (X)"
+    ? (Array.from(multi).every(f => flagged(f, "not_meme")) ? "Unmark " : "Mark ") + multi.size + " selected as not a meme (X)"
     : (notMarked ? "Unmark not-a-meme" : "Mark as not a meme") + " (X)";
   let html = "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td></tr>" +
     "<tr><td class='dim'>frame</td><td>#" + sel + (onRow ? "" : " <span class='dim'>(between scanned frames; scored row #" + S.rows[r] + ")</span>") + "</td></tr>" +
@@ -433,7 +456,7 @@ function renderInfoPanel() {
 // Where the selected frame(s) are: one line per frame, ready to paste into a note or a script.
 function locatorLines() {
   const frames = multi.size > 1
-    ? Array.from(multi).sort((a, b) => a - b).map(r => S.rows[r])
+    ? Array.from(multi).sort((a, b) => a - b)
     : hasSel ? [sel] : [];
   return frames.map(f => "video=" + S.video.id + " format=" + S.video.format_id +
                          " ts=" + S.pts[f].toFixed(3) + " frame=" + f);
@@ -466,15 +489,14 @@ async function setMark(frame, on, label = "meme") {
 
 async function toggleLabel(label) {
   if (!hasSel && multi.size <= 1) return;           // nothing is selected
-  const rowFlag = label === "meme" ? rowMarked : rowNot;
   const frameSet = label === "meme" ? memeFrames : notFrames;
   const list = label === "meme" ? S.memes : S.not_memes;
   if (multi.size > 1) {                                // one request for the whole selection
-    const rows = Array.from(multi);
-    const allSet = rows.every(r => rowFlag[r]);
+    const frames_ = Array.from(multi);
+    const allSet = frames_.every(f => flagged(f, label));
     const frames = allSet
-      ? list.filter(m => multi.has(rowOf(m.frame))).map(m => m.frame)
-      : rows.filter(r => !rowFlag[r]).map(r => S.rows[r]);
+      ? list.filter(m => labelTouched(m, label)).map(m => m.frame)
+      : frames_.filter(f => !flagged(f, label));
     try {
       applyLabels(await api("/api/mark_many", {frames, on: !allSet, label}));
       multi = new Set();
@@ -485,6 +507,21 @@ async function toggleLabel(label) {
   return setMark(sel, !frameSet.has(sel), label);
 }
 const toggleMark = () => toggleLabel("meme");
+
+// Whether a selected frame carries the label. A scan row also counts a mark that sits between it and
+// the next row (the strip shows such a mark on that row).
+function flagged(f, label) {
+  const has = label === "meme" ? memeFrames.has(f) : notFrames.has(f);
+  return has || (S.rows[rowOf(f)] === f && (label === "meme" ? rowMarked : rowNot)[rowOf(f)]);
+}
+
+// Whether the selection covers a mark: one of its frames, or the row it is shown on.
+function labelTouched(m, label) {
+  const e = label === "meme" ? extent(m) : {lo: m.frame, hi: m.frame};
+  if (multi.has(S.rows[rowOf(m.frame)])) return true;
+  for (const f of multi) if (e.lo <= f && f <= e.hi) return true;
+  return false;
+}
 
 // The selected frame becomes the start or end of the meme at/near it, or of a new meme.
 async function setEdge(edge) {
@@ -646,7 +683,10 @@ function summary(vals) {
 // that the charted metric's own range doesn't remove bars (`base` keeps them, to be drawn faded), so
 // the range can still be seen and changed on the chart.
 function histogramScope(metric) {
-  if (multi.size > 1) return {rows: Array.from(multi), base: null, outside: null, text: multi.size + " selected frames"};
+  if (multi.size > 1) {
+    const rows = [...new Set(Array.from(multi, rowOf))];             // scores exist for the scanned rows
+    return {rows, base: null, outside: null, text: multi.size + " selected frames"};
+  }
   if (hasSel) {
     const r = rowOf(sel);
     return {rows: [r], base: null, outside: null, text: "frame #" + sel + (S.rows[r] === sel ? "" : " (scored row #" + S.rows[r] + ")")};
@@ -897,10 +937,10 @@ function frameCell(f, spans) {
   const ranged = hit && (hit.m.start_frame != null || hit.m.end_frame != null);
   const badge = !hit ? "" : ranged ? (f === hit.m.start_frame ? "▶ start " : "") + (f === hit.m.end_frame ? "end ◀" : "") : "★ meme";
   const el = document.createElement("div");
-  el.className = "pf" + (hit ? " inrange" : "") + (hasSel && f === sel ? " sel" : "");
+  el.className = "pf" + (hit ? " inrange" : "") + (hasSel && f === sel ? " sel" : "") + (multi.has(f) ? " multi" : "");
   el.innerHTML = '<div class="badge">' + badge + '</div><img src="/small/' + f + '.jpg?v=' + S.version + '">' +
                  "<div>#" + f + "</div><div>" + fmt(S.pts[f]) + "</div>";
-  el.onclick = () => { skipCenter = true; select(f); skipCenter = false; };
+  el.onclick = e => clickFrame(f, e);
   return el;
 }
 

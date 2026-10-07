@@ -39,6 +39,9 @@ class LabelerApp:
         return {
             "video": {"id": video.id, "url": video.url, "format_id": video.format_id,
                       "width": video.width, "height": video.height},
+            # Part of every thumbnail and frame URL: they are cached by the browser, and the same
+            # `/thumb/4256.jpg` is a different picture in another video.
+            "version": f"{video.id}-{video.format_id}-{index.version}",
             "fps": index.fps,
             "step": index.step,
             "native_fps": index.native_fps,

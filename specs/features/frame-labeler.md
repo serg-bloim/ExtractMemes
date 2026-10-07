@@ -329,3 +329,10 @@ Resolved by the user (2026-10-07):
   its `<label>`, which broke the filter lines' alignment. The "not" text is gone (a tooltip remains)
   and every filter line is now label | controls | checkbox | reset in fixed columns, with the label
   column wide enough for `hue_consistency`. Checked on a headless-Chrome screenshot of the page.
+- 2026-10-07: A strip thumbnail showed another video's picture. The server tells the browser to cache
+  `/thumb/<n>.jpg` and `/frame/<n>.jpg` for an hour, and the URL named only the row, so after
+  switching videos the browser reused the previous video's images for any row it had already shown
+  (`5vGNfK5jL4U` and `FtU4MuksCzE` are both 25 fps, so their row numbers line up, and #4248/#4256 are
+  memes in both). Thumbnail and frame URLs now carry `?v=<video id>-<format>-<file size>-<mtime>-<step>`
+  (AC8: the frame shown is the frame the index names, in whatever video is open).
+

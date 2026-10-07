@@ -1,5 +1,6 @@
 import json
 import threading
+from pathlib import Path
 import urllib.error
 import urllib.request
 
@@ -436,3 +437,18 @@ def test_frame_reader_decodes_from_the_start_when_a_seek_cannot_reach_an_early_f
             assert np.array_equal(reader.get(i), truth[i]), f"frame {i}"
     finally:
         reader.close()
+
+
+def test_image_urls_are_versioned_per_video_so_the_browser_cannot_mix_videos_up(tmp_path):
+    """/thumb/4256.jpg is cached for an hour; in another video the same URL is another picture."""
+    first = make_video(tmp_path / "a.mp4", frames=75)
+    second = make_video(tmp_path / "b.mp4", frames=60)
+    one = make_labeler(tmp_path, first, video_id="AAAAAAAAAAA")
+    two = make_labeler(tmp_path, second, video_id="BBBBBBBBBBB")
+    again = make_labeler(tmp_path, first, video_id="AAAAAAAAAAA")
+
+    assert one.state()["version"] != two.state()["version"]
+    assert one.state()["version"] == again.state()["version"]  # stable for the same file
+    assert one.state()["version"].startswith("AAAAAAAAAAA-160-")
+    html = (Path(__file__).parent.parent / "tools" / "labeling" / "page.html").read_text()
+    assert html.count("?v=") >= 3 and "S.version" in html  # thumbs, the large frame and its preloads

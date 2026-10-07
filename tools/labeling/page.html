@@ -267,7 +267,7 @@ function renderStrip() {
     el.className = "row-item" + (r === selRow ? " sel" : "") + (multi.has(r) ? " multi" : "");
     el.style.top = i * ROW_H + "px";
     const scores = S.criteria.map(c => c.name.slice(0, 6) + " " + S.scores[c.name][r]).join(" · ");
-    el.innerHTML = '<img loading="lazy" src="/thumb/' + idx + '.jpg">' +
+    el.innerHTML = '<img loading="lazy" src="/thumb/' + idx + '.jpg?v=' + S.version + '">' +
       '<div class="meta"><div><span class="ts">' + fmt(S.pts[idx]) + '</span> <span class="dim">#' + idx + '</span> ' +
       (rowMarked[r] ? '<span class="star">★ meme</span> ' : '') +
       (rowNot[r] ? '<span class="no">✗ not meme</span> ' : '') +
@@ -321,10 +321,10 @@ function select(frame, scroll = true, keepMulti = false) {
   const img = new Image();
   img.onload = () => { if (token === loadToken) $("big").src = img.src; };
   img.onerror = () => { if (token === loadToken) $("err").textContent = "could not load frame " + sel; };
-  img.src = "/frame/" + sel + ".jpg";
+  img.src = "/frame/" + sel + ".jpg?v=" + S.version;
   for (const d of [1, 2, 3, -1, -2]) {              // warm the neighbours so stepping feels instant
     const n = sel + d;
-    if (n >= 0 && n < S.frame_count) new Image().src = "/frame/" + n + ".jpg";
+    if (n >= 0 && n < S.frame_count) new Image().src = "/frame/" + n + ".jpg?v=" + S.version;
   }
   $("err").textContent = "";
   renderInfo();

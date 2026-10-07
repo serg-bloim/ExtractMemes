@@ -44,6 +44,7 @@ class Index:
     fps: float
     step: int
     thumb_dir: Path
+    version: str = ""  # identifies this video file and scan step, so cached images can't be mixed up
 
 
 def _read_meta(path: Path) -> dict:
@@ -119,6 +120,7 @@ def build(
         fps=fps,
         step=step,
         thumb_dir=thumb_dir,
+        version=f"{identity['size']}-{identity['mtime']}-{identity['step']}",
     )
 
 

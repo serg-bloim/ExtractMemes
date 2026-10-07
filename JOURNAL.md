@@ -134,3 +134,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: The labeler can save its classifier filters as a named profile (`data/datasets/profiles/classifier/<name>.yaml`, default `profile1`) and load them back — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: Each labeler filter has a "not" checkbox that inverts it (also saved in profiles) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: Fixed the labeler's filter-line alignment and shrank the invert checkbox to a bare box — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Fixed the labeler showing another video's thumbnails after a switch (browser-cached image URLs are now versioned per video) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

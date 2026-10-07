@@ -188,6 +188,32 @@ def test_marking_many_frames_makes_runs_into_regions_and_lone_frames_single_meme
     assert [m.meme_frame for m in ds.load(dataset_file).memes] == [20, 30]
 
 
+def test_expand_finds_the_frames_of_the_same_shot(tmp_path):
+    levels = [0] * 20 + [100, 130] * 8 + [0] * 39                       # frames 20..35 flicker: a "card"
+    path = tmp_path / "card.mp4"
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (128, 72))
+    for level in levels:
+        writer.write(np.full((72, 128, 3), level, np.uint8))
+    writer.release()
+    width, height, fps, count = ds.probe(path)
+    dataset = Dataset(video=VideoInfo("u", "abcdefghijk", "160", "avc1", "mp4", width, height, fps, count))
+    app = LabelerApp(dataset, tmp_path / "d.yaml", build(path, tmp_path / "cache", fps=5.0), path)
+    server = make_server("127.0.0.1", 0, create_flask_app(app), threaded=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        assert post(base, "/api/expand", {"start": 27, "end": 27}) == {"start": 20, "end": 35}
+        assert post(base, "/api/expand", {"start": 25, "end": 30}) == {"start": 20, "end": 35}
+        for body in ({"start": 30, "end": 20}, {"start": 0, "end": 999}, {"start": "a", "end": 1}):
+            with pytest.raises(urllib.error.HTTPError) as bad:
+                post(base, "/api/expand", body)
+            assert bad.value.code == 400, body
+    finally:
+        server.shutdown()
+        server.server_close()
+        app.close()
+
+
 def test_bad_edges_are_rejected_and_change_nothing(labeler):
     app, base, dataset_file = labeler
     post(base, "/api/edge", {"frame": 20, "edge": "start"})

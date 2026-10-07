@@ -155,6 +155,7 @@
         <tr><td><kbd>Shift</kbd>+click</td><td>select a range of frames</td></tr>
         <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click</td><td>add or remove one frame</td></tr>
         <tr><td><kbd>A</kbd></td><td>select all frames the strip shows</td></tr>
+        <tr><td><kbd>W</kbd></td><td>grow the selection to the adjacent frames of the same shot (stops at a cut)</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>clear the selection</td></tr>
         <tr><td colspan="2"><h4>Labeling</h4></td></tr>
         <tr><td><kbd>M</kbd> · <kbd>Space</kbd></td><td>mark / unmark as a meme (several frames: each run becomes a start–end meme, a lone frame a single meme)</td></tr>
@@ -179,7 +180,7 @@
   <div id="info">
     <table id="facts"></table>
     <div>
-      <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <span id="edges"><button id="set-start" title="Make the selected frame the first frame of the meme at/near it, or of a new meme">Set start ([)</button> <button id="set-end" title="Make the selected frame the last frame of the meme at/near it, or of a new meme">Set end (])</button></span> <button id="copy" title="Copy video id, format id, timestamp and frame index">Copy locator (C)</button> <span id="err"></span></div>
+      <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <span id="edges"><button id="set-start" title="Make the selected frame the first frame of the meme at/near it, or of a new meme">Set start ([)</button> <button id="set-end" title="Make the selected frame the last frame of the meme at/near it, or of a new meme">Set end (])</button> <button id="expand" title="Grow the selection to the neighbouring frames of the same shot (stops at a cut)">Expand selection (W)</button></span> <button id="copy" title="Copy video id, format id, timestamp and frame index">Copy locator (C)</button> <span id="err"></span></div>
     </div>
     <div><input id="goto" placeholder="jump to time (s or m:s)" size="20"></div>
   </div>
@@ -548,6 +549,22 @@ function labelTouched(m, label) {
 }
 
 // The selected frame becomes the start or end of the meme at/near it, or of a new meme.
+// W: grow the selection to the adjacent frames that belong to the same shot; then M marks them as a window.
+async function expandSelection() {
+  if (!hasSel && multi.size < 2) return;
+  const frames = multi.size > 1 ? Array.from(multi) : [sel];
+  const start = Math.min(...frames), end = Math.max(...frames);
+  $("expand").disabled = true;
+  try {
+    const grown = await api("/api/expand", {start, end});
+    multi = new Set(Array.from({length: grown.end - grown.start + 1}, (_, k) => grown.start + k));
+    anchorFrame = grown.start;
+    $("err").textContent = grown.start === start && grown.end === end ? "no similar frames next to the selection" : "";
+    select(sel >= grown.start && sel <= grown.end ? sel : grown.start, true, true);
+  } catch (e) { $("err").textContent = String(e); }
+  $("expand").disabled = false;
+}
+
 async function setEdge(edge) {
   if (!hasSel) return;
   try {
@@ -620,6 +637,7 @@ document.addEventListener("keydown", e => {
     case "ArrowDown": jumpInView(1); break;
     case "m": case "M": case " ": (e.shiftKey && e.key === "M" ? moveNearestMark() : toggleMark()); break;
     case "x": case "X": toggleLabel("not_meme"); break;
+    case "w": case "W": expandSelection(); break;
     case "[": setEdge("start"); break;
     case "]": setEdge("end"); break;
     case "n": case "N": jumpMark(1); break;
@@ -658,6 +676,7 @@ function resetFilters() {
   }
 }
 
+$("expand").onclick = expandSelection;
 $("set-start").onclick = () => setEdge("start");
 $("set-end").onclick = () => setEdge("end");
 $("toggle").onclick = toggleMark;

@@ -195,6 +195,14 @@ classifier disagrees with me, and keep the result in the repo.
 - [ ] AC25: **Hotkeys help.** The main area has no keyboard help text; a "Hotkeys" button at the right end of the
       tab line shows a popup listing every hotkey (grouped: moving, selecting, labeling, other) while the pointer is
       over it or it has keyboard focus.
+- [ ] AC26: **Expand the selection to the same shot.** `W` (and an "Expand selection" button) grows the selection
+      (the selected frame, or the first..last of a multi-selection) to the adjacent frames that look like the same
+      shot, selecting all frames in between, so that `M` then marks them as one window. *Comparison:* the step between
+      neighbouring frames, the mean absolute difference of their 32x18 grayscale thumbnails, not the similarity to the
+      selected frame (a glitch card animates, so its frames differ from each other as much as from the scene around it).
+      *Expansion:* outward on each side while the next step is at most 40 (0..255), at most 3 s per side, stopping at the
+      first step above that (a cut) and at the video's ends; if nothing is added the page says so. Server side
+      (`POST /api/expand`, `tools/labeling/similarity.py`).
 - [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
@@ -407,3 +415,12 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: The user asked to remove the hotkey description from the main area and put it in a popup opened by a
   "Hotkeys" button at the right of the tab line. Added AC25. Checked in headless Chrome (popup forced open for the screenshot;
   the hover itself is plain CSS and was not exercised).
+- 2026-10-07: The user asked for W to expand the selection to adjacent frames that look alike, naming two concerns: how
+  to compare and how to expand. Measured on `FtU4MuksCzE` (format 269, 32x18 grayscale mean absolute difference): inside a
+  card consecutive frames differ by 13..26, at its edges by 55..100, and the distance to the selected frame overlaps
+  inside and outside (15..70 vs 50..100), so comparing to the seed can't tell them apart while the neighbour step can.
+  Decision: grow while the neighbour step is <= 40, capped at 3 s per side (AC26). Run on all 126 existing marks, 121 grew
+  to 12-13 frames (the card), four at the video's start to 25 (the intro card up to a cut) and one to 8. Tests added;
+  W then M checked in headless Chrome (a mark grew to frames 2740..2752 and M saved one window with its center at 2746).
+  In a static scene W grows to the 3 s cap, which is why the cap exists. The 40 threshold and the 3 s cap are constants
+  in `similarity.py`, not settings.

@@ -14,6 +14,7 @@ from flask import Flask, Response, jsonify, request
 from . import dataset as dataset_module
 from . import profiles as profiles_module
 from .dataset import Dataset
+from . import similarity
 from .index import FrameReader, Index
 from .workspace import BusyError, NoVideoError, Workspace
 
@@ -123,6 +124,19 @@ class LabelerApp:
             self.dataset.set_edge(frame, edge, lambda f: float(self.index.pts[f]), float(window))
             self._save()
         return self.labels()
+
+    def expand(self, first, last) -> dict:
+        """The frames around `first..last` that look like the same shot (see `similarity`)."""
+        first, last = self._check_frame(first), self._check_frame(last)
+        if first > last:
+            raise ValueError("first can't be after last")
+        reach = round(similarity.MAX_SECONDS * self.index.native_fps)
+        lo, hi = max(0, first - reach - 1), min(len(self.index.pts) - 1, last + reach + 1)
+        cache: dict[int, object] = {}
+        for frame in range(lo, hi + 1):  # in order: a decoder reads forward cheaply, backward it seeks
+            cache[frame] = similarity.descriptor(self.reader.get(frame))
+        start, end = similarity.expand(first, last, len(self.index.pts), cache.__getitem__, reach)
+        return {"start": start, "end": end}
 
     def move(self, old, new) -> list[dict]:
         old, new = self._check_frame(old), self._check_frame(new)
@@ -270,6 +284,15 @@ def create_flask_app(workspace: Workspace | LabelerApp, profiles_dir: Path = pro
     def edge():
         return post_labels(lambda l, b: l.set_edge(b.get("frame"), b.get("edge"),
                                                    b.get("window", dataset_module.EXCLUSION_WINDOW_SECONDS)))
+
+    @web.post("/api/expand")
+    def expand():
+        body = request.get_json(silent=True) or {}
+        labeler = workspace.current
+        try:
+            return jsonify(labeler.expand(body.get("start"), body.get("end")))
+        except (ValueError, TypeError) as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @web.post("/api/move")
     def move():

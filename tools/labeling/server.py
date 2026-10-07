@@ -103,8 +103,11 @@ class LabelerApp:
         with self._lock:
             before = list(self.dataset.memes), list(self.dataset.not_memes)
             try:
-                for frame in frames:
-                    self._apply(frame, on, label)
+                if label == "meme" and on:  # runs of consecutive frames become start..end memes
+                    self.dataset.add_many(frames, lambda f: float(self.index.pts[f]))
+                else:
+                    for frame in frames:
+                        self._apply(frame, on, label)
             except ValueError:
                 self.dataset.memes, self.dataset.not_memes = before  # the batch is all or nothing
                 raise
@@ -118,14 +121,6 @@ class LabelerApp:
             raise ValueError("window must be a number of seconds between 0 and 60")
         with self._lock:
             self.dataset.set_edge(frame, edge, lambda f: float(self.index.pts[f]), float(window))
-            self._save()
-        return self.labels()
-
-    def set_range(self, first, last) -> dict:
-        """Save `first`..`last` as one meme's start and end, replacing the memes it overlaps."""
-        first, last = self._check_frame(first), self._check_frame(last)
-        with self._lock:
-            self.dataset.set_range(first, last, lambda f: float(self.index.pts[f]))
             self._save()
         return self.labels()
 
@@ -275,10 +270,6 @@ def create_flask_app(workspace: Workspace | LabelerApp, profiles_dir: Path = pro
     def edge():
         return post_labels(lambda l, b: l.set_edge(b.get("frame"), b.get("edge"),
                                                    b.get("window", dataset_module.EXCLUSION_WINDOW_SECONDS)))
-
-    @web.post("/api/range")
-    def meme_range():
-        return post_labels(lambda l, b: l.set_range(b.get("start"), b.get("end")))
 
     @web.post("/api/move")
     def move():

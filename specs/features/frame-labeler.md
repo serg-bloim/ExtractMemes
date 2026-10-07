@@ -185,9 +185,10 @@ classifier disagrees with me, and keep the result in the repo.
       ±1 s, or of a new meme; a start after the end (or an end before the start) is refused. A meme with
       a start/end counts as a meme on every frame of the range (strip rows, large view; unmarking any
       frame in it removes the whole meme); marking a not-meme inside a range, or moving a ranged meme
-      with Shift+M, is refused. With several frames selected, `W` (and a button) saves them as one
-      meme: its start is the first selected frame and its end the last, any meme it overlaps is replaced (keeping that
-      meme's own frame if it lies inside), and not-memes inside it are dropped (`POST /api/range`). Ranges are saved on every change as optional `meme_start_ts/frame` and
+      with Shift+M, is refused. With several frames selected, `M` marks each run of consecutive
+      frames as one start..end meme and each frame on its own as a single-frame meme; a region absorbs the memes it
+      overlaps (individual marks inside it are saved only as the region, keeping the first one's frame as the meme's
+      frame), and not-memes inside it are dropped. If every selected frame is already a meme, `M` unmarks them. Ranges are saved on every change as optional `meme_start_ts/frame` and
       `meme_end_ts/frame` on the meme ([labeled-video-dataset](labeled-video-dataset.md) AC3).
 - [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
@@ -389,7 +390,8 @@ Resolved by the user (2026-10-07):
   mark between two rows still counts for the row it is shown on, so the strip behaves as before). Checked in headless
   Chrome: Shift range (also across tile rows), Cmd add/remove, plain click reset, mark and unmark of a selection, strip
   shift-click and A.
-- 2026-10-07: The user asked that W on a multi-selection saves it as a meme window. W (and a "Save selection as
-  meme" button, disabled below two frames) sends the first and last selected frame to `/api/range`, which makes
-  them one ranged meme, replacing overlapped memes. Tests added (dataset, server) and the key checked in headless
-  Chrome (one frame: message; a Shift range: ranged meme with badges).
+- 2026-10-07: The user asked that M on a multi-selection mark regions instead of a separate W key. `mark_many` (meme,
+  on) now groups the selected frames into runs on the server (`Dataset.add_many`): a run of two or more frames is one
+  start..end meme, a lone frame a single meme, regions absorb overlapped memes. Tests added (dataset, server); checked in
+  headless Chrome on tiles (a Shift run plus a Cmd-clicked frame, an individual mark inside the run absorbed, a later
+  run over both merged them, M again unmarked).

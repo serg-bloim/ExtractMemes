@@ -163,6 +163,24 @@ class Dataset:
         self.memes = sorted([m for m in self.memes if m not in overlapped] + [made], key=lambda m: m.meme_frame)
         self.remove_not_meme_in(first, last)
 
+    def add_many(self, frames: list[int], ts_of: Callable[[int], float]) -> None:
+        """Mark `frames` as memes: each run of consecutive frames becomes one start..end meme and a
+        frame on its own a single-frame meme. A region absorbs the memes it overlaps."""
+        runs: list[list[int]] = []
+        for frame in sorted(set(frames)):
+            if runs and frame == runs[-1][-1] + 1:
+                runs[-1].append(frame)
+            else:
+                runs.append([frame])
+        for run in runs:
+            if len(run) > 1:
+                self.set_range(run[0], run[-1], ts_of)
+        for run in runs:
+            if len(run) == 1:
+                self.remove_not_meme(run[0])
+                if not self.meme_at(run[0]):
+                    self.add(run[0], ts_of(run[0]))
+
     def remove_not_meme_in(self, first: int, last: int) -> None:
         self.not_memes = [n for n in self.not_memes if not first <= n.not_meme_frame <= last]
 

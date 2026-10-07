@@ -281,3 +281,16 @@ def test_set_range_replaces_the_memes_it_overlaps_and_drops_not_memes_inside():
     assert dataset.memes[2] == Meme(5.5, 55, 5.5, 55, 6.5, 65) and dataset.not_memes == [NotMeme(2.0, 20)]
     with pytest.raises(ValueError):
         dataset.set_range(9, 3, ts)
+
+
+def test_add_many_makes_each_run_a_region_and_each_lone_frame_a_single_meme():
+    ts = lambda f: f / 10
+    dataset = Dataset(video=None, memes=[Meme(1.4, 14), Meme(9.0, 90, 8.0, 80, 9.5, 95)], not_memes=[NotMeme(1.2, 12)])
+
+    dataset.add_many([30, 10, 11, 12, 13, 14, 15, 50, 51], ts)
+
+    assert dataset.memes == [Meme(1.4, 14, 1.0, 10, 1.5, 15),   # the single mark at 14 is absorbed
+                             Meme(3.0, 30), Meme(5.0, 50, 5.0, 50, 5.1, 51), Meme(9.0, 90, 8.0, 80, 9.5, 95)]
+    assert dataset.not_memes == []
+    dataset.add_many([81, 82], ts)                              # inside an existing region: it is replaced by the new run
+    assert Meme(8.1, 81, 8.1, 81, 8.2, 82) in dataset.memes

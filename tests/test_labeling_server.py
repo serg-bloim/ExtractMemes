@@ -3,6 +3,7 @@ import threading
 import urllib.error
 import urllib.request
 
+import cv2
 import numpy as np
 import pytest
 
@@ -413,3 +414,25 @@ def test_the_page_gets_the_classifiers_thresholds_for_the_criteria_it_uses(label
     assert criteria["band"]["thresholds"] == [{"op": ">", "value": 180.0}]
     assert criteria["texture"]["thresholds"] == []
     assert criteria["margin_luma"]["description"]
+
+
+def test_frame_reader_decodes_from_the_start_when_a_seek_cannot_reach_an_early_frame(tmp_path, video, monkeypatch):
+    """Some H.264 streams land a seek past the first ~100 frames, even a seek to frame 0."""
+    index = build(video, tmp_path / "cache", fps=5.0)
+    truth = {i: f for i, _, f in ds.iter_frames(video)}
+    reader = FrameReader(video, index.pts)
+
+    def seek_that_lands_late(start):
+        reader._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        for _ in range(6):
+            ok, frame = reader._cap.read()
+        reader._remember(5, frame)
+        reader._pos = 6
+        return 5
+
+    monkeypatch.setattr(reader, "_seek", seek_that_lands_late)
+    try:
+        for i in (2, 0, 4, 40, 3):
+            assert np.array_equal(reader.get(i), truth[i]), f"frame {i}"
+    finally:
+        reader.close()

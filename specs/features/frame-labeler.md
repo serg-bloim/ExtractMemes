@@ -294,3 +294,8 @@ Resolved by the user (2026-10-07):
   [classifier-criteria](classifier-criteria.md)): AC13 rewritten (no registry or scoring code in
   the labeler; verdict and thresholds from `HeuristicClassifier()`), AC17 and the dev-server note
   updated (`labeler.sh` now runs Flask under `watchfiles` so a new criterion file restarts it).
+- 2026-10-07: Frames 0 to ~127 of H.264 videos in format 269 failed with "could not load frame N":
+  the seek to those frames lands on the first restartable frame (128 in the two videos checked),
+  past the target. The frame reader now decodes from the start when a seek can't get that early
+  (AC8: the frame shown is the frame the index names). Checked 16 frames, early, late and in jumping
+  order, against a sequential decode on `FtU4MuksCzE` format 269: all identical.

@@ -117,7 +117,8 @@ classifier disagrees with me, and keep the result in the repo.
       view (button and the H key). The histogram view has a list of metrics to chart, starting with
       the classifier criteria's scores (`band`, `texture`, ... from the registry; later metrics
       join the same list), a bin count and a log-scale option. It charts the metric over:
-      - **all scanned frames** when no frame is selected;
+      - **the frames the strip shows** (all of them when no filter is set) when no frame is
+        selected, i.e. it follows the strip's filters;
       - **only the selected frames** when one or several are selected (a single frame shows its one
         value).
       Bars are stacked by human label (meme / not a meme / unlabeled) so the classes can be told
@@ -125,12 +126,22 @@ classifier disagrees with me, and keep the result in the repo.
       selections are comparable, a criterion's threshold is drawn as a line, the selected values
       are marked when there are few of them, and the chart is accompanied by the count, min, max,
       mean and median of what it shows. It updates as the selection or the labels change.
+- [ ] AC20a: **Zooming the histogram.** A vertical two-finger scroll on the chart (a pinch too)
+      zooms the x axis in or out around the pointer, scrolling up zooms in; a horizontal two-finger
+      scroll pans while zoomed. The visible window stays inside the metric's whole range and is never
+      narrower than 1/2000 of it. Bars, the y axis and the counts shown follow the visible window
+      (values outside it are not counted into the edge bins), a "Reset zoom" button appears while
+      zoomed, and the title says what window is shown and how many frames are in view. The zoom
+      persists while the selection or filters change, and resets when another metric is chosen. The
+      page does not scroll or zoom while the pointer is over the chart.
 - [ ] AC20: **Filtering from the histogram.** Dragging across the histogram selects a range of bins
       (a plain click selects one bin) and sets that metric's min/max in the strip filters (AC14),
       so the strip shows only the frames whose value falls in the range; other filters stay as they
       are and combine with it. The range is snapped to bin edges and shown as a shaded band with its
-      limits on the chart, which still charts all frames (or the selection), not only the filtered
-      ones. Double-clicking the chart or a "Clear range" button removes the range, and editing the
+      limits on the chart. The charted metric's own range does not remove bars (the bars outside it
+      are drawn dimmed on top of the rest of their bin but keep their label colours, and the counts
+      and statistics cover only the frames inside),
+      so the range can still be seen and changed on the chart; every other filter applies fully. Double-clicking the chart or a "Clear range" button removes the range, and editing the
       min/max boxes in the strip filters updates the shaded band.
 - [ ] AC21: **Copy frame locator.** A button (and the C key) beside the mark buttons copies to the
       clipboard where the selected frame is: its video id, format id, timestamp and frame index, as
@@ -259,3 +270,13 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: The user asked for a small reset button on each filter line that resets only that
   filter. Added to AC14 (human label, classifier and each criterion's min/max; disabled while a
   filter is at its default).
+- 2026-10-07: The user wanted the histogram to show only filtered data. With no frame selected it
+  now charts the frames the strip shows (AC19). The charted metric's own range is the exception: its
+  excluded bars stay as faded ghosts so the range can still be seen and changed (AC20).
+- 2026-10-07: The user reverted the x-axis auto-fit and asked for zooming instead, with the Mac
+  trackpad two-finger scroll. Added AC20a: scroll zooms around the pointer (up = in), horizontal
+  scroll pans, a pinch zooms too, "Reset zoom" restores the whole range. Dragging a range to filter
+  works on the zoomed window, so a fine range can be set after zooming in.
+- 2026-10-07: The user noted that the dimmed bars outside the range lost the label colours. They are
+  now stacked by label like the others (meme gold, not a meme blue, unlabeled grey), at 30 % opacity,
+  on top of the in-range part of each bin (AC20).

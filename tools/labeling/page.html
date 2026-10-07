@@ -106,6 +106,7 @@
       <select id="metric"></select>
       bins <input id="bins" type="number" min="5" max="200" value="40">
       <label><input id="log" type="checkbox"> log scale</label>
+      <button id="hist-zoom-reset" hidden title="Show the whole range again">Reset zoom</button>
       <button id="hist-clear" hidden title="Remove the range filter on this metric (or double-click the chart)">Clear range</button>
     </span>
     <span class="sp"></span>
@@ -114,7 +115,7 @@
   <div id="hist">
     <div id="hist-scope"></div>
     <svg id="hist-svg" viewBox="0 0 820 380" preserveAspectRatio="xMidYMid meet"></svg>
-    <div class="legend"><span><i style="background:#ffc933"></i>meme</span><span><i style="background:#7fb2ff"></i>not a meme</span><span><i style="background:#5b6070"></i>unlabeled</span><span class="dim">drag across the chart to filter the strip by that range</span></div>
+    <div class="legend"><span><i style="background:#ffc933"></i>meme</span><span><i style="background:#7fb2ff"></i>not a meme</span><span><i style="background:#5b6070"></i>unlabeled</span><span class="dim">scroll to zoom (two fingers), drag to filter the strip by a range</span></div>
     <div id="hist-stats"></div>
   </div>
   <div id="info">
@@ -520,6 +521,8 @@ window.addEventListener("resize", renderStrip);
 
 // ---- histogram view ---------------------------------------------------------------------------
 let histOn = false;
+let histZoom = null;         // {name, lo, hi}: the visible x window while zoomed in; null = the whole range
+let zoomFrame = 0;           // pending animation frame while wheel events stream in
 let histGeom = null;         // the last drawn chart's geometry, for turning a drag into values
 let drag = null;
 const LABEL_COLOURS = {none: "#5b6070", not_meme: "#7fb2ff", meme: "#ffc933"};   // stacking order, bottom to top
@@ -536,7 +539,8 @@ function histogramData(values, rows, labelOf, lo, hi, bins) {
   const counts = Array.from({length: bins}, () => ({none: 0, not_meme: 0, meme: 0, total: 0}));
   const span = hi - lo || 1;
   for (const r of rows) {
-    const b = Math.max(0, Math.min(bins - 1, Math.floor((values[r] - lo) / span * bins)));
+    if (values[r] < lo || values[r] > hi) continue;                  // zoomed out of view
+    const b = Math.min(bins - 1, Math.floor((values[r] - lo) / span * bins));
     counts[b][labelOf(r)]++; counts[b].total++;
   }
   return counts;
@@ -550,13 +554,26 @@ function summary(vals) {
   return {n, min: sorted[0], max: sorted[n - 1], mean, median};
 }
 
-function histogramScope() {
-  if (multi.size > 1) return {rows: Array.from(multi), text: multi.size + " selected frames"};
+// The frames the chart is about. A selection wins. Otherwise it is the frames the strip shows, except
+// that the charted metric's own range doesn't remove bars (`base` keeps them, to be drawn faded), so
+// the range can still be seen and changed on the chart.
+function histogramScope(metric) {
+  if (multi.size > 1) return {rows: Array.from(multi), base: null, outside: null, text: multi.size + " selected frames"};
   if (hasSel) {
     const r = rowOf(sel);
-    return {rows: [r], text: "frame #" + sel + (S.rows[r] === sel ? "" : " (scored row #" + S.rows[r] + ")")};
+    return {rows: [r], base: null, outside: null, text: "frame #" + sel + (S.rows[r] === sel ? "" : " (scored row #" + S.rows[r] + ")")};
   }
-  return {rows: S.rows.map((_, r) => r), text: "all " + S.rows.length + " scanned frames"};
+  const f = filters();
+  const own = f.ranges[metric.name];
+  delete f.ranges[metric.name];
+  const base = [];
+  for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) base.push(r);
+  const rows = own ? base.filter(r => metric.values[r] >= own[0] && metric.values[r] <= own[1]) : base;
+  const inside = new Set(rows);
+  const outside = own ? base.filter(r => !inside.has(r)) : null;                   // dimmed on the chart
+  const text = rows.length === S.rows.length ? "all " + S.rows.length + " scanned frames"
+    : rows.length + " of " + S.rows.length + " scanned frames (the strip's filters)";
+  return {rows, base: own ? base : null, outside, text};
 }
 
 const num = v => Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2);
@@ -567,11 +584,16 @@ function renderHistogram() {
   const bins = Math.max(5, Math.min(200, +$("bins").value || 40));
   const logScale = $("log").checked;
   const all = metric.values;
-  let lo = Infinity, hi = -Infinity;
-  for (const v of all) { if (v < lo) lo = v; if (v > hi) hi = v; }   // one range for every selection
-  const scope = histogramScope();
+  let flo = Infinity, fhi = -Infinity;
+  for (const v of all) { if (v < flo) flo = v; if (v > fhi) fhi = v; }   // the whole range of the metric
+  const zoomed = histZoom && histZoom.name === metric.name && histZoom.hi - histZoom.lo < fhi - flo;
+  const lo = zoomed ? histZoom.lo : flo, hi = zoomed ? histZoom.hi : fhi;   // what the x axis shows
+  $("hist-zoom-reset").hidden = !zoomed;
+  const scope = histogramScope(metric);
   const counts = histogramData(all, scope.rows, humanLabel, lo, hi, bins);
-  const maxTotal = Math.max(1, ...counts.map(c => c.total));
+  const dim = scope.outside ? histogramData(all, scope.outside, humanLabel, lo, hi, bins) : null;   // outside the range
+  const sumAt = i => counts[i].total + (dim ? dim[i].total : 0);
+  const maxTotal = Math.max(1, ...counts.map((_, i) => sumAt(i)));
   const yOf = n => logScale ? Math.log10(n + 1) / Math.log10(maxTotal + 1) : n / maxTotal;
 
   const W = 820, H = 380, L = 54, R = 14, T = 12, B = 34, pw = W - L - R, ph = H - T - B;
@@ -589,21 +611,27 @@ function renderHistogram() {
     const v = lo + (hi - lo) * i / 5;
     svg += `<text x="${x(v)}" y="${H - 12}" text-anchor="middle" fill="#8b909c" font-size="11">${num(v)}</text>`;
   }
-  histGeom = {name: metric.name, L, T, pw, ph, lo, hi, bins};
+  histGeom = {name: metric.name, L, T, pw, ph, lo, hi, bins, flo, fhi};
   const bw = pw / bins;
+  // Each bin: the frames inside the range (full colour) and, on top, those outside it (the same label
+  // colours, dimmed). Without a range everything is inside.
   counts.forEach((c, i) => {
-    if (!c.total) return;
-    const top = yOf(c.total) * ph;
+    const d = dim ? dim[i] : {none: 0, not_meme: 0, meme: 0, total: 0};
+    const sum = c.total + d.total;
+    if (!sum) return;
+    const full = yOf(sum) * ph;
     let y = T + ph;
-    const tip = `${num(lo + (hi - lo) * i / bins)} – ${num(lo + (hi - lo) * (i + 1) / bins)}: ${c.total} (` +
-                `meme ${c.meme}, not a meme ${c.not_meme}, unlabeled ${c.none})`;
+    const tip = `${num(lo + (hi - lo) * i / bins)} – ${num(lo + (hi - lo) * (i + 1) / bins)}: ${sum} (` +
+                `meme ${c.meme + d.meme}, not a meme ${c.not_meme + d.not_meme}, unlabeled ${c.none + d.none})` +
+                (dim ? ` · ${c.total} inside the range` : "");
     svg += `<g><title>${tip}</title>`;
-    for (const label of STACK) {
-      if (!c[label]) continue;
-      const h = top * c[label] / c.total;
-      y -= h;
-      svg += `<rect x="${L + i * bw + 0.5}" y="${y}" width="${Math.max(0.5, bw - 1)}" height="${h}" fill="${LABEL_COLOURS[label]}"/>`;
-    }
+    for (const [part, opacity] of [[c, 1], [d, 0.3]])
+      for (const label of STACK) {
+        if (!part[label]) continue;
+        const h = full * part[label] / sum;
+        y -= h;
+        svg += `<rect x="${L + i * bw + 0.5}" y="${y}" width="${Math.max(0.5, bw - 1)}" height="${h}" fill="${LABEL_COLOURS[label]}" fill-opacity="${opacity}"/>`;
+      }
     svg += "</g>";
   });
   svg += `<line x1="${L}" x2="${W - R}" y1="${T + ph}" y2="${T + ph}" stroke="#8b909c"/>`;
@@ -611,7 +639,7 @@ function renderHistogram() {
     svg += `<line x1="${x(metric.threshold)}" x2="${x(metric.threshold)}" y1="${T}" y2="${T + ph}" stroke="#ff6b6b" stroke-dasharray="5 4"/>` +
            `<text x="${x(metric.threshold) + 4}" y="${T + 12}" fill="#ff6b6b" font-size="11">threshold ${metric.threshold}</text>`;
   const active = activeRange(metric.name);                              // the strip filter on this metric
-  if (active) {
+  if (active && active.max >= lo && active.min <= hi) {
     const a = x(Math.max(lo, active.min)), b = x(Math.min(hi, active.max));
     svg += `<rect x="${a}" y="${T}" width="${Math.max(1, b - a)}" height="${ph}" fill="#3b82f6" fill-opacity=".18" pointer-events="none"/>` +
            `<line x1="${a}" x2="${a}" y1="${T}" y2="${T + ph}" stroke="#3b82f6" pointer-events="none"/>` +
@@ -629,7 +657,10 @@ function renderHistogram() {
   const per = {meme: 0, not_meme: 0, none: 0};
   for (const r of scope.rows) per[humanLabel(r)]++;
   const st = summary(vals);
-  $("hist-scope").textContent = metric.name + " over " + scope.text;
+  const inView = zoomed ? vals.filter(v => v >= lo && v <= hi).length : null;
+  $("hist-scope").textContent = metric.name + " over " + scope.text +
+    (zoomed ? " · zoomed to " + num(lo) + " – " + num(hi) + " (" + inView + " in view)" : "") +
+    (scope.outside ? " · dimmed bars are outside the range" : "");
   $("hist-stats").textContent = st
     ? "n " + st.n + " · min " + num(st.min) + " · max " + num(st.max) + " · mean " + num(st.mean) +
       " · median " + num(st.median) + "   |   meme " + per.meme + " · not a meme " + per.not_meme + " · unlabeled " + per.none
@@ -690,6 +721,38 @@ function commitDrag() {
   setRangeFilter(g.name, min, max);
 }
 
+// The x window after one wheel event, or null for "the whole range". A vertical two-finger scroll (or a
+// pinch) zooms around the pointer, a horizontal one pans. Scrolling up zooms in. The window stays inside
+// the metric's whole range [g.flo, g.fhi] and is never narrower than 1/2000 of it.
+function nextWindow(g, ev) {
+  const span = g.hi - g.lo, full = g.fhi - g.flo;
+  let lo = g.lo, hi = g.hi;
+  if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {                  // pan
+    const shift = ev.deltaX / ev.pxPerUnit / g.pw * span;
+    lo += shift; hi += shift;
+  } else {                                                          // zoom around the pointer
+    const x = Math.max(g.L, Math.min(g.L + g.pw, ev.x));
+    const at = g.lo + (x - g.L) / g.pw * span;
+    const newSpan = Math.max(full / 2000, Math.min(full, span * Math.exp(ev.deltaY * (ev.ctrl ? 0.01 : 0.0025))));
+    lo = at - (at - g.lo) * newSpan / span;
+    hi = lo + newSpan;
+  }
+  const width = hi - lo;
+  if (lo < g.flo) { lo = g.flo; hi = lo + width; }
+  if (hi > g.fhi) { hi = g.fhi; lo = hi - width; }
+  return width >= full * 0.999 ? null : {lo, hi};
+}
+
+function zoomHistogram(e) {
+  const g = histGeom;
+  if (!g || !(g.fhi > g.flo)) return;
+  e.preventDefault();                                               // the page shouldn't scroll or zoom
+  const next = nextWindow(g, {deltaX: e.deltaX, deltaY: e.deltaY, ctrl: e.ctrlKey, x: chartX(e),
+                              pxPerUnit: $("hist-svg").getBoundingClientRect().width / 820});
+  histZoom = next && {name: g.name, lo: next.lo, hi: next.hi};
+  if (!zoomFrame) zoomFrame = requestAnimationFrame(() => { zoomFrame = 0; renderHistogram(); });
+}
+
 function setView(histogram) {
   histOn = histogram;
   $("view").style.display = histogram ? "none" : "";
@@ -698,6 +761,11 @@ function setView(histogram) {
   $("tab-frame").classList.toggle("on", !histogram);
   $("tab-hist").classList.toggle("on", histogram);
   renderHistogram();
+}
+
+function wireZoom() {
+  $("hist-svg").addEventListener("wheel", zoomHistogram, {passive: false});
+  $("hist-zoom-reset").onclick = () => { histZoom = null; renderHistogram(); };
 }
 
 function buildHistogramControls() {
@@ -709,7 +777,9 @@ function buildHistogramControls() {
   }));
   $("tab-frame").onclick = () => setView(false);
   $("tab-hist").onclick = () => setView(true);
-  for (const id of ["metric", "bins", "log"]) $(id).onchange = renderHistogram;
+  for (const id of ["bins", "log"]) $(id).onchange = renderHistogram;
+  $("metric").onchange = () => { histZoom = null; renderHistogram(); };   // another metric, another scale
+  wireZoom();
   const svg = $("hist-svg");
   svg.addEventListener("mousedown", e => {
     if (!histGeom || e.button !== 0) return;

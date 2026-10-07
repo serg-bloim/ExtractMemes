@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Start the frame labeler dev server; it restarts when a Python file under tools/labeling/ changes
+# Start the frame labeler dev server; it restarts when a Python file under tools/labeling/ or
+# src/extract_memes/ changes, including a new criterion file added there
 # (refresh the browser tab after a restart; page.html edits need only a refresh).
 #
 #   ./labeler.sh [youtube-url-or-id] [--fps N] [--format-id ID] [--port N] [--proxy URL]
@@ -10,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 source_arg=""
 port=8765
@@ -30,4 +31,9 @@ done
 
 python=".venv/bin/python"
 [[ -x "$python" ]] || python="python3"
-exec "$python" -m flask --app tools.labeling.wsgi:create_app run --debug --host 127.0.0.1 --port "$port"
+# watchfiles restarts Flask whenever a Python file under src/extract_memes (the criteria and the
+# classifiers) or tools/labeling changes, new files included, which Flask's own reloader doesn't
+# notice (a criterion added as a new file is picked up).
+exec "$python" -m watchfiles --filter python \
+  "$python -m flask --app tools.labeling.wsgi:create_app run --debug --no-reload --host 127.0.0.1 --port $port" \
+  src/extract_memes tools/labeling

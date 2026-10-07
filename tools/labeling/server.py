@@ -11,7 +11,6 @@ from urllib.parse import urlsplit
 import cv2
 from flask import Flask, Response, jsonify, request
 
-from . import criteria as criteria_module
 from . import dataset as dataset_module
 from .dataset import Dataset
 from .index import FrameReader, Index
@@ -46,7 +45,10 @@ class LabelerApp:
             "window": dataset_module.EXCLUSION_WINDOW_SECONDS,
             "rows": index.rows.tolist(),
             "pts": [round(float(t), 3) for t in index.pts],
-            "criteria": [{"name": c.name, "threshold": c.threshold} for c in criteria_module.CRITERIA],
+            "criteria": [
+                {"name": c.name, "description": c.description, "thresholds": index.thresholds.get(c.name, [])}
+                for c in index.criteria
+            ],
             "scores": {name: [round(float(v), 2) for v in values] for name, values in index.scores.items()},
             "verdict": [int(v) for v in index.verdict],
             **self.labels(),

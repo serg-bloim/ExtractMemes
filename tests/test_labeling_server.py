@@ -12,7 +12,8 @@ pytest.importorskip("flask")
 from tests.labeling_support import FPS, make_video
 from tools.labeling import dataset as ds
 from tools.labeling import index as index_module
-from tools.labeling.criteria import CRITERIA, Criterion
+from extract_memes.criteria import Criterion, all_criteria
+from extract_memes.heuristic_classifier import HeuristicClassifier
 from tools.labeling.dataset import Dataset, VideoInfo
 from tools.labeling.index import FrameReader, build
 from werkzeug.serving import make_server
@@ -58,7 +59,7 @@ def test_index_has_a_row_per_scanned_frame_with_scores_and_verdict(tmp_path, vid
     assert index.step == 5
     assert index.rows.tolist() == list(range(0, 75, 5))
     assert len(index.pts) == 75 and index.pts[5] == pytest.approx(5 / FPS, abs=0.001)
-    assert set(index.scores) == {c.name for c in CRITERIA}
+    assert set(index.scores) == set(all_criteria())
     assert all(len(v) == 15 for v in index.scores.values()) and len(index.verdict) == 15
     assert len(list(index.thumb_dir.glob("*.jpg"))) == 15
 
@@ -77,7 +78,7 @@ def test_a_second_build_reads_the_cache_and_a_new_criterion_scores_only_itself(t
     monkeypatch.setattr(index_module, "_run_pass",
                         lambda *a: passes.append(sorted(c.name for c in a[3] if c.name in a[4])) or original(*a))
 
-    index = build(video, tmp_path / "cache", fps=5.0, criteria=[*CRITERIA, Criterion("brightness", brightness)])
+    index = build(video, tmp_path / "cache", fps=5.0, criteria=[*all_criteria().values(), Criterion("brightness", brightness)])
 
     assert passes == [["brightness"]]
     assert len(index.scores["brightness"]) == 15
@@ -103,7 +104,7 @@ def test_state_endpoint_describes_the_video_and_scores(labeler):
 
     assert state["frame_count"] == 75 and state["step"] == 5 and state["memes"] == []
     assert state["rows"] == list(range(0, 75, 5))
-    assert [c["name"] for c in state["criteria"]] == [c.name for c in CRITERIA]
+    assert [c["name"] for c in state["criteria"]] == list(all_criteria())
     assert len(state["verdict"]) == 15 and len(state["scores"]["band"]) == 15
 
 
@@ -386,3 +387,29 @@ def test_open_passes_the_chosen_format_and_refuses_format_expressions(empty_work
             post(base, "/api/open", {"source": "AAAAAAAAAAA", "format_id": bad})
         assert error.value.code == 400
     assert len(calls) == 1
+
+
+def test_the_labelers_scores_and_verdicts_are_what_the_pipeline_scan_computes(tmp_path, video):
+    from extract_memes.frame_extractor import sample_frames
+
+    index = build(video, tmp_path / "cache", fps=5.0)
+    classifier = HeuristicClassifier()
+
+    scanned = list(sample_frames(video, fps=5.0))
+
+    assert [i for i, _, _ in scanned] == index.rows.tolist()
+    for row, (_, timestamp, frame) in enumerate(scanned):
+        for name, criterion in all_criteria().items():
+            assert index.scores[name][row] == pytest.approx(criterion.score(frame), rel=1e-5, abs=1e-5), name
+        assert bool(index.verdict[row]) == classifier.is_meme_frame(frame)
+        assert timestamp == pytest.approx(index.pts[index.rows[row]], abs=0.001)
+
+
+def test_the_page_gets_the_classifiers_thresholds_for_the_criteria_it_uses(labeler):
+    _, base, _ = labeler
+
+    criteria = {c["name"]: c for c in json.load(get(base + "/api/state"))["criteria"]}
+
+    assert criteria["band"]["thresholds"] == [{"op": ">", "value": 180.0}]
+    assert criteria["texture"]["thresholds"] == []
+    assert criteria["margin_luma"]["description"]

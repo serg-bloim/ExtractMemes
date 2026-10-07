@@ -63,6 +63,10 @@ ExtractMemes/
 │       ├── downloader.py         ← Fetches a source video at worst/best quality (yt-dlp)
 │       ├── frame_extractor.py    ← Samples frames / reads a frame at a timestamp (opencv)
 │       ├── classifier.py         ← FrameClassifier interface + ClaudeCliClassifier
+│       ├── criteria/             ← Classifier criteria, one module each (`@criterion`), auto-discovered;
+│       │                           the single place the scores come from (pipeline and labeler)
+│       ├── rule_classifier.py    ← Condition / AllOf / AnyOf rules + RuleClassifier over the criteria
+│       ├── heuristic_classifier.py ← The production classifier: the rule `band > 180`
 │       └── pipeline.py           ← Orchestrates download → scan → classify → extract → save
 ├── tests/                        ← pytest suite, mirrors src/extract_memes/ modules
 ├── playground/
@@ -73,7 +77,7 @@ ExtractMemes/
 │   ├── lan_proxy_relay.py        ← Loopback→LAN TCP relay; lets a Homebrew interpreter reach a
 │                                   LAN proxy on macOS (see ADR 017). Runs under /usr/bin/python3.
 │   └── labeling/                 ← Dev-only dataset labeler (not in the package or the image); run
-│                                   `./labeler.sh <url>` (Flask dev server, reloads on edits) or
+│                                   `./labeler.sh <url>` (Flask dev server, restarts on edits incl. new criterion files) or
 │                                   `python -m tools.labeling <url>`. Needs `pip install -e ".[labeling]"`.
 ├── sample/                       ← Local video fixtures, supplied by hand (gitignored)
 ├── data/

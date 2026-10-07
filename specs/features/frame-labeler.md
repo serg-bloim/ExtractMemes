@@ -71,10 +71,13 @@ classifier disagrees with me, and keep the result in the repo.
       the human label (marked or not). Scores are computed on the scanned frames only, in the same
       sequential pass that builds the thumbnails, and cached under `.runtime/` (AC9), so scrolling
       and filtering don't decode video.
-- [x] AC13: Criteria are a small registry in the tool (a name plus a function from a BGR frame to a
-      number, and optionally a threshold), so a new candidate criterion is one function added to
-      that registry; the page shows whatever the registry holds. Adding or changing a criterion
-      recomputes the cached scores for it.
+- [x] AC13: The criteria shown are the ones in `extract_memes.criteria` (see
+      [classifier-criteria](classifier-criteria.md)), all of them, discovered at start: the labeler
+      has no list of its own and copies no scoring code, so its scores are the pipeline's. The
+      verdict is the one of `HeuristicClassifier()`, and the thresholds drawn are the ones that
+      classifier's rule compares each criterion with. A new criterion file shows up in the page
+      after the automatic restart, and only its scores are computed; changing a criterion's code (or
+      the classifier) recomputes only what depends on it.
 - [x] AC14: The strip can be **filtered**, and the filter hides rows that don't match, with a count
       of how many remain:
       - by human label: marked / unmarked;
@@ -97,8 +100,8 @@ classifier disagrees with me, and keep the result in the repo.
       dataset's `not_memes` list on every change, shown on strip rows and in the large view, listed
       beside the marks, and the human-label filter has meme / not meme / unlabeled.
 - [ ] AC17: `./labeler.sh <youtube-url-or-id> [--fps N] [--format-id ID] [--port N] [--proxy URL]`
-      from anywhere starts the server with auto-reload: editing a Python file under `tools/labeling/`
-      restarts it, and a browser refresh picks up `page.html`. Marks survive a restart.
+      from anywhere starts the server with auto-reload: editing, adding or removing a Python file
+      under `tools/labeling/` or `src/extract_memes/` restarts it, and a browser refresh picks up `page.html`. Marks survive a restart.
 - [ ] AC18: **Choosing the video in the page.** An "Open video" button opens a modal where I paste
       a YouTube URL or id. The server looks it up (metadata only, nothing downloaded) and the modal
       shows the video's thumbnail, title, uploader, duration and upload date, and a list of its
@@ -168,8 +171,9 @@ classifier disagrees with me, and keep the result in the repo.
   (reload on Python changes), and the work here is blocking OpenCV decoding, so async (FastAPI)
   adds nothing. Flask is in the optional `labeling` group with PyYAML. The page is one static HTML
   file with inline JS and CSS, read on every request so a browser refresh picks up edits.
-- `labeler.sh` at the project root runs `flask --app tools.labeling.wsgi:create_app run --debug`
-  with the video and options passed in environment variables; `python -m tools.labeling` stays as
+- `labeler.sh` at the project root runs `flask --app tools.labeling.wsgi:create_app run --debug
+  --no-reload` under `watchfiles`, which restarts it on any Python change (Flask's own reloader
+  doesn't notice new files), with the video and options passed in environment variables; `python -m tools.labeling` stays as
   the plain launcher without reload.
 - Exact indices and timestamps need a sequential decode (dataset AC4). Likely approach: a first
   pass over the file records every frame's presentation time and writes thumbnails for the strip
@@ -280,3 +284,13 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: The user noted that the dimmed bars outside the range lost the label colours. They are
   now stacked by label like the others (meme gold, not a meme blue, unlabeled grey), at 30 % opacity,
   on top of the in-range part of each bin (AC20).
+
+- 2026-10-07: Checked where the criteria come from. `band`, `texture` and the verdict call the
+  production `HeuristicClassifier`; the margin geometry is now imported from it instead of copied;
+  `band`'s threshold is read from the classifier; and a criterion's cache key now also covers what
+  it depends on (the classifier's source, the margin helper and its geometry), so editing production
+  scoring recomputes the cached `band`/`texture` scores instead of leaving them stale.
+- 2026-10-07: The criteria moved out of the tool into the main code (see
+  [classifier-criteria](classifier-criteria.md)): AC13 rewritten (no registry or scoring code in
+  the labeler; verdict and thresholds from `HeuristicClassifier()`), AC17 and the dev-server note
+  updated (`labeler.sh` now runs Flask under `watchfiles` so a new criterion file restarts it).

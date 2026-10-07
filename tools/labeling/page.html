@@ -356,7 +356,7 @@ function renderInfoPanel() {
     "<tr><td class='dim'>classifier</td><td>" + (S.verdict[r] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td></tr>";
   for (const c of S.criteria)
     html += "<tr><td class='dim'>" + c.name + "</td><td>" + S.scores[c.name][r] +
-            (c.threshold != null ? " <span class='dim'>(threshold " + c.threshold + ")</span>" : "") + "</td></tr>";
+            (c.thresholds.length ? " <span class='dim'>(classifier: " + c.thresholds.map(t => t.op + " " + t.value).join(", ") + ")</span>" : "") + "</td></tr>";
   $("facts").innerHTML = html;
   renderChips();
 }
@@ -528,10 +528,10 @@ let drag = null;
 const LABEL_COLOURS = {none: "#5b6070", not_meme: "#7fb2ff", meme: "#ffc933"};   // stacking order, bottom to top
 const STACK = ["none", "not_meme", "meme"];
 
-// The metrics that can be charted: {group, name, values (one per scanned row), threshold}. New kinds
+// The metrics that can be charted: {group, name, values (one per scanned row), thresholds [{op, value}] the classifier compares it with}. New kinds
 // of metric join this list.
 function metrics() {
-  return S.criteria.map(c => ({group: "Classifier criteria", name: c.name, values: S.scores[c.name], threshold: c.threshold}));
+  return S.criteria.map(c => ({group: "Classifier criteria", name: c.name, values: S.scores[c.name], thresholds: c.thresholds, description: c.description}));
 }
 
 // Counts per bin and human label for `rows`, over the fixed range [lo, hi].
@@ -635,9 +635,10 @@ function renderHistogram() {
     svg += "</g>";
   });
   svg += `<line x1="${L}" x2="${W - R}" y1="${T + ph}" y2="${T + ph}" stroke="#8b909c"/>`;
-  if (metric.threshold != null && metric.threshold >= lo && metric.threshold <= hi)
-    svg += `<line x1="${x(metric.threshold)}" x2="${x(metric.threshold)}" y1="${T}" y2="${T + ph}" stroke="#ff6b6b" stroke-dasharray="5 4"/>` +
-           `<text x="${x(metric.threshold) + 4}" y="${T + 12}" fill="#ff6b6b" font-size="11">threshold ${metric.threshold}</text>`;
+  for (const t of metric.thresholds)                                   // where the classifier draws its line(s)
+    if (t.value >= lo && t.value <= hi)
+      svg += `<line x1="${x(t.value)}" x2="${x(t.value)}" y1="${T}" y2="${T + ph}" stroke="#ff6b6b" stroke-dasharray="5 4"/>` +
+             `<text x="${x(t.value) + 4}" y="${T + 12}" fill="#ff6b6b" font-size="11">${t.op} ${t.value}</text>`;
   const active = activeRange(metric.name);                              // the strip filter on this metric
   if (active && active.max >= lo && active.min <= hi) {
     const a = x(Math.max(lo, active.min)), b = x(Math.min(hi, active.max));
@@ -772,7 +773,11 @@ function buildHistogramControls() {
   $("metric").replaceChildren(...[...new Set(metrics().map(m => m.group))].map(group => {
     const g = document.createElement("optgroup");
     g.label = group;
-    for (const m of metrics().filter(x => x.group === group)) g.appendChild(new Option(m.name, m.name));
+    for (const m of metrics().filter(x => x.group === group)) {
+      const o = new Option(m.name, m.name);
+      o.title = m.description || "";
+      g.appendChild(o);
+    }
     return g;
   }));
   $("tab-frame").onclick = () => setView(false);

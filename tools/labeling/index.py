@@ -17,8 +17,12 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
-from . import criteria as criteria_module
-from .criteria import Criterion
+from extract_memes import criteria as criteria_package
+from extract_memes.classifier import FrameClassifier
+from extract_memes.criteria import Criterion
+from extract_memes.heuristic_classifier import HeuristicClassifier
+from extract_memes.rule_classifier import RuleClassifier
+
 from .dataset import scan_step
 
 CACHE_ROOT = Path(".runtime/labeler")
@@ -32,7 +36,9 @@ class Index:
 
     pts: np.ndarray  # timestamp (seconds) of every decoded frame, by frame index
     rows: np.ndarray  # frame index of each scanned frame, ascending
+    criteria: list[Criterion]  # every criterion in extract_memes.criteria, as scored
     scores: dict[str, np.ndarray]  # criterion name -> score per row
+    thresholds: dict[str, list[dict]]  # criterion name -> the classifier's conditions on it [{op, value}]
     verdict: np.ndarray  # the production classifier's decision per row
     native_fps: float
     fps: float
@@ -53,9 +59,16 @@ def build(
     fps: float = 3.0,
     criteria: list[Criterion] | None = None,
     progress: Callable[[str, float | None], None] | None = None,
+    classifier: FrameClassifier | None = None,
 ) -> Index:
-    """Load the cached index for `video_path`, running a pass over the video for what's missing."""
-    criteria = criteria_module.CRITERIA if criteria is None else criteria
+    """Load the cached index for `video_path`, running a pass over the video for what's missing.
+
+    Scores come from the criteria in `extract_memes.criteria` (all of them unless `criteria` is
+    given) and the verdict from `classifier` (default: the pipeline's `HeuristicClassifier()`), so
+    they are the same numbers the pipeline computes. Each is cached with a fingerprint of its code.
+    """
+    criteria = list(criteria_package.all_criteria().values()) if criteria is None else criteria
+    classifier = HeuristicClassifier() if classifier is None else classifier
     cache_dir.mkdir(parents=True, exist_ok=True)
     thumb_dir = cache_dir / "thumbs"
     thumb_dir.mkdir(exist_ok=True)
@@ -73,8 +86,8 @@ def build(
         meta = dict(identity)
     hashes: dict[str, str] = meta.setdefault("hashes", {})
 
-    wanted = {c.name: c.source_hash() for c in criteria}
-    wanted[_VERDICT] = criteria_module.verdict_hash()
+    wanted = {c.name: c.fingerprint() for c in criteria}
+    wanted[_VERDICT] = _classifier_fingerprint(classifier)
     stale_scores = {name for name, h in wanted.items() if hashes.get(name) != h
                     or not (cache_dir / f"{name}.npy").is_file()}
     pts_path = cache_dir / "pts.npy"
@@ -85,7 +98,7 @@ def build(
     )
 
     if need_pts or need_thumbs or stale_scores:
-        _run_pass(video_path, cache_dir, step, criteria, stale_scores, need_pts, need_thumbs, thumb_dir, progress)
+        _run_pass(video_path, cache_dir, step, criteria, stale_scores, need_pts, need_thumbs, thumb_dir, progress, classifier)
         for name in stale_scores:
             hashes[name] = wanted[name]
         meta_path.write_text(json.dumps(meta))
@@ -98,7 +111,9 @@ def build(
     return Index(
         pts=pts,
         rows=rows,
+        criteria=criteria,
         scores={c.name: np.load(cache_dir / f"{c.name}.npy") for c in criteria},
+        thresholds=_thresholds(classifier),
         verdict=np.load(cache_dir / f"{_VERDICT}.npy"),
         native_fps=native_fps,
         fps=fps,
@@ -107,7 +122,26 @@ def build(
     )
 
 
-def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumbs, thumb_dir, progress=None) -> None:
+def _classifier_fingerprint(classifier: FrameClassifier) -> str:
+    if isinstance(classifier, RuleClassifier):
+        return classifier.fingerprint()
+    import hashlib
+    import inspect
+
+    return hashlib.sha1(inspect.getsource(type(classifier)).encode()).hexdigest()[:12]
+
+
+def _thresholds(classifier: FrameClassifier) -> dict[str, list[dict]]:
+    """What a rule classifier compares each criterion with, so the page can draw it."""
+    found: dict[str, list[dict]] = {}
+    if isinstance(classifier, RuleClassifier):
+        for condition in classifier.rule.conditions():
+            found.setdefault(condition.criterion, []).append({"op": condition.op, "value": condition.value})
+    return found
+
+
+def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumbs, thumb_dir, progress=None,
+              classifier=None) -> None:
     """One sequential decode that fills in whatever is missing."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -135,7 +169,7 @@ def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumb
                         for criterion in todo:
                             scores[criterion.name].append(criterion.score(frame))
                         if do_verdict:
-                            verdicts.append(criteria_module.verdict(frame))
+                            verdicts.append(classifier.is_meme_frame(frame))
                 index += 1
                 bar.update(1)
                 if progress and total and index % 500 == 0:

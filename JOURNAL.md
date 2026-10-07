@@ -140,3 +140,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: Removed the labeler's settings modal and precise-mode filter; marking start/end is done in the Precise view — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: The labeler's Frame tab has Preview, Gallery and Tiles view modes instead of a separate Precise tab — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: Gallery and Tiles support Shift/Cmd multi-selection of frames, shared with the strip — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: In the labeler, W saves the selected frames as one meme window (start = first, end = last) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

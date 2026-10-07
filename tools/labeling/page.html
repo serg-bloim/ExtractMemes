@@ -150,11 +150,11 @@
   <div id="info">
     <table id="facts"></table>
     <div>
-      <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <span id="edges"><button id="set-start" title="Make the selected frame the first frame of the meme at/near it, or of a new meme">Set start ([)</button> <button id="set-end" title="Make the selected frame the last frame of the meme at/near it, or of a new meme">Set end (])</button></span> <button id="copy" title="Copy video id, format id, timestamp and frame index">Copy locator (C)</button> <span id="err"></span></div>
+      <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <span id="edges"><button id="set-start" title="Make the selected frame the first frame of the meme at/near it, or of a new meme">Set start ([)</button> <button id="set-end" title="Make the selected frame the last frame of the meme at/near it, or of a new meme">Set end (])</button> <button id="set-window" title="With several frames selected: save from the first to the last of them as one meme (replaces memes it overlaps)">Save selection as meme (W)</button></span> <button id="copy" title="Copy video id, format id, timestamp and frame index">Copy locator (C)</button> <span id="err"></span></div>
       <div id="help">
         <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>Shift</kbd>/<kbd>⌘</kbd>+click rows to select several (<kbd>A</kbd> selects all shown, <kbd>Esc</kbd> clears) · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
         <kbd>M</kbd> meme · <kbd>X</kbd> not a meme · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
-        <kbd>[</kbd> start · <kbd>]</kbd> end of the meme · <kbd>C</kbd> copy locator · <kbd>H</kbd> frame/histogram · <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
+        <kbd>[</kbd> start · <kbd>]</kbd> end of the meme · <kbd>W</kbd> selected frames as one meme · <kbd>C</kbd> copy locator · <kbd>H</kbd> frame/histogram · <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
       </div>
     </div>
     <div><input id="goto" placeholder="jump to time (s or m:s)" size="20"></div>
@@ -419,6 +419,7 @@ function renderInfoPanel() {
   $("toggle").disabled = $("toggle-not").disabled = !hasSel;
   const copies = locatorLines().length;
   $("copy").disabled = copies === 0;
+  $("set-window").disabled = multi.size < 2;
   $("copy").textContent = copies > 1 ? "Copy " + copies + " locators (C)" : "Copy locator (C)";
   if (!hasSel) {
     $("view").classList.remove("marked", "notmeme");
@@ -524,6 +525,17 @@ function labelTouched(m, label) {
 }
 
 // The selected frame becomes the start or end of the meme at/near it, or of a new meme.
+// W: the selected frames, first to last, become one meme (any meme they overlap is replaced).
+async function saveWindow() {
+  if (multi.size < 2) { $("err").textContent = "select several frames first (Shift+click)"; return; }
+  const frames = Array.from(multi);
+  try {
+    applyLabels(await api("/api/range", {start: Math.min(...frames), end: Math.max(...frames)}));
+    multi = new Set();
+    refilter(); renderInfo();
+  } catch (e) { $("err").textContent = String(e); }
+}
+
 async function setEdge(edge) {
   if (!hasSel) return;
   try {
@@ -596,6 +608,7 @@ document.addEventListener("keydown", e => {
     case "ArrowDown": jumpInView(1); break;
     case "m": case "M": case " ": (e.shiftKey && e.key === "M" ? moveNearestMark() : toggleMark()); break;
     case "x": case "X": toggleLabel("not_meme"); break;
+    case "w": case "W": saveWindow(); break;
     case "[": setEdge("start"); break;
     case "]": setEdge("end"); break;
     case "n": case "N": jumpMark(1); break;
@@ -634,6 +647,7 @@ function resetFilters() {
   }
 }
 
+$("set-window").onclick = saveWindow;
 $("set-start").onclick = () => setEdge("start");
 $("set-end").onclick = () => setEdge("end");
 $("toggle").onclick = toggleMark;

@@ -121,6 +121,14 @@ class LabelerApp:
             self._save()
         return self.labels()
 
+    def set_range(self, first, last) -> dict:
+        """Save `first`..`last` as one meme's start and end, replacing the memes it overlaps."""
+        first, last = self._check_frame(first), self._check_frame(last)
+        with self._lock:
+            self.dataset.set_range(first, last, lambda f: float(self.index.pts[f]))
+            self._save()
+        return self.labels()
+
     def move(self, old, new) -> list[dict]:
         old, new = self._check_frame(old), self._check_frame(new)
         with self._lock:
@@ -267,6 +275,10 @@ def create_flask_app(workspace: Workspace | LabelerApp, profiles_dir: Path = pro
     def edge():
         return post_labels(lambda l, b: l.set_edge(b.get("frame"), b.get("edge"),
                                                    b.get("window", dataset_module.EXCLUSION_WINDOW_SECONDS)))
+
+    @web.post("/api/range")
+    def meme_range():
+        return post_labels(lambda l, b: l.set_range(b.get("start"), b.get("end")))
 
     @web.post("/api/move")
     def move():

@@ -266,3 +266,18 @@ def test_negative_frames_skip_a_memes_whole_range_plus_the_window(video):
 
     assert not any(0.3 - 1e-9 <= i / FPS <= 2.1 + 1e-9 for i in kept)
     assert 0 in kept and 55 in kept
+
+
+def test_set_range_replaces_the_memes_it_overlaps_and_drops_not_memes_inside():
+    ts = lambda f: f / 10
+    dataset = Dataset(video=None, memes=[Meme(1.0, 10), Meme(3.0, 30, 2.8, 28, 3.4, 34), Meme(9.0, 90)],
+                      not_memes=[NotMeme(2.0, 20), NotMeme(6.0, 60)])
+
+    dataset.set_range(25, 40, ts)
+
+    assert dataset.memes == [Meme(1.0, 10), Meme(3.0, 30, 2.5, 25, 4.0, 40), Meme(9.0, 90)]
+    assert dataset.not_memes == [NotMeme(2.0, 20), NotMeme(6.0, 60)]   # none inside 25..40
+    dataset.set_range(55, 65, ts)
+    assert dataset.memes[2] == Meme(5.5, 55, 5.5, 55, 6.5, 65) and dataset.not_memes == [NotMeme(2.0, 20)]
+    with pytest.raises(ValueError):
+        dataset.set_range(9, 3, ts)

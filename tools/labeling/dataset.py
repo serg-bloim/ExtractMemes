@@ -148,6 +148,21 @@ class Dataset:
         self.memes = sorted(others + [made], key=lambda m: m.meme_frame)
         self.remove_not_meme_in(first, last)
 
+    def set_range(self, first: int, last: int, ts_of: Callable[[int], float]) -> None:
+        """Make `first`..`last` one meme, replacing every meme that overlaps it.
+
+        The meme keeps the frame of the first replaced meme that lay inside the window as its own
+        frame (else `first`), and any not-meme inside the window is dropped.
+        """
+        if first > last:
+            raise ValueError("the start can't be after the end")
+        overlapped = [m for m in self.memes if m.first <= last and first <= m.last]
+        inside = [m.meme_frame for m in overlapped if first <= m.meme_frame <= last]
+        anchor = inside[0] if inside else first
+        made = Meme(round(ts_of(anchor), 3), anchor, round(ts_of(first), 3), first, round(ts_of(last), 3), last)
+        self.memes = sorted([m for m in self.memes if m not in overlapped] + [made], key=lambda m: m.meme_frame)
+        self.remove_not_meme_in(first, last)
+
     def remove_not_meme_in(self, first: int, last: int) -> None:
         self.not_memes = [n for n in self.not_memes if not first <= n.not_meme_frame <= last]
 

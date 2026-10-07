@@ -172,6 +172,24 @@ def test_start_and_end_of_a_meme_are_saved_and_the_range_is_one_meme(labeler):
     assert [m.first for m in ds.load(dataset_file).memes] == [60]
 
 
+def test_a_selection_is_saved_as_one_meme_window(labeler):
+    app, base, dataset_file = labeler
+    post(base, "/api/mark", {"frame": 14, "on": True})
+    post(base, "/api/mark", {"frame": 60, "on": True})
+
+    memes = post(base, "/api/range", {"start": 10, "end": 20})["memes"]
+
+    assert [(m["start_frame"], m["frame"], m["end_frame"]) for m in memes] == [(10, 14, 20), (None, 60, None)]
+    saved = ds.load(dataset_file).memes
+    assert (saved[0].start_frame, saved[0].end_frame) == (10, 20)
+    assert saved[0].end_ts == pytest.approx(20 / FPS, abs=0.001)
+    for body in ({"start": 20, "end": 10}, {"start": 0, "end": 999}, {"start": "a", "end": 3}):
+        with pytest.raises(urllib.error.HTTPError) as bad:
+            post(base, "/api/range", body)
+        assert bad.value.code == 400, body
+    assert ds.load(dataset_file).memes == saved
+
+
 def test_bad_edges_are_rejected_and_change_nothing(labeler):
     app, base, dataset_file = labeler
     post(base, "/api/edge", {"frame": 20, "edge": "start"})

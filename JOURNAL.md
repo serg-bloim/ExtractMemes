@@ -122,3 +122,5 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: Esc in the labeler now deselects every frame, not only the range — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: The labeler has a histogram view of the classifier criteria's scores (all frames, or only the selection), stacked by human label — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: Dragging a range on the labeler's histogram filters the strip to frames in that range — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler can copy the selected frame(s)' locator (video id, format id, timestamp, index) to the clipboard — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Each filter line in the labeler has its own reset button — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

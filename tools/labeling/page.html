@@ -15,6 +15,7 @@
   #filters .row { display:flex; gap:6px; align-items:center; margin-bottom:5px; flex-wrap:wrap; }
   #filters label { color:var(--dim); min-width:78px; }
   #filters input[type=number] { width:62px; }
+  #filters .rst { margin-left:auto; padding:0 6px; line-height:1.3; } #filters .rst:disabled { opacity:.3; cursor:default; }
   select, input, button { background:var(--bg); color:var(--text); border:1px solid var(--line);
          border-radius:4px; padding:2px 5px; font:inherit; }
   button { cursor:pointer; } button:hover { border-color:var(--dim); }
@@ -84,9 +85,11 @@
   <div id="bar"><span id="vid">no video</span><button id="open-btn">Open video…</button></div>
   <div id="filters">
     <div class="row"><label>Human label</label>
-      <select id="f-human"><option value="">any</option><option value="meme">meme</option><option value="not_meme">not a meme</option><option value="none">unlabeled</option><option value="other">anything but meme</option></select></div>
+      <select id="f-human"><option value="">any</option><option value="meme">meme</option><option value="not_meme">not a meme</option><option value="none">unlabeled</option><option value="other">anything but meme</option></select>
+      <button class="rst" data-for="f-human" title="Reset this filter">↺</button></div>
     <div class="row"><label>Classifier</label>
-      <select id="f-verdict"><option value="">any</option><option value="1">flagged</option><option value="0">not flagged</option></select></div>
+      <select id="f-verdict"><option value="">any</option><option value="1">flagged</option><option value="0">not flagged</option></select>
+      <button class="rst" data-for="f-verdict" title="Reset this filter">↺</button></div>
     <div id="f-criteria"></div>
     <div class="row">
       <button id="fp" title="Flagged by the classifier but not marked as a meme by me (unlabeled or not a meme)">False positives</button>
@@ -117,11 +120,11 @@
   <div id="info">
     <table id="facts"></table>
     <div>
-      <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <span id="err"></span></div>
+      <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <button id="copy" title="Copy video id, format id, timestamp and frame index">Copy locator (C)</button> <span id="err"></span></div>
       <div id="help">
         <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>Shift</kbd>/<kbd>⌘</kbd>+click rows to select several (<kbd>Esc</kbd> clears) · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
         <kbd>M</kbd> meme · <kbd>X</kbd> not a meme · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
-        <kbd>H</kbd> frame/histogram · <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
+        <kbd>C</kbd> copy locator · <kbd>H</kbd> frame/histogram · <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
       </div>
     </div>
     <div><input id="goto" placeholder="jump to time (s or m:s)" size="20"></div>
@@ -206,7 +209,13 @@ function matches(row, f) {
   return true;
 }
 
+function syncResets() {
+  for (const b of document.querySelectorAll("#filters .rst"))
+    b.disabled = b.dataset.for.split(",").every(id => $(id).value === "");
+}
+
 function refilter() {
+  syncResets();
   const f = filters();
   view = [];
   for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) view.push(r);
@@ -317,6 +326,9 @@ function renderInfoPanel() {
   $("big").hidden = !hasSel;
   $("none").hidden = hasSel;
   $("toggle").disabled = $("toggle-not").disabled = !hasSel;
+  const copies = locatorLines().length;
+  $("copy").disabled = copies === 0;
+  $("copy").textContent = copies > 1 ? "Copy " + copies + " locators (C)" : "Copy locator (C)";
   if (!hasSel) {
     $("view").classList.remove("marked", "notmeme");
     $("toggle").textContent = "Mark as meme (M)";
@@ -346,6 +358,32 @@ function renderInfoPanel() {
             (c.threshold != null ? " <span class='dim'>(threshold " + c.threshold + ")</span>" : "") + "</td></tr>";
   $("facts").innerHTML = html;
   renderChips();
+}
+
+// Where the selected frame(s) are: one line per frame, ready to paste into a note or a script.
+function locatorLines() {
+  const frames = multi.size > 1
+    ? Array.from(multi).sort((a, b) => a - b).map(r => S.rows[r])
+    : hasSel ? [sel] : [];
+  return frames.map(f => "video=" + S.video.id + " format=" + S.video.format_id +
+                         " ts=" + S.pts[f].toFixed(3) + " frame=" + f);
+}
+
+async function copyLocator() {
+  const lines = locatorLines();
+  if (!lines.length) return;
+  const text = lines.join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {                                       // no clipboard API (e.g. an insecure context)
+    const box = document.createElement("textarea");
+    box.value = text; document.body.appendChild(box); box.select();
+    const ok = document.execCommand("copy");
+    box.remove();
+    if (!ok) { $("err").textContent = "could not copy to the clipboard"; return; }
+  }
+  $("copy").textContent = "Copied " + (lines.length > 1 ? lines.length + " lines" : "✓");
+  setTimeout(renderInfo, 1500);
 }
 
 async function setMark(frame, on, label = "meme") {
@@ -429,10 +467,12 @@ document.addEventListener("keydown", e => {
     }
     return;
   }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;     // leave the browser's own shortcuts alone
   const big = e.shiftKey ? Math.round(S.native_fps) : 1;
   switch (e.key) {
     case "Escape": deselectAll(); break;
     case "h": case "H": setView(!histOn); break;
+    case "c": case "C": copyLocator(); break;
     case "ArrowLeft": select(sel - big); break;
     case "ArrowRight": select(sel + big); break;
     case "ArrowUp": jumpInView(-1); break;
@@ -456,10 +496,13 @@ function buildFilterInputs() {
     const row = document.createElement("div");
     row.className = "row";
     row.innerHTML = "<label>" + c.name + "</label><input type='number' step='any' id='min-" + c.name +
-                    "' placeholder='min'><input type='number' step='any' id='max-" + c.name + "' placeholder='max'>";
+                    "' placeholder='min'><input type='number' step='any' id='max-" + c.name + "' placeholder='max'>" +
+                    "<button class='rst' data-for='min-" + c.name + ",max-" + c.name + "' title='Reset this filter'>↺</button>";
     box.appendChild(row);
   }
   for (const el of document.querySelectorAll("#filters select, #filters input")) el.onchange = refilter;
+  for (const b of document.querySelectorAll("#filters .rst"))
+    b.onclick = () => { for (const id of b.dataset.for.split(",")) $(id).value = ""; refilter(); };
   $("fp").onclick = () => { resetFilters(); $("f-verdict").value = "1"; $("f-human").value = "other"; refilter(); };
   $("miss").onclick = () => { resetFilters(); $("f-verdict").value = "0"; $("f-human").value = "meme"; refilter(); };
   $("reset").onclick = () => { resetFilters(); refilter(); };
@@ -470,6 +513,7 @@ function resetFilters() {
 }
 
 $("toggle").onclick = toggleMark;
+$("copy").onclick = copyLocator;
 $("toggle-not").onclick = () => toggleLabel("not_meme");
 $("strip").addEventListener("scroll", renderStrip);
 window.addEventListener("resize", renderStrip);

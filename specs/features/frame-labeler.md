@@ -82,6 +82,8 @@ classifier disagrees with me, and keep the result in the repo.
       - by each criterion's score: a min/max range;
       - and combinations of these, so "flagged but not marked" (false positives) and "marked but
         not flagged" (misses) are one click each.
+      Each filter line has its own small reset button that puts only that filter back to its default
+      (greyed out when it already is); "Reset" still clears them all.
       Prev/next-in-filter keys jump to the neighbouring matching row, and the filter survives
       marking and unmarking (a row that stops matching disappears after the change, not during it).
 - [ ] AC15: **Multi-selection.** Shift+click on a strip row selects every row (of those currently
@@ -130,7 +132,12 @@ classifier disagrees with me, and keep the result in the repo.
       limits on the chart, which still charts all frames (or the selection), not only the filtered
       ones. Double-clicking the chart or a "Clear range" button removes the range, and editing the
       min/max boxes in the strip filters updates the shaded band.
-- [ ] AC21: Offline tests cover the server's frame, thumbnail and label endpoints against a small
+- [ ] AC21: **Copy frame locator.** A button (and the C key) beside the mark buttons copies to the
+      clipboard where the selected frame is: its video id, format id, timestamp and frame index, as
+      `video=<id> format=<format id> ts=<seconds, 3 decimals> frame=<index>`. With several frames
+      selected it copies one such line per frame, in frame order. The button is inactive when
+      nothing is selected, shows how many locators it will copy, and confirms after copying.
+- [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
 
@@ -245,3 +252,10 @@ Resolved by the user (2026-10-07):
   a bin range, it sets the metric's strip filter; shaded band, clear by double-click or button);
   the test criterion is now AC21. The chart keeps showing all frames/the selection so the range
   stays visible against the whole distribution.
+- 2026-10-07: The user asked for a button that copies the frame locator (video id, format id,
+  timestamp and index; one line per frame for a multi-selection). Added AC21; the test criterion is
+  now AC22. Shortcuts with Ctrl/Cmd/Alt held are no longer taken by the page, so the browser's own
+  Cmd+C still works.
+- 2026-10-07: The user asked for a small reset button on each filter line that resets only that
+  filter. Added to AC14 (human label, classifier and each criterion's min/max; disabled while a
+  filter is at its default).

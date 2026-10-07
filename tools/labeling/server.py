@@ -12,6 +12,7 @@ import cv2
 from flask import Flask, Response, jsonify, request
 
 from . import dataset as dataset_module
+from . import profiles as profiles_module
 from .dataset import Dataset
 from .index import FrameReader, Index
 from .workspace import BusyError, NoVideoError, Workspace
@@ -122,10 +123,11 @@ def _host_of(netloc: str | None) -> str | None:
     return urlsplit("//" + netloc).hostname if netloc else None
 
 
-def create_flask_app(workspace: Workspace | LabelerApp) -> Flask:
+def create_flask_app(workspace: Workspace | LabelerApp, profiles_dir: Path = profiles_module.PROFILES_DIR) -> Flask:
     """The HTTP interface of the workspace: the page, its API, thumbnails and frames.
 
-    A bare `LabelerApp` is accepted and wrapped as an already-open video.
+    A bare `LabelerApp` is accepted and wrapped as an already-open video. Saved filter profiles are
+    read from and written to `profiles_dir`.
     """
     if isinstance(workspace, LabelerApp):
         workspace = Workspace.ready(workspace)
@@ -219,5 +221,27 @@ def create_flask_app(workspace: Workspace | LabelerApp) -> Flask:
     @web.post("/api/move")
     def move():
         return post_labels(lambda l, b: l.move(b.get("from"), b.get("to")))
+
+    @web.get("/api/profiles")
+    def list_profiles():
+        return jsonify({"profiles": profiles_module.list_profiles(profiles_dir)})
+
+    @web.get("/api/profiles/<name>")
+    def get_profile(name: str):
+        try:
+            return jsonify({"name": name, "filters": profiles_module.load(name, profiles_dir)})
+        except profiles_module.ProfileNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
+        except profiles_module.ProfileError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @web.put("/api/profiles/<name>")
+    def save_profile(name: str):
+        body = request.get_json(silent=True) or {}
+        try:
+            profiles_module.save(name, body.get("filters"), profiles_dir)
+        except profiles_module.ProfileError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"name": name, "profiles": profiles_module.list_profiles(profiles_dir)})
 
     return web

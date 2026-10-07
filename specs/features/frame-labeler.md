@@ -151,6 +151,15 @@ classifier disagrees with me, and keep the result in the repo.
       `video=<id> format=<format id> ts=<seconds, 3 decimals> frame=<index>`. With several frames
       selected it copies one such line per frame, in frame order. The button is inactive when
       nothing is selected, shows how many locators it will copy, and confirms after copying.
+- [ ] AC21a: **Filter profiles.** The classifier filters (human label, classifier verdict and every
+      criterion's min/max) can be saved under a name and loaded back. A "Save filters" button with a
+      name field (default `profile1`) writes `data/datasets/profiles/classifier/<name>.yaml`,
+      replacing a profile of the same name, and a dropdown lists the saved profiles and applies the
+      one picked (a criterion the build doesn't have is skipped and reported). The file is plain
+      YAML with readable values (`human_label`: any / meme / not_meme / unlabeled /
+      anything_but_meme; `classifier`: any / flagged / not_flagged; `ranges`: per criterion
+      `{min, max}`, a missing bound open) and a `schema` version. A name is 1-64 letters, digits,
+      `_` or `-`, so nothing can be written outside that folder. Profiles belong to no video.
 - [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
@@ -301,3 +310,9 @@ Resolved by the user (2026-10-07):
   order, against a sequential decode on `FtU4MuksCzE` format 269: all identical.
 - 2026-10-07: The user asked for a shortcut to select all. A selects every row the strip shows
   (AC15), so it respects the filters; Cmd/Ctrl+A is left to the browser.
+- 2026-10-07: The user asked to save the classifier filters as a profile in
+  `data/datasets/profiles/classifier/<name | profile1>.yaml`. Added AC21a: save, plus loading from a
+  dropdown (a saved profile that can't be applied back is of little use). `tools/labeling/profiles.py`
+  holds the file format; the API is `GET /api/profiles`, `GET`/`PUT /api/profiles/<name>`. The folder
+  is under `data/datasets/`, which `.gitignore` already excludes, so profiles stay local unless that
+  rule is changed.

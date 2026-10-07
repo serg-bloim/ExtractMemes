@@ -12,6 +12,9 @@
          display:grid; grid-template-columns: 330px 1fr; height:100vh; overflow:hidden; }
   #side { display:flex; flex-direction:column; border-right:1px solid var(--line); min-height:0; }
   #filters { padding:8px; border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
+  #profiles { padding:8px 8px 3px; border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
+  #profiles .row { display:flex; gap:6px; align-items:center; margin-bottom:5px; }
+  #profiles label { color:var(--dim); min-width:78px; } #profiles select { flex:1; min-width:0; } #profiles input { width:110px; }
   #filters .row { display:flex; gap:6px; align-items:center; margin-bottom:5px; flex-wrap:wrap; }
   #filters label { color:var(--dim); min-width:78px; }
   #filters input[type=number] { width:62px; }
@@ -83,6 +86,12 @@
 <body>
 <div id="side">
   <div id="bar"><span id="vid">no video</span><button id="open-btn">Open video…</button></div>
+  <div id="profiles">
+    <div class="row"><label>Profile</label><select id="profile-select" title="Load a saved set of classifier filters"></select></div>
+    <div class="row"><input id="profile-name" placeholder="profile1" size="14" title="Name to save the current filters under (default profile1)">
+      <button id="profile-save" title="Save the current filters to data/datasets/profiles/classifier/">Save filters</button>
+      <span id="profile-msg" class="dim"></span></div>
+  </div>
   <div id="filters">
     <div class="row"><label>Human label</label>
       <select id="f-human"><option value="">any</option><option value="meme">meme</option><option value="not_meme">not a meme</option><option value="none">unlabeled</option><option value="other">anything but meme</option></select>
@@ -167,11 +176,14 @@ let anchorRow = 0;           // where a shift+click range starts
 const $ = id => document.getElementById(id);
 const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ":" + s.toFixed(3).padStart(6, "0"); };
 
-async function api(path, body) {
-  const res = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"},
-                                        body: JSON.stringify(body)} : undefined);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || res.status);
+async function api(path, body, method, payload) {
+  const send = payload || body;
+  const res = await fetch(path, send ? {method: method || "POST", headers: {"Content-Type": "application/json"},
+                                        body: JSON.stringify(send)} : undefined);
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch (e) { /* not JSON: a plain-text error from the server */ }
+  if (!res.ok) throw new Error((data && data.error) || (res.status + " " + text.slice(0, 120)));
   return data;
 }
 
@@ -811,6 +823,73 @@ function buildHistogramControls() {
   $("bins").oninput = renderHistogram;
 }
 
+// ---- filter profiles --------------------------------------------------------------------------
+// The classifier filters (human label, classifier verdict, criterion ranges) saved by name under
+// data/datasets/profiles/classifier/<name>.yaml and loaded back. The file uses readable words.
+const HUMAN_TO_FILE = {"": "any", meme: "meme", not_meme: "not_meme", none: "unlabeled", other: "anything_but_meme"};
+const VERDICT_TO_FILE = {"": "any", "1": "flagged", "0": "not_flagged"};
+const invert = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [v, k]));
+
+function profileFilters() {
+  const f = filters(), ranges = {};
+  for (const [name, [lo, hi]] of Object.entries(f.ranges)) {
+    const bounds = {};
+    if (lo !== -Infinity) bounds.min = lo;
+    if (hi !== Infinity) bounds.max = hi;
+    ranges[name] = bounds;
+  }
+  return {human_label: HUMAN_TO_FILE[f.human], classifier: VERDICT_TO_FILE[f.verdict], ranges};
+}
+
+function applyProfile(p) {
+  resetFilters();
+  $("f-human").value = invert(HUMAN_TO_FILE)[p.human_label] || "";
+  $("f-verdict").value = invert(VERDICT_TO_FILE)[p.classifier] || "";
+  const skipped = [];
+  for (const [name, b] of Object.entries(p.ranges || {})) {
+    const lo = $("min-" + name), hi = $("max-" + name);
+    if (!lo || !hi) { skipped.push(name); continue; }                  // a criterion this build doesn't have
+    lo.value = b.min ?? ""; hi.value = b.max ?? "";
+  }
+  refilter();
+  return skipped;
+}
+
+function profileMessage(text, bad = false) {
+  $("profile-msg").textContent = text;
+  $("profile-msg").style.color = bad ? "var(--flag)" : "";
+}
+
+async function refreshProfiles() {
+  const names = (await api("/api/profiles")).profiles;
+  $("profile-select").replaceChildren(new Option("Saved profiles (" + names.length + ") — load one…", ""),
+                                      ...names.map(n => new Option(n, n)));
+  $("profile-select").value = "";
+}
+
+async function saveProfile() {
+  const name = $("profile-name").value.trim() || "profile1";
+  try {
+    await api("/api/profiles/" + encodeURIComponent(name), undefined, "PUT", {filters: profileFilters()});
+    $("profile-name").value = name;
+    profileMessage("saved " + name);
+    await refreshProfiles();
+  } catch (e) { profileMessage(String(e), true); }
+}
+
+async function loadProfile(name) {
+  if (!name) return;
+  try {
+    const skipped = applyProfile((await api("/api/profiles/" + encodeURIComponent(name))).filters);
+    $("profile-name").value = name;
+    profileMessage(skipped.length ? "loaded " + name + " (unknown here: " + skipped.join(", ") + ")" : "loaded " + name);
+  } catch (e) { profileMessage(String(e), true); }
+}
+
+$("profile-save").onclick = saveProfile;
+$("profile-select").onchange = e => { const n = e.target.value; e.target.blur(); loadProfile(n); };
+$("profile-name").addEventListener("keydown", e => { if (e.key === "Enter") saveProfile(); e.stopPropagation(); });
+
 // ---- opening a video -------------------------------------------------------------------------
 let polling = false;
 let looked = null;           // the video the modal is showing: {id, formats, dataset, ...}
@@ -934,6 +1013,7 @@ $("src").addEventListener("keydown", e => { if (e.key === "Enter") lookup($("src
   document.title = "Labeler — " + S.video.id;
   buildFilterInputs();
   buildHistogramControls();
+  refreshProfiles().catch(e => profileMessage(String(e), true));
   applyLabels(S);
   refilter();
   select(S.memes.length ? S.memes[0].frame : 0);

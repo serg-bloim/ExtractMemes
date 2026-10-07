@@ -131,3 +131,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: Moved all classifier criteria into `extract_memes.criteria` (one auto-discovered module each) with a rule layer (`Condition`/`AllOf`/`AnyOf`/`RuleClassifier`); the labeler reuses them with no copies, and a new criterion file shows up in it — [specs/features/classifier-criteria.md](specs/features/classifier-criteria.md).
 - 2026-10-07: Fixed "could not load frame N" on the first frames of H.264 videos whose seek can't reach them — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: The labeler selects all shown frames with the A key — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler can save its classifier filters as a named profile (`data/datasets/profiles/classifier/<name>.yaml`, default `profile1`) and load them back — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

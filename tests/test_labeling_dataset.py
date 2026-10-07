@@ -243,7 +243,7 @@ def test_a_range_can_neither_invert_nor_overlap_and_a_not_meme_cannot_sit_in_it(
         dataset.set_edge(22, "bogus", ts, 1.0)
     with pytest.raises(ValueError):
         dataset.add_not_meme(22, 2.2)
-    dataset.memes.append(Meme(2.4, 24))          # a hand-made overlap: set_edge refuses to leave it overlapping
+    dataset.memes.append(Meme(2.4, 24, 2.3, 23, 2.6, 26))   # a hand-made overlap: set_edge refuses to leave it overlapping
     with pytest.raises(ValueError, match="overlap"):
         dataset.set_edge(24, "end", ts, 1.0)
 
@@ -275,10 +275,10 @@ def test_set_range_replaces_the_memes_it_overlaps_and_drops_not_memes_inside():
 
     dataset.set_range(25, 40, ts)
 
-    assert dataset.memes == [Meme(1.0, 10), Meme(3.0, 30, 2.5, 25, 4.0, 40), Meme(9.0, 90)]
+    assert dataset.memes == [Meme(1.0, 10), Meme(3.2, 32, 2.5, 25, 4.0, 40), Meme(9.0, 90)]   # frame = the center
     assert dataset.not_memes == [NotMeme(2.0, 20), NotMeme(6.0, 60)]   # none inside 25..40
     dataset.set_range(55, 65, ts)
-    assert dataset.memes[2] == Meme(5.5, 55, 5.5, 55, 6.5, 65) and dataset.not_memes == [NotMeme(2.0, 20)]
+    assert dataset.memes[2] == Meme(6.0, 60, 5.5, 55, 6.5, 65) and dataset.not_memes == [NotMeme(2.0, 20)]
     with pytest.raises(ValueError):
         dataset.set_range(9, 3, ts)
 
@@ -289,8 +289,24 @@ def test_add_many_makes_each_run_a_region_and_each_lone_frame_a_single_meme():
 
     dataset.add_many([30, 10, 11, 12, 13, 14, 15, 50, 51], ts)
 
-    assert dataset.memes == [Meme(1.4, 14, 1.0, 10, 1.5, 15),   # the single mark at 14 is absorbed
+    assert dataset.memes == [Meme(1.2, 12, 1.0, 10, 1.5, 15),   # the single mark at 14 is unmarked
                              Meme(3.0, 30), Meme(5.0, 50, 5.0, 50, 5.1, 51), Meme(9.0, 90, 8.0, 80, 9.5, 95)]
     assert dataset.not_memes == []
     dataset.add_many([81, 82], ts)                              # inside an existing region: it is replaced by the new run
     assert Meme(8.1, 81, 8.1, 81, 8.2, 82) in dataset.memes
+
+
+def test_a_start_and_end_center_the_meme_and_unmark_individual_marks_inside():
+    ts = lambda f: f / 10
+    dataset = Dataset(video=None, memes=[Meme(1.4, 14), Meme(5.0, 50)])
+
+    dataset.set_edge(12, "start", ts, 1.0)
+    assert dataset.memes[0] == Meme(1.4, 14, 1.2, 12, None, None)   # only a start: its frame stays
+    dataset.set_edge(18, "end", ts, 1.0)
+    assert dataset.memes[0] == Meme(1.5, 15, 1.2, 12, 1.8, 18)       # both edges: the frame is the center
+    dataset.set_edge(24, "end", ts, 1.0)
+    assert dataset.memes[0] == Meme(1.8, 18, 1.2, 12, 2.4, 24)       # a new end moves the center
+
+    dataset.memes = [Meme(1.4, 14, 1.2, 12, 2.2, 22), Meme(1.8, 18)]  # an individual mark inside the window
+    dataset.set_edge(24, "end", ts, 1.0)
+    assert dataset.memes == [Meme(1.8, 18, 1.2, 12, 2.4, 24)]        # is unmarked

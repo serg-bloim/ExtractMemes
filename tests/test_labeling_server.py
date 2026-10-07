@@ -179,7 +179,7 @@ def test_marking_many_frames_makes_runs_into_regions_and_lone_frames_single_meme
     memes = post(base, "/api/mark_many", {"frames": [30, 10, 11, 12, 13, 14, 15, 20], "on": True})["memes"]
 
     assert [(m["start_frame"], m["frame"], m["end_frame"]) for m in memes] == [
-        (10, 14, 15), (None, 20, None), (None, 30, None)]
+        (10, 12, 15), (None, 20, None), (None, 30, None)]
     saved = ds.load(dataset_file).memes
     assert (saved[0].start_frame, saved[0].end_frame) == (10, 15)
     assert saved[0].end_ts == pytest.approx(15 / FPS, abs=0.001)

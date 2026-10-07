@@ -186,9 +186,11 @@ classifier disagrees with me, and keep the result in the repo.
       a start/end counts as a meme on every frame of the range (strip rows, large view; unmarking any
       frame in it removes the whole meme); marking a not-meme inside a range, or moving a ranged meme
       with Shift+M, is refused. With several frames selected, `M` marks each run of consecutive
-      frames as one start..end meme and each frame on its own as a single-frame meme; a region absorbs the memes it
-      overlaps (individual marks inside it are saved only as the region, keeping the first one's frame as the meme's
-      frame), and not-memes inside it are dropped. If every selected frame is already a meme, `M` unmarks them. Ranges are saved on every change as optional `meme_start_ts/frame` and
+      frames as one start..end meme and each frame on its own as a single-frame meme; a region replaces the memes it
+      overlaps (individual marks inside it are unmarked and saved only as the region), and not-memes inside it are
+      dropped. A meme with both a start and an end has its own `meme_ts`/`meme_frame` at the window's center frame
+      ((start + end) // 2), however the window was made (`[` / `]` or `M`); individual marks inside a window made with
+      `[` / `]` are unmarked too. If every selected frame is already a meme, `M` unmarks them. Ranges are saved on every change as optional `meme_start_ts/frame` and
       `meme_end_ts/frame` on the meme ([labeled-video-dataset](labeled-video-dataset.md) AC3).
 - [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
@@ -395,3 +397,7 @@ Resolved by the user (2026-10-07):
   start..end meme, a lone frame a single meme, regions absorb overlapped memes. Tests added (dataset, server); checked in
   headless Chrome on tiles (a Shift run plus a Cmd-clicked frame, an individual mark inside the run absorbed, a later
   run over both merged them, M again unmarked).
+- 2026-10-07: The user asked that a meme window's `meme_ts`/`meme_frame` is its center frame and that individual
+  marks inside the window are unmarked. `Dataset.set_range` and `set_edge` (both edges set) now put the frame at
+  (start + end) // 2 instead of keeping the first absorbed mark's frame, and `set_edge` unmarks individual memes inside
+  the new window instead of refusing (an overlapping region is still refused). Tests updated and added.

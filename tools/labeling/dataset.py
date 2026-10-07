@@ -113,7 +113,8 @@ class Dataset:
     def set_edge(self, frame: int, edge: str, ts_of: Callable[[int], float], window: float) -> None:
         """Make `frame` the start or the end of a meme: the one `nearest_meme` finds, else a new one.
 
-        Raises `ValueError` if that would put the start after the end or overlap another meme.
+        With both a start and an end the meme's own frame is the window's center. Raises `ValueError` if that
+        would put the start after the end or overlap another region.
         """
         if edge not in ("start", "end"):
             raise ValueError("edge must be 'start' or 'end'")
@@ -136,8 +137,10 @@ class Dataset:
             end, last = frame, frame
             if first > frame:
                 first = anchor = frame
-        anchor = min(max(anchor, first), last)
-        others = [m for m in self.memes if m is not target]
+        anchor = (first + last) // 2 if start is not None and end is not None else min(max(anchor, first), last)
+        # individual marks inside the new window are unmarked; another region in the way is refused
+        others = [m for m in self.memes if m is not target and not (
+            m.start_frame is None and m.end_frame is None and first <= m.meme_frame <= last)]
         if any(m.first <= last and first <= m.last for m in others):
             raise ValueError("a meme can't overlap another meme")
         made = Meme(
@@ -151,21 +154,20 @@ class Dataset:
     def set_range(self, first: int, last: int, ts_of: Callable[[int], float]) -> None:
         """Make `first`..`last` one meme, replacing every meme that overlaps it.
 
-        The meme keeps the frame of the first replaced meme that lay inside the window as its own
-        frame (else `first`), and any not-meme inside the window is dropped.
+        The meme's own frame is the window's center, so any individual mark that lay inside the window
+        is unmarked, and any not-meme inside it is dropped.
         """
         if first > last:
             raise ValueError("the start can't be after the end")
         overlapped = [m for m in self.memes if m.first <= last and first <= m.last]
-        inside = [m.meme_frame for m in overlapped if first <= m.meme_frame <= last]
-        anchor = inside[0] if inside else first
+        anchor = (first + last) // 2
         made = Meme(round(ts_of(anchor), 3), anchor, round(ts_of(first), 3), first, round(ts_of(last), 3), last)
         self.memes = sorted([m for m in self.memes if m not in overlapped] + [made], key=lambda m: m.meme_frame)
         self.remove_not_meme_in(first, last)
 
     def add_many(self, frames: list[int], ts_of: Callable[[int], float]) -> None:
         """Mark `frames` as memes: each run of consecutive frames becomes one start..end meme and a
-        frame on its own a single-frame meme. A region absorbs the memes it overlaps."""
+        frame on its own a single-frame meme. A region replaces the memes it overlaps; its own frame is its center."""
         runs: list[list[int]] = []
         for frame in sorted(set(frames)):
             if runs and frame == runs[-1][-1] + 1:

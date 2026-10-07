@@ -118,3 +118,5 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: Added `labeler-run.sh`, a one-command start of the labeler dev server with the usual settings — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: The labeler page gained an "Open video" modal: paste a URL/id, see the video's details and formats, load the chosen format — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: The open-video modal preselects a format by fps ≥ 25, then smallest resolution, then not AV1 — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The open-video modal has a dropdown of processed videos (those with a dataset) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Esc in the labeler now deselects every frame, not only the range — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

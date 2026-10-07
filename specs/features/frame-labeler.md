@@ -88,7 +88,7 @@ classifier disagrees with me, and keep the result in the repo.
       shown, after filtering) from the last clicked row to this one; Cmd/Ctrl+click adds or removes
       one row. The selected rows are highlighted and counted, and the mark key then applies to all of
       them in one request: if every selected row is marked it unmarks them, otherwise it marks the
-      unmarked ones. Esc, a plain click or keyboard navigation clears the selection.
+      unmarked ones. Esc clears the selection and leaves no frame selected (the large view is empty and the mark keys do nothing until a frame is selected again; the arrow keys resume from the last frame). A plain click or keyboard navigation replaces the selection.
 - [ ] AC16: A second human label, **not a meme**, can be set on the selected frame or on a
       multi-selection with its own key (X) and button, and cleared the same way. A frame is a meme,
       a not-meme or unlabeled, never two: setting one replaces the other. Not-memes are saved to the
@@ -106,7 +106,7 @@ classifier disagrees with me, and keep the result in the repo.
       indexing, with a percentage), and switches the page to it when ready; a failure is shown in
       the modal and the video that was open stays open. A video that already has a dataset is
       shown with its dataset (counts of memes and not-memes) and can only be loaded in the format
-      the dataset records. The modal also lists the existing datasets for one-click opening. The
+      the dataset records. The modal also has a dropdown of the videos that already have a dataset (with their meme and not-meme counts); picking one looks it up like a pasted id. The
       command and scripts may be started with no video at all (and reopen the last one when there
       is one), in which case the page opens on the modal. Only YouTube video ids are accepted: the
       server builds the URL itself from the id and never fetches an address supplied by the page,
@@ -209,3 +209,12 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: The user set the format preselection rule: at least 25 fps, then the smallest
   resolution, then not AV1 (`preferred_format` in `dataset.py`, returned as `preselected` by the
   look-up). Each rule only breaks ties of the previous one.
+- 2026-10-07: The user asked for a dropdown of processed videos. Added one under the top bar
+  (videos with a dataset, with counts; the open one is marked and disabled); choosing one opens it in
+  its recorded format and shows the load progress in the modal.
+- 2026-10-07: The user asked to move the processed-videos dropdown into the open-video modal. It
+  replaces the modal's clickable list (and the top-bar dropdown); picking a video fills the id field
+  and runs the look-up, so its details and recorded format show before Load.
+- 2026-10-07: The user wanted Esc to deselect everything, not just the range. Esc now leaves no
+  frame selected (AC15): no strip highlight, an empty large view, mark keys inactive; arrows resume
+  from the last frame.

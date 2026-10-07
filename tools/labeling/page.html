@@ -51,22 +51,21 @@
   kbd { background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:0 4px; }
   #err { color:var(--flag); }
   #bar { display:flex; gap:8px; align-items:center; padding:8px; border-bottom:1px solid var(--line); }
+  #vid a { color:inherit; text-decoration:none; } #vid a:hover { text-decoration:underline; color:var(--sel); }
   #vid { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   #opener { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; z-index:10; }
   #opener[hidden] { display:none; }
   #opener .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; width:min(560px, 92vw); }
   #opener h3 { margin:0 0 10px; }
   #opener .row { display:flex; gap:6px; margin-bottom:10px; } #opener input { flex:1; padding:5px 8px; }
-  #ds-list { max-height:200px; overflow:auto; margin-bottom:10px; }
-  #ds-list div { padding:4px 6px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; }
-  #ds-list div:hover { background:#242832; }
+  #opener select { flex:1; padding:5px 8px; }
   #open-bar { width:100%; } #open-msg, #lookup-msg { min-height:1.4em; }
   #opener .card { display:flex; gap:12px; margin-bottom:10px; } #opener .card img { width:160px; height:90px; object-fit:cover; background:#000; flex:none; }
   #opener .title { font-weight:600; font-size:14px; margin-bottom:3px; }
   #fmt-list { max-height:220px; overflow:auto; margin-bottom:10px; border:1px solid var(--line); border-radius:4px; }
   #fmt-list label { display:flex; gap:10px; padding:4px 8px; cursor:pointer; align-items:center; }
   #fmt-list label:hover { background:#242832; } #fmt-list label.off { opacity:.45; cursor:default; }
-  .warn { color:var(--mark); } #ds-head { margin:8px 0 2px; }
+  .warn { color:var(--mark); }
 </style>
 </head>
 <body>
@@ -87,7 +86,7 @@
   <div id="strip"><div id="spacer"></div></div>
 </div>
 <div id="main">
-  <div id="view"><img id="big" alt=""></div>
+  <div id="view"><img id="big" alt=""><div id="none" class="dim" hidden>No frame selected</div></div>
   <div id="info">
     <table id="facts"></table>
     <div>
@@ -107,6 +106,7 @@
     <h3>Open a video</h3>
     <div class="row"><input id="src" placeholder="Paste a YouTube URL or video id" autocomplete="off">
       <button id="src-go">Look up</button><button id="src-close">Close</button></div>
+    <div id="ds-row" class="row" hidden><select id="vid-select" title="Videos that already have labels"></select></div>
     <div id="lookup-msg"></div>
     <div id="card" hidden>
       <div class="card"><img id="th" alt="">
@@ -116,8 +116,6 @@
     </div>
     <div id="open-msg"></div>
     <progress id="open-bar" max="1" hidden></progress>
-    <div id="ds-head" class="dim">Videos with a dataset</div>
-    <div id="ds-list"></div>
   </div>
 </div>
 <script>
@@ -131,6 +129,7 @@ let notFrames = new Set();
 let rowMarked = [];          // per strip row: is there a meme mark mapped to it
 let rowNot = [];             // per strip row: is there a not-a-meme mark mapped to it
 let loadToken = 0;
+let hasSel = true;           // false after Esc: no frame is selected (`sel` is only where the arrows resume)
 let multi = new Set();       // strip rows selected with shift/cmd+click
 let anchorRow = 0;           // where a shift+click range starts
 
@@ -194,7 +193,7 @@ function renderStrip() {
   const strip = $("strip"), spacer = $("spacer");
   const first = Math.max(0, Math.floor(strip.scrollTop / ROW_H) - 3);
   const last = Math.min(view.length, Math.ceil((strip.scrollTop + strip.clientHeight) / ROW_H) + 3);
-  const selRow = rowOf(sel);
+  const selRow = hasSel ? rowOf(sel) : -1;
   const frag = document.createDocumentFragment();
   for (let i = first; i < last; i++) {
     const r = view[i], idx = S.rows[r];
@@ -241,6 +240,7 @@ function clickRow(r, i, e) {
 
 function select(frame, scroll = true, keepMulti = false) {
   if (!keepMulti) multi = new Set();
+  hasSel = true;
   sel = Math.max(0, Math.min(S.frame_count - 1, frame));
   const token = ++loadToken;
   const img = new Image();
@@ -257,7 +257,41 @@ function select(frame, scroll = true, keepMulti = false) {
   renderStrip();
 }
 
+function deselectAll() {
+  multi = new Set();
+  hasSel = false;
+  loadToken++;                                       // drop a frame that is still loading
+  $("big").removeAttribute("src");
+  renderInfo();
+  renderStrip();
+}
+
+function renderChips() {
+  const chip = (m, label) => {
+    const el = document.createElement("span");
+    el.className = "chip" + (label === "not_meme" ? " neg" : "") + (hasSel && m.frame === sel ? " cur" : "");
+    el.textContent = (label === "not_meme" ? "✗ " : "") + fmt(m.ts) + " #" + m.frame;
+    el.onclick = () => select(m.frame);
+    const x = document.createElement("b"); x.textContent = "✕"; x.title = "remove this label";
+    x.onclick = e => { e.stopPropagation(); setMark(m.frame, false, label); };
+    el.appendChild(x);
+    return el;
+  };
+  $("marks").replaceChildren(...S.memes.map(m => chip(m, "meme")), ...S.not_memes.map(m => chip(m, "not_meme")));
+}
+
 function renderInfo() {
+  $("big").hidden = !hasSel;
+  $("none").hidden = hasSel;
+  $("toggle").disabled = $("toggle-not").disabled = !hasSel;
+  if (!hasSel) {
+    $("view").classList.remove("marked", "notmeme");
+    $("toggle").textContent = "Mark as meme (M)";
+    $("toggle-not").textContent = "Mark as not a meme (X)";
+    $("facts").innerHTML = "<tr><td class='dim'>No frame selected</td></tr>";
+    renderChips();
+    return;
+  }
   const r = rowOf(sel), onRow = S.rows[r] === sel;
   const marked = memeFrames.has(sel);
   const notMarked = notFrames.has(sel);
@@ -278,17 +312,7 @@ function renderInfo() {
     html += "<tr><td class='dim'>" + c.name + "</td><td>" + S.scores[c.name][r] +
             (c.threshold != null ? " <span class='dim'>(threshold " + c.threshold + ")</span>" : "") + "</td></tr>";
   $("facts").innerHTML = html;
-  const chip = (m, label) => {
-    const el = document.createElement("span");
-    el.className = "chip" + (label === "not_meme" ? " neg" : "") + (m.frame === sel ? " cur" : "");
-    el.textContent = (label === "not_meme" ? "✗ " : "") + fmt(m.ts) + " #" + m.frame;
-    el.onclick = () => select(m.frame);
-    const x = document.createElement("b"); x.textContent = "✕"; x.title = "remove this label";
-    x.onclick = e => { e.stopPropagation(); setMark(m.frame, false, label); };
-    el.appendChild(x);
-    return el;
-  };
-  $("marks").replaceChildren(...S.memes.map(m => chip(m, "meme")), ...S.not_memes.map(m => chip(m, "not_meme")));
+  renderChips();
 }
 
 async function setMark(frame, on, label = "meme") {
@@ -300,6 +324,7 @@ async function setMark(frame, on, label = "meme") {
 }
 
 async function toggleLabel(label) {
+  if (!hasSel && multi.size <= 1) return;           // nothing is selected
   const rowFlag = label === "meme" ? rowMarked : rowNot;
   const frameSet = label === "meme" ? memeFrames : notFrames;
   const list = label === "meme" ? S.memes : S.not_memes;
@@ -322,6 +347,7 @@ const toggleMark = () => toggleLabel("meme");
 
 // Shift+M: the same meme was marked on another frame; move that mark here instead of adding one.
 async function moveNearestMark() {
+  if (!hasSel) return;
   const here = S.pts[sel];
   const near = S.memes.filter(m => m.frame !== sel && Math.abs(m.ts - here) <= S.window)
                       .sort((a, b) => Math.abs(a.ts - here) - Math.abs(b.ts - here))[0];
@@ -372,7 +398,7 @@ document.addEventListener("keydown", e => {
   }
   const big = e.shiftKey ? Math.round(S.native_fps) : 1;
   switch (e.key) {
-    case "Escape": multi = new Set(); renderInfo(); renderStrip(); break;
+    case "Escape": deselectAll(); break;
     case "ArrowLeft": select(sel - big); break;
     case "ArrowRight": select(sel + big); break;
     case "ArrowUp": jumpInView(-1); break;
@@ -428,15 +454,20 @@ const mb = n => n ? (n / 1048576).toFixed(1) + " MB" : "size unknown";
 const dur = t => t ? Math.floor(t / 3600) + ":" + String(Math.floor(t % 3600 / 60)).padStart(2, "0") + ":" + String(Math.floor(t % 60)).padStart(2, "0") : "";
 
 function renderStatus(st) {
-  $("vid").textContent = st.video ? st.video : "no video";
-  $("ds-head").hidden = !st.datasets.length;
-  $("ds-list").replaceChildren(...st.datasets.map(d => {
-    const el = document.createElement("div");
-    el.innerHTML = "<span>" + d.id + (d.id === st.video ? " (open)" : "") + "</span><span class='dim'>" +
-                   d.memes + " memes · " + d.not_memes + " not memes</span>";
-    el.onclick = () => { $("src").value = d.id; lookup(d.id); };
-    return el;
-  }));
+  const vid = $("vid");
+  if (st.video) {
+    const link = document.createElement("a");
+    link.href = "https://www.youtube.com/watch?v=" + encodeURIComponent(st.video);
+    link.target = "_blank"; link.rel = "noopener noreferrer";
+    link.textContent = st.video; link.title = "Open on YouTube";
+    vid.replaceChildren(link);
+  } else vid.textContent = "no video";
+  const pick = $("vid-select");
+  $("ds-row").hidden = !st.datasets.length;
+  pick.replaceChildren(new Option("Processed videos (" + st.datasets.length + ") — pick one to look it up…", ""),
+    ...st.datasets.map(d => new Option(d.id + (d.id === st.video ? "  ✓ open" : "") + " — " + d.memes +
+                                       " memes · " + d.not_memes + " not memes", d.id)));
+  pick.value = "";
   const loading = st.state === "loading";
   $("open-msg").textContent = st.message || "";
   $("open-msg").style.color = st.state === "error" ? "var(--flag)" : "";
@@ -510,6 +541,13 @@ async function loadSelected() {
   poll();
 }
 
+$("vid-select").onchange = e => {
+  const id = e.target.value;
+  e.target.blur();                                  // so the arrow keys step frames again
+  if (!id) return;
+  $("src").value = id;
+  lookup(id);                                       // shows its details and recorded format; then Load
+};
 $("open-btn").onclick = () => showOpener(true);
 $("src-close").onclick = () => { $("opener").hidden = true; };
 $("src-go").onclick = () => lookup($("src").value);

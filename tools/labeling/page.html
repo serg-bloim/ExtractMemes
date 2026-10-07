@@ -50,6 +50,17 @@
   #help { color:var(--dim); font-size:12px; }
   kbd { background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:0 4px; }
   #err { color:var(--flag); }
+  #tabs { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  #tabs button.on { border-color:var(--sel); color:var(--sel); }
+  #tabs .sp { flex:1; }
+  #hist { flex:1; min-height:0; display:none; flex-direction:column; gap:6px; background:var(--panel); border:1px solid var(--line); padding:10px; overflow:auto; }
+  #hist.on { display:flex; }
+  #hist svg { width:100%; height:auto; max-height:100%; flex:1; min-height:200px; }
+  #hist-stats { color:var(--dim); font-size:12px; }
+  #hist-scope { font-weight:600; }
+  .legend span { margin-right:12px; } .legend i { display:inline-block; width:10px; height:10px; margin-right:4px; vertical-align:-1px; }
+  #hist input[type=number] { width:56px; }
+  #hist-svg { cursor:crosshair; user-select:none; }
   #bar { display:flex; gap:8px; align-items:center; padding:8px; border-bottom:1px solid var(--line); }
   #vid a { color:inherit; text-decoration:none; } #vid a:hover { text-decoration:underline; color:var(--sel); }
   #vid { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
@@ -86,7 +97,23 @@
   <div id="strip"><div id="spacer"></div></div>
 </div>
 <div id="main">
+  <div id="tabs">
+    <button id="tab-frame" class="on">Frame</button><button id="tab-hist" title="H">Histogram</button>
+    <span id="hist-controls" hidden>
+      <select id="metric"></select>
+      bins <input id="bins" type="number" min="5" max="200" value="40">
+      <label><input id="log" type="checkbox"> log scale</label>
+      <button id="hist-clear" hidden title="Remove the range filter on this metric (or double-click the chart)">Clear range</button>
+    </span>
+    <span class="sp"></span>
+  </div>
   <div id="view"><img id="big" alt=""><div id="none" class="dim" hidden>No frame selected</div></div>
+  <div id="hist">
+    <div id="hist-scope"></div>
+    <svg id="hist-svg" viewBox="0 0 820 380" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="legend"><span><i style="background:#ffc933"></i>meme</span><span><i style="background:#7fb2ff"></i>not a meme</span><span><i style="background:#5b6070"></i>unlabeled</span><span class="dim">drag across the chart to filter the strip by that range</span></div>
+    <div id="hist-stats"></div>
+  </div>
   <div id="info">
     <table id="facts"></table>
     <div>
@@ -94,7 +121,7 @@
       <div id="help">
         <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>Shift</kbd>/<kbd>⌘</kbd>+click rows to select several (<kbd>Esc</kbd> clears) · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
         <kbd>M</kbd> meme · <kbd>X</kbd> not a meme · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
-        <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
+        <kbd>H</kbd> frame/histogram · <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
       </div>
     </div>
     <div><input id="goto" placeholder="jump to time (s or m:s)" size="20"></div>
@@ -187,6 +214,7 @@ function refilter() {
                            S.memes.length + " marked";
   $("spacer").style.height = view.length * ROW_H + "px";
   renderStrip();
+  renderHistogram();
 }
 
 function renderStrip() {
@@ -281,6 +309,11 @@ function renderChips() {
 }
 
 function renderInfo() {
+  renderInfoPanel();
+  renderHistogram();
+}
+
+function renderInfoPanel() {
   $("big").hidden = !hasSel;
   $("none").hidden = hasSel;
   $("toggle").disabled = $("toggle-not").disabled = !hasSel;
@@ -399,6 +432,7 @@ document.addEventListener("keydown", e => {
   const big = e.shiftKey ? Math.round(S.native_fps) : 1;
   switch (e.key) {
     case "Escape": deselectAll(); break;
+    case "h": case "H": setView(!histOn); break;
     case "ArrowLeft": select(sel - big); break;
     case "ArrowRight": select(sel + big); break;
     case "ArrowUp": jumpInView(-1); break;
@@ -439,6 +473,214 @@ $("toggle").onclick = toggleMark;
 $("toggle-not").onclick = () => toggleLabel("not_meme");
 $("strip").addEventListener("scroll", renderStrip);
 window.addEventListener("resize", renderStrip);
+
+// ---- histogram view ---------------------------------------------------------------------------
+let histOn = false;
+let histGeom = null;         // the last drawn chart's geometry, for turning a drag into values
+let drag = null;
+const LABEL_COLOURS = {none: "#5b6070", not_meme: "#7fb2ff", meme: "#ffc933"};   // stacking order, bottom to top
+const STACK = ["none", "not_meme", "meme"];
+
+// The metrics that can be charted: {group, name, values (one per scanned row), threshold}. New kinds
+// of metric join this list.
+function metrics() {
+  return S.criteria.map(c => ({group: "Classifier criteria", name: c.name, values: S.scores[c.name], threshold: c.threshold}));
+}
+
+// Counts per bin and human label for `rows`, over the fixed range [lo, hi].
+function histogramData(values, rows, labelOf, lo, hi, bins) {
+  const counts = Array.from({length: bins}, () => ({none: 0, not_meme: 0, meme: 0, total: 0}));
+  const span = hi - lo || 1;
+  for (const r of rows) {
+    const b = Math.max(0, Math.min(bins - 1, Math.floor((values[r] - lo) / span * bins)));
+    counts[b][labelOf(r)]++; counts[b].total++;
+  }
+  return counts;
+}
+
+function summary(vals) {
+  if (!vals.length) return null;
+  const sorted = [...vals].sort((a, b) => a - b), n = sorted.length;
+  const mean = sorted.reduce((a, b) => a + b, 0) / n;
+  const median = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+  return {n, min: sorted[0], max: sorted[n - 1], mean, median};
+}
+
+function histogramScope() {
+  if (multi.size > 1) return {rows: Array.from(multi), text: multi.size + " selected frames"};
+  if (hasSel) {
+    const r = rowOf(sel);
+    return {rows: [r], text: "frame #" + sel + (S.rows[r] === sel ? "" : " (scored row #" + S.rows[r] + ")")};
+  }
+  return {rows: S.rows.map((_, r) => r), text: "all " + S.rows.length + " scanned frames"};
+}
+
+const num = v => Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2);
+
+function renderHistogram() {
+  if (!histOn) return;
+  const metric = metrics().find(m => m.name === $("metric").value) || metrics()[0];
+  const bins = Math.max(5, Math.min(200, +$("bins").value || 40));
+  const logScale = $("log").checked;
+  const all = metric.values;
+  let lo = Infinity, hi = -Infinity;
+  for (const v of all) { if (v < lo) lo = v; if (v > hi) hi = v; }   // one range for every selection
+  const scope = histogramScope();
+  const counts = histogramData(all, scope.rows, humanLabel, lo, hi, bins);
+  const maxTotal = Math.max(1, ...counts.map(c => c.total));
+  const yOf = n => logScale ? Math.log10(n + 1) / Math.log10(maxTotal + 1) : n / maxTotal;
+
+  const W = 820, H = 380, L = 54, R = 14, T = 12, B = 34, pw = W - L - R, ph = H - T - B;
+  const x = v => L + (v - lo) / ((hi - lo) || 1) * pw;
+  let svg = "";
+  let lastTick = -1;
+  for (let i = 0; i <= 4; i++) {                                       // y grid; whole counts, no repeats
+    const f = i / 4, n = logScale ? Math.round(Math.pow(maxTotal + 1, f) - 1) : Math.round(maxTotal * f);
+    if (n === lastTick) continue;
+    lastTick = n;
+    const y = T + ph * (1 - yOf(n));
+    svg += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="#2f333d"/><text x="${L - 6}" y="${y + 4}" text-anchor="end" fill="#8b909c" font-size="11">${n}</text>`;
+  }
+  for (let i = 0; i <= 5; i++) {                                       // x ticks
+    const v = lo + (hi - lo) * i / 5;
+    svg += `<text x="${x(v)}" y="${H - 12}" text-anchor="middle" fill="#8b909c" font-size="11">${num(v)}</text>`;
+  }
+  histGeom = {name: metric.name, L, T, pw, ph, lo, hi, bins};
+  const bw = pw / bins;
+  counts.forEach((c, i) => {
+    if (!c.total) return;
+    const top = yOf(c.total) * ph;
+    let y = T + ph;
+    const tip = `${num(lo + (hi - lo) * i / bins)} – ${num(lo + (hi - lo) * (i + 1) / bins)}: ${c.total} (` +
+                `meme ${c.meme}, not a meme ${c.not_meme}, unlabeled ${c.none})`;
+    svg += `<g><title>${tip}</title>`;
+    for (const label of STACK) {
+      if (!c[label]) continue;
+      const h = top * c[label] / c.total;
+      y -= h;
+      svg += `<rect x="${L + i * bw + 0.5}" y="${y}" width="${Math.max(0.5, bw - 1)}" height="${h}" fill="${LABEL_COLOURS[label]}"/>`;
+    }
+    svg += "</g>";
+  });
+  svg += `<line x1="${L}" x2="${W - R}" y1="${T + ph}" y2="${T + ph}" stroke="#8b909c"/>`;
+  if (metric.threshold != null && metric.threshold >= lo && metric.threshold <= hi)
+    svg += `<line x1="${x(metric.threshold)}" x2="${x(metric.threshold)}" y1="${T}" y2="${T + ph}" stroke="#ff6b6b" stroke-dasharray="5 4"/>` +
+           `<text x="${x(metric.threshold) + 4}" y="${T + 12}" fill="#ff6b6b" font-size="11">threshold ${metric.threshold}</text>`;
+  const active = activeRange(metric.name);                              // the strip filter on this metric
+  if (active) {
+    const a = x(Math.max(lo, active.min)), b = x(Math.min(hi, active.max));
+    svg += `<rect x="${a}" y="${T}" width="${Math.max(1, b - a)}" height="${ph}" fill="#3b82f6" fill-opacity=".18" pointer-events="none"/>` +
+           `<line x1="${a}" x2="${a}" y1="${T}" y2="${T + ph}" stroke="#3b82f6" pointer-events="none"/>` +
+           `<line x1="${b}" x2="${b}" y1="${T}" y2="${T + ph}" stroke="#3b82f6" pointer-events="none"/>` +
+           `<text x="${(a + b) / 2}" y="${T + ph - 6}" text-anchor="middle" fill="#9cc2ff" font-size="11" pointer-events="none">strip filter ${num(Math.max(lo, active.min))} – ${num(Math.min(hi, active.max))}</text>`;
+  }
+  $("hist-clear").hidden = !active;
+  const vals = scope.rows.map(r => all[r]);
+  if (vals.length <= 20)                                               // few values: mark each one
+    vals.forEach(v => { svg += `<line x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T + ph}" stroke="#ffffff" stroke-opacity=".8"/>`; });
+  if (vals.length === 1)
+    svg += `<text x="${Math.min(x(vals[0]) + 5, W - 70)}" y="${T + 26}" fill="#fff" font-size="12">${num(vals[0])}</text>`;
+  $("hist-svg").innerHTML = svg;
+
+  const per = {meme: 0, not_meme: 0, none: 0};
+  for (const r of scope.rows) per[humanLabel(r)]++;
+  const st = summary(vals);
+  $("hist-scope").textContent = metric.name + " over " + scope.text;
+  $("hist-stats").textContent = st
+    ? "n " + st.n + " · min " + num(st.min) + " · max " + num(st.max) + " · mean " + num(st.mean) +
+      " · median " + num(st.median) + "   |   meme " + per.meme + " · not a meme " + per.not_meme + " · unlabeled " + per.none
+    : "no frames";
+}
+
+// The value range covered by bins a..b (inclusive) of `bins` equal bins over [lo, hi]; the last bin
+// includes its upper edge, the others stop just short of the next bin's first value.
+function binRange(a, b, lo, hi, bins) {
+  const w = (hi - lo) / bins;
+  return {min: lo + a * w, max: b >= bins - 1 ? hi : lo + (b + 1) * w - w * 1e-9};
+}
+
+function activeRange(name) {
+  const lo = $("min-" + name), hi = $("max-" + name);
+  if (!lo || !hi || (lo.value === "" && hi.value === "")) return null;
+  return {min: lo.value === "" ? -Infinity : +lo.value, max: hi.value === "" ? Infinity : +hi.value};
+}
+
+function chartX(evt) {
+  const svg = $("hist-svg"), pt = svg.createSVGPoint();
+  pt.x = evt.clientX; pt.y = evt.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse()).x;
+}
+
+function binAt(x) {
+  const g = histGeom;
+  return Math.max(0, Math.min(g.bins - 1, Math.floor((x - g.L) / g.pw * g.bins)));
+}
+
+function drawDrag() {
+  const g = histGeom, svg = $("hist-svg");
+  let rect = svg.querySelector("#hist-drag");
+  if (!rect) {
+    rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.id = "hist-drag"; rect.setAttribute("fill", "#3b82f6"); rect.setAttribute("fill-opacity", ".3");
+    rect.setAttribute("pointer-events", "none");
+    svg.appendChild(rect);
+  }
+  const a = binAt(Math.min(drag.x0, drag.x1)), b = binAt(Math.max(drag.x0, drag.x1)), bw = g.pw / g.bins;
+  rect.setAttribute("x", g.L + a * bw); rect.setAttribute("width", (b - a + 1) * bw);
+  rect.setAttribute("y", g.T); rect.setAttribute("height", g.ph);
+}
+
+function setRangeFilter(name, min, max) {
+  const lo = $("min-" + name), hi = $("max-" + name);
+  if (!lo || !hi) { $("err").textContent = name + " can't be used as a strip filter"; return; }
+  const text = v => v === null ? "" : String(+v.toPrecision(7));
+  lo.value = text(min); hi.value = text(max);
+  refilter();                                        // also redraws the histogram with the shaded range
+}
+
+function commitDrag() {
+  const g = histGeom, d = drag;
+  drag = null;
+  if (!g || !d) return;
+  const {min, max} = binRange(binAt(Math.min(d.x0, d.x1)), binAt(Math.max(d.x0, d.x1)), g.lo, g.hi, g.bins);
+  setRangeFilter(g.name, min, max);
+}
+
+function setView(histogram) {
+  histOn = histogram;
+  $("view").style.display = histogram ? "none" : "";
+  $("hist").classList.toggle("on", histogram);
+  $("hist-controls").hidden = !histogram;
+  $("tab-frame").classList.toggle("on", !histogram);
+  $("tab-hist").classList.toggle("on", histogram);
+  renderHistogram();
+}
+
+function buildHistogramControls() {
+  $("metric").replaceChildren(...[...new Set(metrics().map(m => m.group))].map(group => {
+    const g = document.createElement("optgroup");
+    g.label = group;
+    for (const m of metrics().filter(x => x.group === group)) g.appendChild(new Option(m.name, m.name));
+    return g;
+  }));
+  $("tab-frame").onclick = () => setView(false);
+  $("tab-hist").onclick = () => setView(true);
+  for (const id of ["metric", "bins", "log"]) $(id).onchange = renderHistogram;
+  const svg = $("hist-svg");
+  svg.addEventListener("mousedown", e => {
+    if (!histGeom || e.button !== 0) return;
+    const x = chartX(e);
+    if (x < histGeom.L || x > histGeom.L + histGeom.pw) return;
+    drag = {x0: x, x1: x};
+    e.preventDefault();
+    drawDrag();
+  });
+  window.addEventListener("mousemove", e => { if (drag) { drag.x1 = chartX(e); drawDrag(); } });
+  window.addEventListener("mouseup", e => { if (drag) { drag.x1 = chartX(e); commitDrag(); } });
+  svg.addEventListener("dblclick", () => { if (histGeom) setRangeFilter(histGeom.name, null, null); });
+  $("hist-clear").onclick = () => { if (histGeom) setRangeFilter(histGeom.name, null, null); };
+  $("bins").oninput = renderHistogram;
+}
 
 // ---- opening a video -------------------------------------------------------------------------
 let polling = false;
@@ -562,6 +804,7 @@ $("src").addEventListener("keydown", e => { if (e.key === "Enter") lookup($("src
   S = await api("/api/state");
   document.title = "Labeler — " + S.video.id;
   buildFilterInputs();
+  buildHistogramControls();
   applyLabels(S);
   refilter();
   select(S.memes.length ? S.memes[0].frame : 0);

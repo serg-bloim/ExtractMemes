@@ -111,7 +111,26 @@ classifier disagrees with me, and keep the result in the repo.
       is one), in which case the page opens on the modal. Only YouTube video ids are accepted: the
       server builds the URL itself from the id and never fetches an address supplied by the page,
       and the format id is checked to be a plain id, not a yt-dlp format expression.
-- [ ] AC19: Offline tests cover the server's frame, thumbnail and label endpoints against a small
+- [ ] AC19: **Histogram view.** The main area has a switch between the frame view and a histogram
+      view (button and the H key). The histogram view has a list of metrics to chart, starting with
+      the classifier criteria's scores (`band`, `texture`, ... from the registry; later metrics
+      join the same list), a bin count and a log-scale option. It charts the metric over:
+      - **all scanned frames** when no frame is selected;
+      - **only the selected frames** when one or several are selected (a single frame shows its one
+        value).
+      Bars are stacked by human label (meme / not a meme / unlabeled) so the classes can be told
+      apart, the x axis spans the metric's range over the whole video so charts of different
+      selections are comparable, a criterion's threshold is drawn as a line, the selected values
+      are marked when there are few of them, and the chart is accompanied by the count, min, max,
+      mean and median of what it shows. It updates as the selection or the labels change.
+- [ ] AC20: **Filtering from the histogram.** Dragging across the histogram selects a range of bins
+      (a plain click selects one bin) and sets that metric's min/max in the strip filters (AC14),
+      so the strip shows only the frames whose value falls in the range; other filters stay as they
+      are and combine with it. The range is snapped to bin edges and shown as a shaded band with its
+      limits on the chart, which still charts all frames (or the selection), not only the filtered
+      ones. Double-clicking the chart or a "Clear range" button removes the range, and editing the
+      min/max boxes in the strip filters updates the shaded band.
+- [ ] AC21: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
 
@@ -218,3 +237,11 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: The user wanted Esc to deselect everything, not just the range. Esc now leaves no
   frame selected (AC15): no strip highlight, an empty large view, mark keys inactive; arrows resume
   from the last frame.
+- 2026-10-07: The user asked for a histogram view next to the frame view, starting with the
+  classifier criteria's scores: all frames when nothing is selected, only the selection otherwise.
+  Added AC19 (metric list, stacked by human label, shared x range, threshold line, stats); the test
+  criterion is now AC20.
+- 2026-10-07: The user asked to select a range on the histogram to filter frames. Added AC20 (drag
+  a bin range, it sets the metric's strip filter; shaded band, clear by double-click or button);
+  the test criterion is now AC21. The chart keeps showing all frames/the selection so the range
+  stays visible against the whole distribution.

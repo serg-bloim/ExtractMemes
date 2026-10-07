@@ -110,3 +110,5 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-06: Downloads now skip AV1 formats unless AV1 is all a video offers, so OpenCV can decode them on the GitHub runner — [specs/features/decodable-codec-download.md](specs/features/decodable-codec-download.md).
 - 2026-10-07: Drafted specs for a labeled video dataset (video reference plus marked timestamps in `data/datasets/*.yaml`) — [specs/features/labeled-video-dataset.md](specs/features/labeled-video-dataset.md).
 - 2026-10-07: Drafted a spec for a local web page to label a video's memes frame by frame — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Implemented the labeled-video dataset format and loader (`tools/labeling/dataset.py`) — [specs/features/labeled-video-dataset.md](specs/features/labeled-video-dataset.md).
+- 2026-10-07: Built the frame labeler (local server, scrollable strip, classifier scores and filters); page UI not yet verified by hand — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

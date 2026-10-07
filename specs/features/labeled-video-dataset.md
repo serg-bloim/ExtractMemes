@@ -1,6 +1,6 @@
 ---
 title: "Labeled Video Dataset"
-status: draft
+status: implemented
 created: 2026-10-07
 updated: 2026-10-07
 author: ""
@@ -29,12 +29,13 @@ keeping images on disk.
 
 ## Acceptance Criteria
 
-- [ ] AC1: A dataset lives in `data/datasets/<video-id>.yaml`, one file per video, committed to the
+- [x] AC1: A dataset lives in `data/datasets/<video-id>.yaml`, one file per video, committed to the
       repo. It is human-readable and diff-friendly.
-- [ ] AC2: The file records the video identity: the source URL, the video id, and the yt-dlp
+- [x] AC2: The file records the video identity: the source URL, the video id, and the yt-dlp
       `format_id` that was labeled, plus `vcodec`, container `ext`, `width`, `height`, native
-      `fps` and total `frame_count` as they were when labeled.
-- [ ] AC3: The file has a `schema` version and a `mode` (`standard` or `precise`), and a `memes`
+      `fps` and `frame_count` as they were when labeled. `frame_count` is what the container reports
+      (`CAP_PROP_FRAME_COUNT`), which is cheap to check; the exact frame/timestamp check is AC7.
+- [x] AC3: The file has a `schema` version and a `mode` (`standard` or `precise`), and a `memes`
       list. Each meme is a YAML mapping of attributes, so more can be added later without changing
       the shape:
       - standard mode: `meme_ts` (seconds) and `meme_frame` (frame index) — one moment, any frame
@@ -43,26 +44,26 @@ keeping images on disk.
         first and last frame of the meme.
       Memes are sorted by frame and a frame appears in at most one meme. Only the standard mode is
       implemented now; the loader rejects `precise` files with a clear "not supported yet" error.
-- [ ] AC4: A frame's index is its 0-based position in sequential decoding of the file, and its
+- [x] AC4: A frame's index is its 0-based position in sequential decoding of the file, and its
       timestamp is that frame's own presentation time (`CAP_PROP_POS_MSEC`), exactly as
       `frame_extractor.sample_frames` reports them — never `frame_index / native_fps`, which drifts
       on files with uneven frame spacing. `meme_ts` is written with 3 decimals.
-- [ ] AC5: A loader reads a dataset and returns the video's local path, downloading that exact
+- [x] AC5: A loader reads a dataset and returns the video's local path, downloading that exact
       `format_id` (not a "worst/best" selector) into `.runtime/downloads/` if it isn't there yet.
       A local file that is already present is reused.
-- [ ] AC6: After obtaining the video, the loader compares the file's `width`, `height`, `fps` and
+- [x] AC6: After obtaining the video, the loader compares the file's `width`, `height`, `fps` and
       `frame_count` with the recorded ones and raises a clear error naming the differing field if
       any differ. It never silently labels a different encode.
-- [ ] AC7: The loader finds each meme's frame by `meme_frame` using sequential decoding, and checks
+- [x] AC7: The loader finds each meme's frame by `meme_frame` using sequential decoding, and checks
       that the decoded frame's timestamp equals `meme_ts` (to the millisecond), raising on a
       mismatch. It doesn't rely on seeking to find a frame.
-- [ ] AC8: The loader can yield the positive frames (BGR arrays with index and timestamp) and the
+- [x] AC8: The loader can yield the positive frames (BGR arrays with index and timestamp) and the
       negative frames. Negatives are the frames sampled at a given fps that lie outside an
       exclusion window of ±1.0 s (overridable) around every positive timestamp, because a meme lasts
       several frames and only one of them is marked in standard mode.
-- [ ] AC9: Offline tests cover reading and writing a dataset file, the validation in AC6/AC7, and the
+- [x] AC9: Offline tests cover reading and writing a dataset file, the validation in AC6/AC7, and the
       positive/negative split in AC8, using a small synthetic video. No test touches the network.
-- [ ] AC10: Nothing in `src/extract_memes/` imports this code, and its dependency (PyYAML) is not in
+- [x] AC10: Nothing in `src/extract_memes/` imports this code, and its dependency (PyYAML) is not in
       `[project.dependencies]`: it goes in a separate optional group (e.g. `labeling`), so
       `pip install .` and `pip install -e .` as used by the Dockerfile and the GitHub workflow don't
       pull it in.
@@ -128,3 +129,7 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: The user answered the open questions: per-meme attributes (`meme_ts`, `meme_frame`;
   `meme_start_*` for precise), ±1 s window, dev tooling excluded from the production install, exact
   frame-derived timestamps. Spec updated. Status `draft`, awaiting the user's go-ahead.
+- 2026-10-07: Implemented in `tools/labeling/dataset.py` (PyYAML added as the optional `labeling`
+  group; `pyproject.toml` also gets `pythonpath = ["."]` so tests can import `tools/`).
+  `frame_count` is the container-reported count rather than a full decode, to keep the AC6 check
+  cheap. `tests/test_labeling_dataset.py`: 15 tests; `pytest -m "not slow"`: 306 passed.

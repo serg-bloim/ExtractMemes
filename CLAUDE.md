@@ -70,10 +70,13 @@ ExtractMemes/
 │   └── scan_playground.py        ← Manual scan-only runs (no extraction)
 ├── run_real_video.py             ← Manual runner: real URL, real or fake classifier
 ├── tools/                        ← Host-environment utilities, outside the package
-│   └── lan_proxy_relay.py        ← Loopback→LAN TCP relay; lets a Homebrew interpreter reach a
+│   ├── lan_proxy_relay.py        ← Loopback→LAN TCP relay; lets a Homebrew interpreter reach a
 │                                   LAN proxy on macOS (see ADR 017). Runs under /usr/bin/python3.
+│   └── labeling/                 ← Dev-only dataset labeler (not in the package or the image); run
+│                                   `python -m tools.labeling <url>`. Needs `pip install -e ".[labeling]"`.
 ├── sample/                       ← Local video fixtures, supplied by hand (gitignored)
 ├── data/
+│   ├── datasets/<video-id>.yaml  ← Labeled videos: exact format + marked memes (frame, ts); no images
 │   └── labeled_dataset/{positive,negative}/ ← Hand-labeled 256x144 frames for classifier
 │                                   evaluation and tests — do NOT delete (see ADR 008)
 ├── downloads/                    ← CLI downloads: <video-id>_worst.mp4, <video-id>_best.mp4 (gitignored)

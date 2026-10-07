@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frame Labeler</title>
+<style>
+  :root { --bg:#16181d; --panel:#1e2128; --line:#2f333d; --text:#e4e6eb; --dim:#8b909c;
+          --mark:#ffc933; --flag:#ff6b6b; --ok:#5dd39e; --sel:#3b82f6; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.4 system-ui, sans-serif;
+         display:grid; grid-template-columns: 330px 1fr; height:100vh; overflow:hidden; }
+  #side { display:flex; flex-direction:column; border-right:1px solid var(--line); min-height:0; }
+  #filters { padding:8px; border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
+  #filters .row { display:flex; gap:6px; align-items:center; margin-bottom:5px; flex-wrap:wrap; }
+  #filters label { color:var(--dim); min-width:78px; }
+  #filters input[type=number] { width:62px; }
+  select, input, button { background:var(--bg); color:var(--text); border:1px solid var(--line);
+         border-radius:4px; padding:2px 5px; font:inherit; }
+  button { cursor:pointer; } button:hover { border-color:var(--dim); }
+  #count { color:var(--dim); padding:4px 8px; border-bottom:1px solid var(--line); }
+  #strip { flex:1; overflow-y:scroll; position:relative; min-height:0; }
+  #spacer { position:relative; }
+  .row-item { position:absolute; left:0; right:0; height:68px; display:flex; gap:8px; padding:4px 8px;
+         border-bottom:1px solid var(--line); cursor:pointer; align-items:center; }
+  .row-item:hover { background:#242832; }
+  .row-item.sel { background:#1f3556; outline:1px solid var(--sel); }
+  .row-item img { width:96px; height:54px; object-fit:cover; background:#000; flex:none; }
+  .row-item .meta { font-size:11px; line-height:1.35; min-width:0; }
+  .row-item .ts { font-weight:600; }
+  .star { color:var(--mark); font-weight:700; }
+  .flag { color:var(--flag); font-weight:700; }
+  .dim { color:var(--dim); }
+  #main { display:flex; flex-direction:column; min-width:0; min-height:0; padding:10px; gap:8px; }
+  #view { flex:1; min-height:0; display:flex; justify-content:center; align-items:center; background:#000;
+          border:1px solid var(--line); position:relative; }
+  #view.marked { border-color:var(--mark); box-shadow:0 0 0 2px var(--mark); }
+  #big { max-width:100%; max-height:100%; image-rendering:auto; }
+  #info { display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; }
+  #info table { border-collapse:collapse; } #info td { padding:1px 10px 1px 0; }
+  #marks { max-height:120px; overflow:auto; display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { border:1px solid var(--line); border-radius:12px; padding:1px 4px 1px 9px; cursor:pointer; background:var(--panel); }
+  .chip.cur { border-color:var(--mark); }
+  .chip b { margin-left:5px; color:var(--dim); cursor:pointer; padding:0 3px; } .chip b:hover { color:var(--flag); }
+  #help { color:var(--dim); font-size:12px; }
+  kbd { background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:0 4px; }
+  #err { color:var(--flag); }
+</style>
+</head>
+<body>
+<div id="side">
+  <div id="filters">
+    <div class="row"><label>Human label</label>
+      <select id="f-human"><option value="">any</option><option value="1">marked</option><option value="0">unmarked</option></select></div>
+    <div class="row"><label>Classifier</label>
+      <select id="f-verdict"><option value="">any</option><option value="1">flagged</option><option value="0">not flagged</option></select></div>
+    <div id="f-criteria"></div>
+    <div class="row">
+      <button id="fp" title="Flagged by the classifier but not marked by me">False positives</button>
+      <button id="miss" title="Marked by me but not flagged by the classifier">Misses</button>
+      <button id="reset">Reset</button></div>
+  </div>
+  <div id="count"></div>
+  <div id="strip"><div id="spacer"></div></div>
+</div>
+<div id="main">
+  <div id="view"><img id="big" alt=""></div>
+  <div id="info">
+    <table id="facts"></table>
+    <div>
+      <div><button id="toggle">Mark as meme (M)</button> <span id="err"></span></div>
+      <div id="help">
+        <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
+        <kbd>M</kbd> mark · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
+        <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
+      </div>
+    </div>
+    <div><input id="goto" placeholder="jump to time (s or m:s)" size="20"></div>
+  </div>
+  <div id="marks"></div>
+</div>
+<script>
+"use strict";
+const ROW_H = 68;
+let S;                       // server state
+let sel = 0;                 // selected native frame index
+let view = [];               // strip row numbers (into S.rows) that match the filters
+let memeFrames = new Set();
+let rowMarked = [];          // per strip row: is there a mark mapped to it
+let loadToken = 0;
+
+const $ = id => document.getElementById(id);
+const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ":" + s.toFixed(3).padStart(6, "0"); };
+
+async function api(path, body) {
+  const res = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"},
+                                        body: JSON.stringify(body)} : undefined);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.status);
+  return data;
+}
+
+// The strip row a native frame belongs to: the last scanned frame at or before it.
+const rowOf = frame => Math.min(S.rows.length - 1, Math.floor(frame / S.step));
+
+function applyMemes(memes) {
+  S.memes = memes;
+  memeFrames = new Set(memes.map(m => m.frame));
+  rowMarked = new Array(S.rows.length).fill(false);
+  for (const m of memes) rowMarked[rowOf(m.frame)] = true;
+}
+
+function filters() {
+  const f = {human: $("f-human").value, verdict: $("f-verdict").value, ranges: {}};
+  for (const c of S.criteria) {
+    const lo = $("min-" + c.name).value, hi = $("max-" + c.name).value;
+    if (lo !== "" || hi !== "") f.ranges[c.name] = [lo === "" ? -Infinity : +lo, hi === "" ? Infinity : +hi];
+  }
+  return f;
+}
+
+function matches(row, f) {
+  if (f.human !== "" && (rowMarked[row] ? "1" : "0") !== f.human) return false;
+  if (f.verdict !== "" && String(S.verdict[row]) !== f.verdict) return false;
+  for (const [name, [lo, hi]] of Object.entries(f.ranges)) {
+    const v = S.scores[name][row];
+    if (v < lo || v > hi) return false;
+  }
+  return true;
+}
+
+function refilter() {
+  const f = filters();
+  view = [];
+  for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) view.push(r);
+  $("count").textContent = view.length + " of " + S.rows.length + " scanned frames shown · " +
+                           S.memes.length + " marked";
+  $("spacer").style.height = view.length * ROW_H + "px";
+  renderStrip();
+}
+
+function renderStrip() {
+  const strip = $("strip"), spacer = $("spacer");
+  const first = Math.max(0, Math.floor(strip.scrollTop / ROW_H) - 3);
+  const last = Math.min(view.length, Math.ceil((strip.scrollTop + strip.clientHeight) / ROW_H) + 3);
+  const selRow = rowOf(sel);
+  const frag = document.createDocumentFragment();
+  for (let i = first; i < last; i++) {
+    const r = view[i], idx = S.rows[r];
+    const el = document.createElement("div");
+    el.className = "row-item" + (r === selRow ? " sel" : "");
+    el.style.top = i * ROW_H + "px";
+    const scores = S.criteria.map(c => c.name.slice(0, 6) + " " + S.scores[c.name][r]).join(" · ");
+    el.innerHTML = '<img loading="lazy" src="/thumb/' + idx + '.jpg">' +
+      '<div class="meta"><div><span class="ts">' + fmt(S.pts[idx]) + '</span> <span class="dim">#' + idx + '</span> ' +
+      (rowMarked[r] ? '<span class="star">★ meme</span> ' : '') +
+      (S.verdict[r] ? '<span class="flag">⚑ flagged</span>' : '') + '</div>' +
+      '<div class="dim">' + scores + '</div></div>';
+    el.onclick = () => select(idx);
+    frag.appendChild(el);
+  }
+  spacer.replaceChildren(frag);
+}
+
+function scrollToSelection() {
+  const i = view.indexOf(rowOf(sel));
+  if (i < 0) return;
+  const strip = $("strip");
+  if (i * ROW_H < strip.scrollTop || (i + 1) * ROW_H > strip.scrollTop + strip.clientHeight)
+    strip.scrollTop = Math.max(0, i * ROW_H - strip.clientHeight / 2);
+}
+
+function select(frame, scroll = true) {
+  sel = Math.max(0, Math.min(S.frame_count - 1, frame));
+  const token = ++loadToken;
+  const img = new Image();
+  img.onload = () => { if (token === loadToken) $("big").src = img.src; };
+  img.onerror = () => { if (token === loadToken) $("err").textContent = "could not load frame " + sel; };
+  img.src = "/frame/" + sel + ".jpg";
+  for (const d of [1, 2, 3, -1, -2]) {              // warm the neighbours so stepping feels instant
+    const n = sel + d;
+    if (n >= 0 && n < S.frame_count) new Image().src = "/frame/" + n + ".jpg";
+  }
+  $("err").textContent = "";
+  renderInfo();
+  if (scroll) scrollToSelection();
+  renderStrip();
+}
+
+function renderInfo() {
+  const r = rowOf(sel), onRow = S.rows[r] === sel;
+  const marked = memeFrames.has(sel);
+  $("view").classList.toggle("marked", marked);
+  $("toggle").textContent = (marked ? "Unmark meme" : "Mark as meme") + " (M)";
+  let html = "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td></tr>" +
+    "<tr><td class='dim'>frame</td><td>#" + sel + (onRow ? "" : " <span class='dim'>(between scanned frames; scored row #" + S.rows[r] + ")</span>") + "</td></tr>" +
+    "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : (rowMarked[r] ? "near a mark" : "unmarked")) + "</td></tr>" +
+    "<tr><td class='dim'>classifier</td><td>" + (S.verdict[r] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td></tr>";
+  for (const c of S.criteria)
+    html += "<tr><td class='dim'>" + c.name + "</td><td>" + S.scores[c.name][r] +
+            (c.threshold != null ? " <span class='dim'>(threshold " + c.threshold + ")</span>" : "") + "</td></tr>";
+  $("facts").innerHTML = html;
+  const chips = $("marks");
+  chips.replaceChildren(...S.memes.map(m => {
+    const el = document.createElement("span");
+    el.className = "chip" + (m.frame === sel ? " cur" : "");
+    el.textContent = fmt(m.ts) + " #" + m.frame;
+    el.onclick = () => select(m.frame);
+    const x = document.createElement("b"); x.textContent = "✕"; x.title = "remove this mark";
+    x.onclick = e => { e.stopPropagation(); setMark(m.frame, false); };
+    el.appendChild(x);
+    return el;
+  }));
+}
+
+async function setMark(frame, on) {
+  try {
+    applyMemes((await api("/api/mark", {frame, on})).memes);
+    refilter();           // a row that stops matching drops out after the change
+    renderInfo();
+  } catch (e) { $("err").textContent = String(e); }
+}
+
+function toggleMark() {
+  return setMark(sel, !memeFrames.has(sel));
+}
+
+// Shift+M: the same meme was marked on another frame; move that mark here instead of adding one.
+async function moveNearestMark() {
+  const here = S.pts[sel];
+  const near = S.memes.filter(m => m.frame !== sel && Math.abs(m.ts - here) <= S.window)
+                      .sort((a, b) => Math.abs(a.ts - here) - Math.abs(b.ts - here))[0];
+  if (!near) { $("err").textContent = "no mark within " + S.window + " s to move"; return; }
+  try {
+    applyMemes((await api("/api/move", {from: near.frame, to: sel})).memes);
+    refilter(); renderInfo();
+  } catch (e) { $("err").textContent = String(e); }
+}
+
+function jumpMark(dir) {
+  const sorted = S.memes.map(m => m.frame);
+  const next = dir > 0 ? sorted.find(f => f > sel) : [...sorted].reverse().find(f => f < sel);
+  if (next !== undefined) select(next);
+}
+
+function jumpUnlabeled() {
+  const near = ts => S.memes.some(m => Math.abs(m.ts - ts) <= S.window);
+  for (let r = rowOf(sel) + 1; r < S.rows.length; r++)
+    if (!near(S.pts[S.rows[r]])) return select(S.rows[r]);
+}
+
+function jumpInView(dir) {
+  const cur = rowOf(sel);
+  const r = dir > 0 ? view.find(v => v > cur) : [...view].reverse().find(v => v < cur);
+  if (r !== undefined) select(S.rows[r]);
+}
+
+function parseTime(text) {
+  const parts = text.trim().split(":").map(Number);
+  if (parts.some(isNaN)) return null;
+  return parts.reduce((acc, p) => acc * 60 + p, 0);
+}
+
+function gotoTime(t) {
+  let lo = 0, hi = S.pts.length - 1;       // first frame whose time is >= t
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (S.pts[mid] < t) lo = mid + 1; else hi = mid; }
+  select(lo);
+}
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") {
+    if (e.target.id === "goto" && e.key === "Enter") {
+      const t = parseTime(e.target.value);
+      if (t !== null) { gotoTime(t); e.target.blur(); }
+    }
+    return;
+  }
+  const big = e.shiftKey ? Math.round(S.native_fps) : 1;
+  switch (e.key) {
+    case "ArrowLeft": select(sel - big); break;
+    case "ArrowRight": select(sel + big); break;
+    case "ArrowUp": jumpInView(-1); break;
+    case "ArrowDown": jumpInView(1); break;
+    case "m": case "M": case " ": (e.shiftKey && e.key === "M" ? moveNearestMark() : toggleMark()); break;
+    case "n": case "N": jumpMark(1); break;
+    case "p": case "P": jumpMark(-1); break;
+    case "u": case "U": jumpUnlabeled(); break;
+    case "j": case "J": jumpInView(1); break;
+    case "k": case "K": jumpInView(-1); break;
+    case "g": case "G": $("goto").focus(); break;
+    default: return;
+  }
+  e.preventDefault();
+});
+
+function buildFilterInputs() {
+  const box = $("f-criteria");
+  for (const c of S.criteria) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = "<label>" + c.name + "</label><input type='number' step='any' id='min-" + c.name +
+                    "' placeholder='min'><input type='number' step='any' id='max-" + c.name + "' placeholder='max'>";
+    box.appendChild(row);
+  }
+  for (const el of document.querySelectorAll("#filters select, #filters input")) el.onchange = refilter;
+  $("fp").onclick = () => { resetFilters(); $("f-verdict").value = "1"; $("f-human").value = "0"; refilter(); };
+  $("miss").onclick = () => { resetFilters(); $("f-verdict").value = "0"; $("f-human").value = "1"; refilter(); };
+  $("reset").onclick = () => { resetFilters(); refilter(); };
+}
+
+function resetFilters() {
+  for (const el of document.querySelectorAll("#filters select, #filters input")) el.value = "";
+}
+
+$("toggle").onclick = toggleMark;
+$("strip").addEventListener("scroll", renderStrip);
+window.addEventListener("resize", renderStrip);
+
+(async () => {
+  S = await api("/api/state");
+  document.title = "Labeler — " + S.video.id;
+  buildFilterInputs();
+  applyMemes(S.memes);
+  refilter();
+  select(S.memes.length ? S.memes[0].frame : 0);
+})().catch(e => { $("err").textContent = String(e); });
+</script>
+</body>
+</html>

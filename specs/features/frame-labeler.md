@@ -1,6 +1,6 @@
 ---
 title: "Frame Labeler"
-status: draft
+status: in-progress
 created: 2026-10-07
 updated: 2026-10-07
 author: ""
@@ -29,14 +29,14 @@ classifier disagrees with me, and keep the result in the repo.
 
 ## Acceptance Criteria
 
-- [ ] AC1: A command run from the project root (e.g. `python -m tools.labeling <youtube-url>`)
+- [x] AC1: A command run from the project root (e.g. `python -m tools.labeling <youtube-url>`)
       starts a local web server on `127.0.0.1`, prints the page address, and needs no internet
       access beyond fetching the video itself.
-- [ ] AC2: Given a URL with no dataset yet, it downloads the video at the lowest quality (the
+- [x] AC2: Given a URL with no dataset yet, it downloads the video at the lowest quality (the
       "worst" tier; `--format-id` overrides) and creates `data/datasets/<video-id>.yaml` with the
       video identity on the first mark. Given a URL or id that already has a dataset, it loads that
       exact format (dataset AC5/AC6) and shows the existing marks.
-- [ ] AC3: The page has a **vertical strip of thumbnails** on one side. It scrolls through the whole
+- [x] AC3: The page has a **vertical strip of thumbnails** on one side. It scrolls through the whole
       video and shows **every frame the scan classifies**: the same frames `sample_frames` yields
       at the scan rate (`--fps`, default 3.0 like the pipeline), chosen by the same rule
       (every `max(1, round(native_fps / fps))`-th decoded frame). So at 3 fps the strip has 3 rows
@@ -44,38 +44,38 @@ classifier disagrees with me, and keep the result in the repo.
       its timestamp and index, thumbnails load lazily as they scroll into view, and marked frames
       carry a visible indicator. Clicking a thumbnail selects that frame. A mark on a frame that
       isn't a strip row (set by stepping) is shown on the nearest row before it.
-- [ ] AC4: A large view shows the selected frame with its timestamp and index. Left/right step one
+- [x] AC4: A large view shows the selected frame with its timestamp and index. Left/right step one
       frame, shift+left/right one second, and a jump-to-timestamp box moves the selection; holding a
       key repeats. The strip follows the selection, and neighbouring frames are preloaded so
       stepping feels immediate. Stepping is by native frame, not by the strip's granularity.
-- [ ] AC5: A key (and a button) toggles "meme" on the selected frame. Marks can be added, moved
+- [x] AC5: A key (and a button) toggles "meme" on the selected frame. Marks can be added, moved
       (select another frame of the same meme and re-mark it) and removed from the strip or the
       large view. A list of all marks lets me jump to one.
-- [ ] AC6: Keys jump to the next/previous mark, and to the next frame not within ±1 s of any mark,
+- [x] AC6: Keys jump to the next/previous mark, and to the next frame not within ±1 s of any mark,
       so unlabeled stretches can be skimmed.
-- [ ] AC7: Marks are written to the dataset file on every change (no separate save step), through
+- [x] AC7: Marks are written to the dataset file on every change (no separate save step), through
       the server, as `meme_ts`/`meme_frame` per meme (dataset AC3). The file stays valid (sorted, no
       duplicates). Closing the browser or the server loses nothing.
-- [ ] AC8: The index and timestamp shown for a frame are the frame's own (dataset AC4), the same
+- [x] AC8: The index and timestamp shown for a frame are the frame's own (dataset AC4), the same
       values the dataset loader reproduces; selecting a frame and marking it then reloading gives
       the same frame back.
-- [ ] AC9: No frame images are written into the repo. Any thumbnail or index cache goes under
+- [x] AC9: No frame images are written into the repo. Any thumbnail or index cache goes under
       `.runtime/` (gitignored).
-- [ ] AC10: The server binds only to loopback and rejects requests whose paths aren't the page, its
+- [x] AC10: The server binds only to loopback and rejects requests whose paths aren't the page, its
       own API, a thumbnail or a frame request.
-- [ ] AC11: This code is not in the installable package, and its dependency (PyYAML) is in an
+- [x] AC11: This code is not in the installable package, and its dependency (PyYAML) is in an
       optional group, not `[project.dependencies]` (dataset AC10).
-- [ ] AC12: Each strip row and the large view show **classifier info** for the frame: the verdict of
+- [x] AC12: Each strip row and the large view show **classifier info** for the frame: the verdict of
       the production classifier (`HeuristicClassifier`: flagged or not) and the score of every
       registered criterion (at least `band` and `texture` from `HeuristicClassifier.scores`), next to
       the human label (marked or not). Scores are computed on the scanned frames only, in the same
       sequential pass that builds the thumbnails, and cached under `.runtime/` (AC9), so scrolling
       and filtering don't decode video.
-- [ ] AC13: Criteria are a small registry in the tool (a name plus a function from a BGR frame to a
+- [x] AC13: Criteria are a small registry in the tool (a name plus a function from a BGR frame to a
       number, and optionally a threshold), so a new candidate criterion is one function added to
       that registry; the page shows whatever the registry holds. Adding or changing a criterion
       recomputes the cached scores for it.
-- [ ] AC14: The strip can be **filtered**, and the filter hides rows that don't match, with a count
+- [x] AC14: The strip can be **filtered**, and the filter hides rows that don't match, with a count
       of how many remain:
       - by human label: marked / unmarked;
       - by classifier verdict: flagged / not flagged;
@@ -145,3 +145,11 @@ Resolved by the user (2026-10-07):
   filtering on it. Added AC12–AC14 (info display, a criteria registry, filters including
   false-positive/miss views), renumbered the test criterion to AC15, and added a user-story clause.
   Status `draft`.
+- 2026-10-07: The user said go. Implemented in `tools/labeling/` (`dataset.py`, `criteria.py`,
+  `index.py`, `server.py`, `page.html`, `__main__.py`); run `python -m tools.labeling <url-or-id>`.
+  Criteria registry: `band`, `texture`, `margin_luma`, `hue_consistency`. Server-side behaviour
+  is covered by `tests/test_labeling_server.py` (8 tests). Ran it for real on `FtU4MuksCzE`
+  (format 602, 256x144, 12.5 fps, 37,816 frames, 9,454 strip rows at step 4, indexed in ~9 s; the
+  strip's effective rate is 3.125 fps because of the step rule). **Not verified yet:** the page's
+  JavaScript was only syntax-checked (the Chrome extension wasn't connected), so AC15 stays
+  unchecked and the status stays `in-progress` until the page has been used by hand.

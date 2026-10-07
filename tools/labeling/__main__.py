@@ -1,14 +1,13 @@
-"""Label the memes in a YouTube video: `python -m tools.labeling <url-or-video-id>` from the project root."""
+"""Label the memes in a YouTube video: `python -m tools.labeling <url-or-video-id>` from the project root.
+
+This is the plain launcher. For a server that reloads when the sources change, use ./labeler.sh.
+"""
 
 import argparse
 import webbrowser
 
-from extract_memes.downloader import FORMAT_SELECTORS
-
-from . import dataset as dataset_module
-from .dataset import Dataset
-from .index import CACHE_ROOT, build
-from .server import LabelerApp, serve
+from .bootstrap import open_labeler
+from .server import create_flask_app
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -21,35 +20,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--open", action="store_true", help="open the page in the default browser")
     args = parser.parse_args(argv)
 
-    video_id = dataset_module.video_id_from(args.source)
-    dataset_file = dataset_module.dataset_path(video_id)
-    if dataset_file.is_file():
-        dataset = dataset_module.load(dataset_file)
-        print(f"Loaded {dataset_file} ({len(dataset.memes)} marks)")
-        video_path = dataset_module.ensure_video(dataset, proxy=args.proxy)
-    else:
-        url = args.source if "/" in args.source else f"https://www.youtube.com/watch?v={video_id}"
-        video_path, video = dataset_module.download_format(
-            url, args.format_id or FORMAT_SELECTORS["worst"], proxy=args.proxy
-        )
-        dataset = Dataset(video=video)
-        print(f"No dataset yet; {dataset_file} is created on the first mark (format {video.format_id})")
-
-    cache_dir = CACHE_ROOT / f"{dataset.video.id}_{dataset.video.format_id}"
-    index = build(video_path, cache_dir, fps=args.fps)
-    app = LabelerApp(dataset, dataset_file, index, video_path)
-    server = serve(app, args.port)
-    address = f"http://127.0.0.1:{server.server_address[1]}/"
+    labeler = open_labeler(args.source, fps=args.fps, format_id=args.format_id, proxy=args.proxy)
+    address = f"http://127.0.0.1:{args.port}/"
     print(f"Labeler ready: {address}  (Ctrl+C to stop)")
     if args.open:
         webbrowser.open(address)
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
+        create_flask_app(labeler).run(host="127.0.0.1", port=args.port, threaded=True)
     finally:
-        server.server_close()
-        app.close()
+        labeler.close()
 
 
 if __name__ == "__main__":

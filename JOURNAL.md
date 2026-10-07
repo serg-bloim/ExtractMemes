@@ -113,3 +113,6 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: Implemented the labeled-video dataset format and loader (`tools/labeling/dataset.py`) — [specs/features/labeled-video-dataset.md](specs/features/labeled-video-dataset.md).
 - 2026-10-07: Built the frame labeler (local server, scrollable strip, classifier scores and filters); page UI not yet verified by hand — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: The labeler can select several strip rows (shift+click range, Cmd/Ctrl+click toggle) and mark or unmark them in one request — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Datasets and the labeler gained an explicit "not a meme" label (`not_memes`, key X) for hard negatives — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Moved the labeler server to Flask and added `labeler.sh`, a dev server that reloads on source edits — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Added `labeler-run.sh`, a one-command start of the labeler dev server with the usual settings — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

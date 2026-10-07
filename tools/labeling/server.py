@@ -1,15 +1,15 @@
-"""The labeler's local web server: the page, a state endpoint, thumbnails, frames and the marks API.
+"""The labeler's web app: the page, a state endpoint, thumbnails, frames and the marks API.
 
-Bound to loopback only. Every change to the marks is written to the dataset file straight away.
+`LabelerApp` holds the labeling state; `create_flask_app` exposes it over HTTP. Meant to run on
+loopback only. Every change to the marks is written to the dataset file straight away.
 """
 
-import json
-import re
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import cv2
+from flask import Flask, Response, jsonify, request
 
 from . import criteria as criteria_module
 from . import dataset as dataset_module
@@ -17,8 +17,7 @@ from .dataset import Dataset
 from .index import FrameReader, Index
 
 PAGE = Path(__file__).with_name("page.html")
-_THUMB = re.compile(r"^/thumb/(\d+)\.jpg$")
-_FRAME = re.compile(r"^/frame/(\d+)\.jpg$")
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
 
 
 class LabelerApp:
@@ -49,11 +48,27 @@ class LabelerApp:
             "criteria": [{"name": c.name, "threshold": c.threshold} for c in criteria_module.CRITERIA],
             "scores": {name: [round(float(v), 2) for v in values] for name, values in index.scores.items()},
             "verdict": [int(v) for v in index.verdict],
-            "memes": self.memes(),
+            **self.labels(),
         }
 
-    def memes(self) -> list[dict]:
-        return [{"ts": m.meme_ts, "frame": m.meme_frame} for m in self.dataset.memes]
+    def labels(self) -> dict:
+        return {
+            "memes": [{"ts": m.meme_ts, "frame": m.meme_frame} for m in self.dataset.memes],
+            "not_memes": [{"ts": n.not_meme_ts, "frame": n.not_meme_frame} for n in self.dataset.not_memes],
+        }
+
+    @staticmethod
+    def _check_label(label) -> str:
+        if label not in ("meme", "not_meme"):
+            raise ValueError("label must be 'meme' or 'not_meme'")
+        return label
+
+    def _apply(self, frame: int, on: bool, label: str) -> None:
+        ts = float(self.index.pts[frame])
+        if label == "meme":
+            self.dataset.add(frame, ts) if on else self.dataset.remove(frame)
+        else:
+            self.dataset.add_not_meme(frame, ts) if on else self.dataset.remove_not_meme(frame)
 
     def _check_frame(self, frame) -> int:
         if not isinstance(frame, int) or isinstance(frame, bool) or not 0 <= frame < len(self.index.pts):
@@ -63,28 +78,22 @@ class LabelerApp:
     def _save(self) -> None:
         dataset_module.save(self.dataset, self.dataset_file)
 
-    def mark(self, frame, on) -> list[dict]:
-        frame = self._check_frame(frame)
+    def mark(self, frame, on, label="meme") -> dict:
+        frame, label = self._check_frame(frame), self._check_label(label)
         with self._lock:
-            if on:
-                self.dataset.add(frame, float(self.index.pts[frame]))
-            else:
-                self.dataset.remove(frame)
+            self._apply(frame, on, label)
             self._save()
-        return self.memes()
+        return self.labels()
 
-    def mark_many(self, frames, on) -> list[dict]:
+    def mark_many(self, frames, on, label="meme") -> dict:
         if not isinstance(frames, list) or not frames:
             raise ValueError("frames must be a non-empty list")
-        frames = [self._check_frame(f) for f in frames]
+        frames, label = [self._check_frame(f) for f in frames], self._check_label(label)
         with self._lock:
             for frame in frames:
-                if on:
-                    self.dataset.add(frame, float(self.index.pts[frame]))
-                else:
-                    self.dataset.remove(frame)
+                self._apply(frame, on, label)
             self._save()  # once for the whole batch
-        return self.memes()
+        return self.labels()
 
     def move(self, old, new) -> list[dict]:
         old, new = self._check_frame(old), self._check_frame(new)
@@ -92,7 +101,7 @@ class LabelerApp:
             self.dataset.remove(old)
             self.dataset.add(new, float(self.index.pts[new]))
             self._save()
-        return self.memes()
+        return self.labels()
 
     def thumb(self, frame: int) -> bytes | None:
         path = self.index.thumb_dir / f"{frame}.jpg"
@@ -106,81 +115,72 @@ class LabelerApp:
         return buffer.tobytes()
 
 
-def make_handler(app: LabelerApp, port_getter) -> type[BaseHTTPRequestHandler]:
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, format, *args) -> None:  # keep the terminal for progress and errors
-            pass
-
-        def _host_ok(self) -> bool:
-            # Refuses requests addressed to another name (DNS rebinding) and cross-site posts.
-            port = port_getter()
-            allowed = {f"127.0.0.1:{port}", f"localhost:{port}"}
-            origin = self.headers.get("Origin")
-            return self.headers.get("Host") in allowed and (
-                origin is None or origin in {f"http://{h}" for h in allowed}
-            )
-
-        def _send(self, status: int, body: bytes, content_type: str, cache: str = "no-store") -> None:
-            self.send_response(status)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", cache)
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _json(self, payload, status: int = 200) -> None:
-            self._send(status, json.dumps(payload).encode(), "application/json")
-
-        def _not_found(self) -> None:
-            self._send(404, b"not found", "text/plain")
-
-        def do_GET(self) -> None:
-            if not self._host_ok():
-                return self._send(403, b"forbidden", "text/plain")
-            path = self.path.split("?", 1)[0]
-            try:
-                if path == "/":
-                    return self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
-                if path == "/api/state":
-                    return self._json(app.state())
-                if match := _THUMB.match(path):
-                    body = app.thumb(int(match.group(1)))
-                    if body is None:
-                        return self._not_found()
-                    return self._send(200, body, "image/jpeg", cache="max-age=3600")
-                if match := _FRAME.match(path):
-                    return self._send(200, app.frame_jpeg(int(match.group(1))), "image/jpeg",
-                                      cache="max-age=3600")
-            except (ValueError, IndexError):
-                return self._not_found()
-            except Exception as exc:  # a decode problem should be visible in the page, not hang it
-                return self._send(500, str(exc).encode(), "text/plain")
-            self._not_found()
-
-        def do_POST(self) -> None:
-            if not self._host_ok():
-                return self._send(403, b"forbidden", "text/plain")
-            if self.path not in ("/api/mark", "/api/mark_many", "/api/move"):
-                return self._not_found()
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-                body = json.loads(self.rfile.read(length) or b"{}")
-                if self.path == "/api/mark":
-                    memes = app.mark(body.get("frame"), bool(body.get("on")))
-                elif self.path == "/api/mark_many":
-                    memes = app.mark_many(body.get("frames"), bool(body.get("on")))
-                else:
-                    memes = app.move(body.get("from"), body.get("to"))
-            except (ValueError, TypeError) as exc:
-                return self._json({"error": str(exc)}, 400)
-            self._json({"memes": memes})
-
-    return Handler
+def _host_of(netloc: str | None) -> str | None:
+    return urlsplit("//" + netloc).hostname if netloc else None
 
 
-def serve(app: LabelerApp, port: int = 8765) -> ThreadingHTTPServer:
-    """Create the loopback server (not yet running); `port=0` picks a free port."""
-    holder: dict = {}
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app, lambda: holder["port"]))
-    holder["port"] = server.server_address[1]
-    return server
+def create_flask_app(labeler: LabelerApp) -> Flask:
+    """The HTTP interface of `labeler`: only the page, its API, thumbnails and frames."""
+    web = Flask(__name__)
+
+    @web.before_request
+    def only_loopback_hosts():
+        # Refuses requests addressed to another name (DNS rebinding) and cross-site posts.
+        if _host_of(request.host) not in _LOOPBACK_HOSTS:
+            return Response("forbidden", 403, mimetype="text/plain")
+        origin = request.headers.get("Origin")
+        if origin is not None and _host_of(urlsplit(origin).netloc) not in _LOOPBACK_HOSTS:
+            return Response("forbidden", 403, mimetype="text/plain")
+
+    @web.after_request
+    def no_store(response):
+        response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+    @web.get("/")
+    def page():
+        return Response(PAGE.read_bytes(), mimetype="text/html")
+
+    @web.get("/api/state")
+    def state():
+        return jsonify(labeler.state())
+
+    @web.get("/thumb/<int:frame>.jpg")
+    def thumb(frame: int):
+        body = labeler.thumb(frame)
+        if body is None:
+            return Response("not found", 404, mimetype="text/plain")
+        return Response(body, mimetype="image/jpeg", headers={"Cache-Control": "max-age=3600"})
+
+    @web.get("/frame/<int:frame>.jpg")
+    def full_frame(frame: int):
+        try:
+            body = labeler.frame_jpeg(frame)
+        except (ValueError, IndexError):
+            return Response("not found", 404, mimetype="text/plain")
+        except Exception as exc:  # a decode problem should be visible in the page, not hang it
+            return Response(str(exc), 500, mimetype="text/plain")
+        return Response(body, mimetype="image/jpeg", headers={"Cache-Control": "max-age=3600"})
+
+    def post_labels(action):
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(action(body))
+        except (ValueError, TypeError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @web.post("/api/mark")
+    def mark():
+        return post_labels(lambda b: labeler.mark(b.get("frame"), bool(b.get("on")), b.get("label", "meme")))
+
+    @web.post("/api/mark_many")
+    def mark_many():
+        return post_labels(
+            lambda b: labeler.mark_many(b.get("frames"), bool(b.get("on")), b.get("label", "meme"))
+        )
+
+    @web.post("/api/move")
+    def move():
+        return post_labels(lambda b: labeler.move(b.get("from"), b.get("to")))
+
+    return web

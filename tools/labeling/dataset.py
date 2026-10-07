@@ -48,19 +48,40 @@ class Meme:
     meme_frame: int
 
 
+@dataclass(frozen=True)
+class NotMeme:
+    """A frame the human explicitly marked as not a meme (a hard negative)."""
+
+    not_meme_ts: float
+    not_meme_frame: int
+
+
 @dataclass
 class Dataset:
     video: VideoInfo
     memes: list[Meme] = field(default_factory=list)
+    not_memes: list[NotMeme] = field(default_factory=list)
     mode: str = "standard"
 
     def add(self, frame: int, ts: float) -> None:
-        """Mark `frame` (replacing any mark of the same frame), keeping the memes sorted."""
+        """Mark `frame` as a meme (replacing any label it had), keeping the memes sorted."""
+        self.remove_not_meme(frame)
         self.memes = sorted([m for m in self.memes if m.meme_frame != frame] + [Meme(round(ts, 3), frame)],
                             key=lambda m: m.meme_frame)
 
     def remove(self, frame: int) -> None:
         self.memes = [m for m in self.memes if m.meme_frame != frame]
+
+    def add_not_meme(self, frame: int, ts: float) -> None:
+        """Mark `frame` as not a meme (replacing any label it had), keeping the list sorted."""
+        self.remove(frame)
+        self.not_memes = sorted(
+            [n for n in self.not_memes if n.not_meme_frame != frame] + [NotMeme(round(ts, 3), frame)],
+            key=lambda n: n.not_meme_frame,
+        )
+
+    def remove_not_meme(self, frame: int) -> None:
+        self.not_memes = [n for n in self.not_memes if n.not_meme_frame != frame]
 
 
 def dataset_path(video_id: str, datasets_dir: Path = DATASETS_DIR) -> Path:
@@ -104,6 +125,11 @@ def save(dataset: Dataset, path: Path) -> None:
         )
     else:
         text += "memes: []\n"
+    if dataset.not_memes:
+        text += "not_memes:\n" + "".join(
+            f"  - {{not_meme_ts: {n.not_meme_ts:.3f}, not_meme_frame: {n.not_meme_frame}}}\n"
+            for n in dataset.not_memes
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.write_text(text, encoding="utf-8")
@@ -125,12 +151,20 @@ def load(path: Path) -> Dataset:
     try:
         video = VideoInfo(**{**data["video"], "format_id": str(data["video"]["format_id"])})
         memes = [Meme(float(m["meme_ts"]), int(m["meme_frame"])) for m in data.get("memes") or []]
+        not_memes = [
+            NotMeme(float(n["not_meme_ts"]), int(n["not_meme_frame"])) for n in data.get("not_memes") or []
+        ]
     except (KeyError, TypeError) as exc:
         raise DatasetError(f"{path}: malformed dataset ({exc!r})") from exc
     frames = [m.meme_frame for m in memes]
     if frames != sorted(set(frames)):
         raise DatasetError(f"{path}: memes must be sorted by frame with no duplicates")
-    return Dataset(video=video, memes=memes, mode=mode)
+    not_frames = [n.not_meme_frame for n in not_memes]
+    if not_frames != sorted(set(not_frames)):
+        raise DatasetError(f"{path}: not_memes must be sorted by frame with no duplicates")
+    if set(frames) & set(not_frames):
+        raise DatasetError(f"{path}: a frame can't be both a meme and a not-meme")
+    return Dataset(video=video, memes=memes, not_memes=not_memes, mode=mode)
 
 
 # --- Video file -----------------------------------------------------------------------------------
@@ -257,9 +291,9 @@ def scan_step(video_path: Path, fps: float) -> int:
     return max(1, round(native_fps / fps))
 
 
-def positive_frames(dataset: Dataset, video_path: Path) -> Iterator[tuple[int, float, np.ndarray]]:
-    """The marked frames, found by sequential decoding; raises if a frame's timestamp disagrees."""
-    expected = {m.meme_frame: m.meme_ts for m in dataset.memes}
+def _labeled_frames(
+    expected: dict[int, float], video_path: Path
+) -> Iterator[tuple[int, float, np.ndarray]]:
     for index, timestamp, frame in iter_frames(video_path, expected.__contains__):
         if abs(timestamp - expected[index]) > _TS_TOLERANCE:
             raise DatasetError(
@@ -267,6 +301,16 @@ def positive_frames(dataset: Dataset, video_path: Path) -> Iterator[tuple[int, f
                 f"{expected[index]:.3f}s: not the labeled video"
             )
         yield index, timestamp, frame
+
+
+def positive_frames(dataset: Dataset, video_path: Path) -> Iterator[tuple[int, float, np.ndarray]]:
+    """The marked frames, found by sequential decoding; raises if a frame's timestamp disagrees."""
+    return _labeled_frames({m.meme_frame: m.meme_ts for m in dataset.memes}, video_path)
+
+
+def not_meme_frames(dataset: Dataset, video_path: Path) -> Iterator[tuple[int, float, np.ndarray]]:
+    """The frames explicitly marked as not a meme, checked like `positive_frames`."""
+    return _labeled_frames({n.not_meme_frame: n.not_meme_ts for n in dataset.not_memes}, video_path)
 
 
 def negative_frames(

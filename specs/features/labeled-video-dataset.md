@@ -42,7 +42,11 @@ keeping images on disk.
         while the meme is on screen;
       - precise mode: `meme_start_ts`, `meme_start_frame`, `meme_end_ts`, `meme_end_frame` — the
         first and last frame of the meme.
-      Memes are sorted by frame and a frame appears in at most one meme. Only the standard mode is
+      Memes are sorted by frame and a frame appears in at most one meme.
+      An optional `not_memes` list holds frames the human explicitly marked as *not* a meme (hard
+      negatives, such as a look-alike that a classifier wrongly flags): each entry has
+      `not_meme_ts` and `not_meme_frame`, sorted by frame. A frame can't be both a meme and a
+      not-meme. A file without `not_memes` is valid and means none. Only the standard mode is
       implemented now; the loader rejects `precise` files with a clear "not supported yet" error.
 - [x] AC4: A frame's index is its 0-based position in sequential decoding of the file, and its
       timestamp is that frame's own presentation time (`CAP_PROP_POS_MSEC`), exactly as
@@ -57,6 +61,9 @@ keeping images on disk.
 - [x] AC7: The loader finds each meme's frame by `meme_frame` using sequential decoding, and checks
       that the decoded frame's timestamp equals `meme_ts` (to the millisecond), raising on a
       mismatch. It doesn't rely on seeking to find a frame.
+- [x] AC11: The loader can yield the explicit not-meme frames (index, timestamp, frame) the same way
+      as the positives, with the same timestamp check. They are always negatives, even inside a
+      mark's exclusion window.
 - [x] AC8: The loader can yield the positive frames (BGR arrays with index and timestamp) and the
       negative frames. Negatives are the frames sampled at a given fps that lie outside an
       exclusion window of ±1.0 s (overridable) around every positive timestamp, because a meme lasts
@@ -133,3 +140,6 @@ Resolved by the user (2026-10-07):
   group; `pyproject.toml` also gets `pythonpath = ["."]` so tests can import `tools/`).
   `frame_count` is the container-reported count rather than a full decode, to keep the AC6 check
   cheap. `tests/test_labeling_dataset.py`: 15 tests; `pytest -m "not slow"`: 306 passed.
+- 2026-10-07: The user asked to also mark "not_meme". Added the optional `not_memes` list
+  (`not_meme_ts`, `not_meme_frame`) and AC11 (loader yields them as hard negatives). Existing
+  files stay valid (schema is still 1). Implemented in `tools/labeling/dataset.py`.

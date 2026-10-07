@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 # Development tooling only (tools/labeling); the Dockerfile and the GitHub workflow install without it.
-labeling = ["PyYAML"]
+labeling = ["PyYAML", "Flask"]
 
 [project.scripts]
 extract-memes = "extract_memes.__main__:main"

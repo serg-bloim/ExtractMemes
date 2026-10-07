@@ -32,6 +32,9 @@
   .row-item .ts { font-weight:600; }
   .star { color:var(--mark); font-weight:700; }
   .flag { color:var(--flag); font-weight:700; }
+  .no { color:#7fb2ff; font-weight:700; }
+  .chip.neg { border-color:#37507a; }
+  #view.notmeme { border-color:#7fb2ff; box-shadow:0 0 0 2px #7fb2ff; }
   .dim { color:var(--dim); }
   #main { display:flex; flex-direction:column; min-width:0; min-height:0; padding:10px; gap:8px; }
   #view { flex:1; min-height:0; display:flex; justify-content:center; align-items:center; background:#000;
@@ -53,12 +56,12 @@
 <div id="side">
   <div id="filters">
     <div class="row"><label>Human label</label>
-      <select id="f-human"><option value="">any</option><option value="1">marked</option><option value="0">unmarked</option></select></div>
+      <select id="f-human"><option value="">any</option><option value="meme">meme</option><option value="not_meme">not a meme</option><option value="none">unlabeled</option><option value="other">anything but meme</option></select></div>
     <div class="row"><label>Classifier</label>
       <select id="f-verdict"><option value="">any</option><option value="1">flagged</option><option value="0">not flagged</option></select></div>
     <div id="f-criteria"></div>
     <div class="row">
-      <button id="fp" title="Flagged by the classifier but not marked by me">False positives</button>
+      <button id="fp" title="Flagged by the classifier but not marked as a meme by me (unlabeled or not a meme)">False positives</button>
       <button id="miss" title="Marked by me but not flagged by the classifier">Misses</button>
       <button id="reset">Reset</button></div>
   </div>
@@ -70,10 +73,10 @@
   <div id="info">
     <table id="facts"></table>
     <div>
-      <div><button id="toggle">Mark as meme (M)</button> <span id="err"></span></div>
+      <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <span id="err"></span></div>
       <div id="help">
         <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>Shift</kbd>/<kbd>⌘</kbd>+click rows to select several (<kbd>Esc</kbd> clears) · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
-        <kbd>M</kbd> mark · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
+        <kbd>M</kbd> meme · <kbd>X</kbd> not a meme · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
         <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
       </div>
     </div>
@@ -88,7 +91,9 @@ let S;                       // server state
 let sel = 0;                 // selected native frame index
 let view = [];               // strip row numbers (into S.rows) that match the filters
 let memeFrames = new Set();
-let rowMarked = [];          // per strip row: is there a mark mapped to it
+let notFrames = new Set();
+let rowMarked = [];          // per strip row: is there a meme mark mapped to it
+let rowNot = [];             // per strip row: is there a not-a-meme mark mapped to it
 let loadToken = 0;
 let multi = new Set();       // strip rows selected with shift/cmd+click
 let anchorRow = 0;           // where a shift+click range starts
@@ -107,12 +112,18 @@ async function api(path, body) {
 // The strip row a native frame belongs to: the last scanned frame at or before it.
 const rowOf = frame => Math.min(S.rows.length - 1, Math.floor(frame / S.step));
 
-function applyMemes(memes) {
-  S.memes = memes;
-  memeFrames = new Set(memes.map(m => m.frame));
+function applyLabels(labels) {
+  S.memes = labels.memes;
+  S.not_memes = labels.not_memes || [];
+  memeFrames = new Set(S.memes.map(m => m.frame));
+  notFrames = new Set(S.not_memes.map(m => m.frame));
   rowMarked = new Array(S.rows.length).fill(false);
-  for (const m of memes) rowMarked[rowOf(m.frame)] = true;
+  rowNot = new Array(S.rows.length).fill(false);
+  for (const m of S.memes) rowMarked[rowOf(m.frame)] = true;
+  for (const m of S.not_memes) rowNot[rowOf(m.frame)] = true;
 }
+
+const humanLabel = r => rowMarked[r] ? "meme" : rowNot[r] ? "not_meme" : "none";
 
 function filters() {
   const f = {human: $("f-human").value, verdict: $("f-verdict").value, ranges: {}};
@@ -124,7 +135,7 @@ function filters() {
 }
 
 function matches(row, f) {
-  if (f.human !== "" && (rowMarked[row] ? "1" : "0") !== f.human) return false;
+  if (f.human === "other" ? humanLabel(row) === "meme" : f.human !== "" && humanLabel(row) !== f.human) return false;
   if (f.verdict !== "" && String(S.verdict[row]) !== f.verdict) return false;
   for (const [name, [lo, hi]] of Object.entries(f.ranges)) {
     const v = S.scores[name][row];
@@ -158,6 +169,7 @@ function renderStrip() {
     el.innerHTML = '<img loading="lazy" src="/thumb/' + idx + '.jpg">' +
       '<div class="meta"><div><span class="ts">' + fmt(S.pts[idx]) + '</span> <span class="dim">#' + idx + '</span> ' +
       (rowMarked[r] ? '<span class="star">★ meme</span> ' : '') +
+      (rowNot[r] ? '<span class="no">✗ not meme</span> ' : '') +
       (S.verdict[r] ? '<span class="flag">⚑ flagged</span>' : '') + '</div>' +
       '<div class="dim">' + scores + '</div></div>';
     el.onclick = e => clickRow(r, i, e);
@@ -212,55 +224,65 @@ function select(frame, scroll = true, keepMulti = false) {
 function renderInfo() {
   const r = rowOf(sel), onRow = S.rows[r] === sel;
   const marked = memeFrames.has(sel);
+  const notMarked = notFrames.has(sel);
   $("view").classList.toggle("marked", marked);
-  $("toggle").textContent = multi.size > 1
-    ? (Array.from(multi).every(x => rowMarked[x]) ? "Unmark " : "Mark ") + multi.size + " selected frames (M)"
+  $("view").classList.toggle("notmeme", notMarked);
+  const many = multi.size > 1;
+  $("toggle").textContent = many
+    ? (Array.from(multi).every(x => rowMarked[x]) ? "Unmark " : "Mark ") + multi.size + " selected as meme (M)"
     : (marked ? "Unmark meme" : "Mark as meme") + " (M)";
+  $("toggle-not").textContent = many
+    ? (Array.from(multi).every(x => rowNot[x]) ? "Unmark " : "Mark ") + multi.size + " selected as not a meme (X)"
+    : (notMarked ? "Unmark not-a-meme" : "Mark as not a meme") + " (X)";
   let html = "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td></tr>" +
     "<tr><td class='dim'>frame</td><td>#" + sel + (onRow ? "" : " <span class='dim'>(between scanned frames; scored row #" + S.rows[r] + ")</span>") + "</td></tr>" +
-    "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : (rowMarked[r] ? "near a mark" : "unmarked")) + "</td></tr>" +
+    "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : notMarked ? "<span class='no'>✗ not a meme</span>" : (rowMarked[r] || rowNot[r] ? "near a mark" : "unlabeled")) + "</td></tr>" +
     "<tr><td class='dim'>classifier</td><td>" + (S.verdict[r] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td></tr>";
   for (const c of S.criteria)
     html += "<tr><td class='dim'>" + c.name + "</td><td>" + S.scores[c.name][r] +
             (c.threshold != null ? " <span class='dim'>(threshold " + c.threshold + ")</span>" : "") + "</td></tr>";
   $("facts").innerHTML = html;
-  const chips = $("marks");
-  chips.replaceChildren(...S.memes.map(m => {
+  const chip = (m, label) => {
     const el = document.createElement("span");
-    el.className = "chip" + (m.frame === sel ? " cur" : "");
-    el.textContent = fmt(m.ts) + " #" + m.frame;
+    el.className = "chip" + (label === "not_meme" ? " neg" : "") + (m.frame === sel ? " cur" : "");
+    el.textContent = (label === "not_meme" ? "✗ " : "") + fmt(m.ts) + " #" + m.frame;
     el.onclick = () => select(m.frame);
-    const x = document.createElement("b"); x.textContent = "✕"; x.title = "remove this mark";
-    x.onclick = e => { e.stopPropagation(); setMark(m.frame, false); };
+    const x = document.createElement("b"); x.textContent = "✕"; x.title = "remove this label";
+    x.onclick = e => { e.stopPropagation(); setMark(m.frame, false, label); };
     el.appendChild(x);
     return el;
-  }));
+  };
+  $("marks").replaceChildren(...S.memes.map(m => chip(m, "meme")), ...S.not_memes.map(m => chip(m, "not_meme")));
 }
 
-async function setMark(frame, on) {
+async function setMark(frame, on, label = "meme") {
   try {
-    applyMemes((await api("/api/mark", {frame, on})).memes);
+    applyLabels(await api("/api/mark", {frame, on, label}));
     refilter();           // a row that stops matching drops out after the change
     renderInfo();
   } catch (e) { $("err").textContent = String(e); }
 }
 
-async function toggleMark() {
+async function toggleLabel(label) {
+  const rowFlag = label === "meme" ? rowMarked : rowNot;
+  const frameSet = label === "meme" ? memeFrames : notFrames;
+  const list = label === "meme" ? S.memes : S.not_memes;
   if (multi.size > 1) {                                // one request for the whole selection
     const rows = Array.from(multi);
-    const allMarked = rows.every(r => rowMarked[r]);
-    const frames = allMarked
-      ? S.memes.filter(m => multi.has(rowOf(m.frame))).map(m => m.frame)
-      : rows.filter(r => !rowMarked[r]).map(r => S.rows[r]);
+    const allSet = rows.every(r => rowFlag[r]);
+    const frames = allSet
+      ? list.filter(m => multi.has(rowOf(m.frame))).map(m => m.frame)
+      : rows.filter(r => !rowFlag[r]).map(r => S.rows[r]);
     try {
-      applyMemes((await api("/api/mark_many", {frames, on: !allMarked})).memes);
+      applyLabels(await api("/api/mark_many", {frames, on: !allSet, label}));
       multi = new Set();
       refilter(); renderInfo();
     } catch (e) { $("err").textContent = String(e); }
     return;
   }
-  return setMark(sel, !memeFrames.has(sel));
+  return setMark(sel, !frameSet.has(sel), label);
 }
+const toggleMark = () => toggleLabel("meme");
 
 // Shift+M: the same meme was marked on another frame; move that mark here instead of adding one.
 async function moveNearestMark() {
@@ -269,7 +291,7 @@ async function moveNearestMark() {
                       .sort((a, b) => Math.abs(a.ts - here) - Math.abs(b.ts - here))[0];
   if (!near) { $("err").textContent = "no mark within " + S.window + " s to move"; return; }
   try {
-    applyMemes((await api("/api/move", {from: near.frame, to: sel})).memes);
+    applyLabels(await api("/api/move", {from: near.frame, to: sel}));
     refilter(); renderInfo();
   } catch (e) { $("err").textContent = String(e); }
 }
@@ -320,6 +342,7 @@ document.addEventListener("keydown", e => {
     case "ArrowUp": jumpInView(-1); break;
     case "ArrowDown": jumpInView(1); break;
     case "m": case "M": case " ": (e.shiftKey && e.key === "M" ? moveNearestMark() : toggleMark()); break;
+    case "x": case "X": toggleLabel("not_meme"); break;
     case "n": case "N": jumpMark(1); break;
     case "p": case "P": jumpMark(-1); break;
     case "u": case "U": jumpUnlabeled(); break;
@@ -341,8 +364,8 @@ function buildFilterInputs() {
     box.appendChild(row);
   }
   for (const el of document.querySelectorAll("#filters select, #filters input")) el.onchange = refilter;
-  $("fp").onclick = () => { resetFilters(); $("f-verdict").value = "1"; $("f-human").value = "0"; refilter(); };
-  $("miss").onclick = () => { resetFilters(); $("f-verdict").value = "0"; $("f-human").value = "1"; refilter(); };
+  $("fp").onclick = () => { resetFilters(); $("f-verdict").value = "1"; $("f-human").value = "other"; refilter(); };
+  $("miss").onclick = () => { resetFilters(); $("f-verdict").value = "0"; $("f-human").value = "meme"; refilter(); };
   $("reset").onclick = () => { resetFilters(); refilter(); };
 }
 
@@ -351,6 +374,7 @@ function resetFilters() {
 }
 
 $("toggle").onclick = toggleMark;
+$("toggle-not").onclick = () => toggleLabel("not_meme");
 $("strip").addEventListener("scroll", renderStrip);
 window.addEventListener("resize", renderStrip);
 
@@ -358,7 +382,7 @@ window.addEventListener("resize", renderStrip);
   S = await api("/api/state");
   document.title = "Labeler — " + S.video.id;
   buildFilterInputs();
-  applyMemes(S.memes);
+  applyLabels(S);
   refilter();
   select(S.memes.length ? S.memes[0].frame : 0);
 })().catch(e => { $("err").textContent = String(e); });

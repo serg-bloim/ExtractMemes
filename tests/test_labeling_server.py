@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 pytest.importorskip("yaml")
+pytest.importorskip("flask")
 
 from tests.labeling_support import FPS, make_video
 from tools.labeling import dataset as ds
@@ -14,7 +15,9 @@ from tools.labeling import index as index_module
 from tools.labeling.criteria import CRITERIA, Criterion
 from tools.labeling.dataset import Dataset, VideoInfo
 from tools.labeling.index import FrameReader, build
-from tools.labeling.server import LabelerApp, serve
+from werkzeug.serving import make_server
+
+from tools.labeling.server import LabelerApp, create_flask_app
 
 
 @pytest.fixture
@@ -30,7 +33,7 @@ def labeler(tmp_path, video):
     dataset_file = tmp_path / "datasets" / "abcdefghijk.yaml"
     index = build(video, tmp_path / "cache", fps=5.0)
     app = LabelerApp(dataset, dataset_file, index, video)
-    server = serve(app, 0)
+    server = make_server("127.0.0.1", 0, create_flask_app(app), threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
     yield app, base, dataset_file
@@ -146,6 +149,25 @@ def test_marking_many_frames_is_one_save_and_unmarking_many_removes_them(labeler
     memes = post(base, "/api/mark_many", {"frames": [5, 30], "on": False})["memes"]
     assert [m["frame"] for m in memes] == [10]
     assert [m.meme_frame for m in ds.load(dataset_file).memes] == [10]
+
+
+def test_not_meme_labels_are_saved_and_replace_the_meme_label(labeler):
+    _, base, dataset_file = labeler
+
+    post(base, "/api/mark", {"frame": 12, "on": True})
+    labels = post(base, "/api/mark", {"frame": 12, "on": True, "label": "not_meme"})
+    assert labels["memes"] == [] and [n["frame"] for n in labels["not_memes"]] == [12]
+    labels = post(base, "/api/mark_many", {"frames": [20, 30], "on": True, "label": "not_meme"})
+    assert [n["frame"] for n in labels["not_memes"]] == [12, 20, 30]
+    saved = ds.load(dataset_file)
+    assert saved.memes == [] and [n.not_meme_frame for n in saved.not_memes] == [12, 20, 30]
+    assert json.load(get(base + "/api/state"))["not_memes"][0]["frame"] == 12
+
+    labels = post(base, "/api/mark", {"frame": 12, "on": False, "label": "not_meme"})
+    assert [n["frame"] for n in labels["not_memes"]] == [20, 30]
+    with pytest.raises(urllib.error.HTTPError) as error:
+        post(base, "/api/mark", {"frame": 12, "on": True, "label": "maybe"})
+    assert error.value.code == 400
 
 
 def test_a_bad_frame_in_a_batch_marks_nothing(labeler):

@@ -6,7 +6,7 @@ pytest.importorskip("yaml")
 
 from tests.labeling_support import FPS, make_video
 from tools.labeling import dataset as ds
-from tools.labeling.dataset import Dataset, DatasetError, Meme, VideoInfo
+from tools.labeling.dataset import Dataset, DatasetError, Meme, NotMeme, VideoInfo
 
 
 @pytest.fixture
@@ -144,3 +144,42 @@ def test_negative_frames_skip_the_window_around_every_mark(video):
     assert all(abs(ts - 37 / FPS) > 0.5 for _, ts in frames)
     assert 37 not in [i for i, _ in frames] and 35 not in [i for i, _ in frames]
     assert 55 in [i for i, _ in frames]
+
+
+def test_not_memes_round_trip_and_exclude_the_meme_label(tmp_path, video):
+    dataset = Dataset(video=info_for(video))
+    dataset.add(10, 0.4)
+    dataset.add_not_meme(30, 1.2)
+    dataset.add_not_meme(10, 0.4)  # replaces the meme label of frame 10
+    path = tmp_path / "d.yaml"
+
+    ds.save(dataset, path)
+    loaded = ds.load(path)
+
+    assert loaded.memes == [] and loaded.not_memes == [NotMeme(0.4, 10), NotMeme(1.2, 30)]
+    assert "- {not_meme_ts: 1.200, not_meme_frame: 30}" in path.read_text()
+    loaded.add(30, 1.2)  # and back again
+    assert loaded.memes == [Meme(1.2, 30)] and loaded.not_memes == [NotMeme(0.4, 10)]
+
+
+def test_a_file_without_not_memes_is_valid_and_a_clash_is_rejected(tmp_path, video):
+    path = tmp_path / "d.yaml"
+    ds.save(Dataset(video=info_for(video)), path)
+    assert "not_memes" not in path.read_text() and ds.load(path).not_memes == []
+
+    path.write_text(path.read_text().replace("memes: []", "memes:\n  - {meme_ts: 0.4, meme_frame: 10}\n"
+                                             "not_memes:\n  - {not_meme_ts: 0.4, not_meme_frame: 10}"))
+    with pytest.raises(DatasetError, match="both a meme and a not-meme"):
+        ds.load(path)
+
+
+def test_not_meme_frames_are_found_by_index_even_next_to_a_mark(video):
+    dataset = Dataset(video=info_for(video))
+    ts = {i: t for i, t, _ in ds.iter_frames(video, lambda i: i in (20, 22))}
+    dataset.add(20, ts[20])
+    dataset.add_not_meme(22, ts[22])
+
+    assert [i for i, _, _ in ds.not_meme_frames(dataset, video)] == [22]
+    dataset.not_memes = [NotMeme(9.0, 22)]
+    with pytest.raises(DatasetError, match="not the labeled video"):
+        list(ds.not_meme_frames(dataset, video))

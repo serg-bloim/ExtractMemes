@@ -89,7 +89,15 @@ classifier disagrees with me, and keep the result in the repo.
       one row. The selected rows are highlighted and counted, and the mark key then applies to all of
       them in one request: if every selected row is marked it unmarks them, otherwise it marks the
       unmarked ones. Esc, a plain click or keyboard navigation clears the selection.
-- [ ] AC16: Offline tests cover the server's frame, thumbnail and label endpoints against a small
+- [ ] AC16: A second human label, **not a meme**, can be set on the selected frame or on a
+      multi-selection with its own key (X) and button, and cleared the same way. A frame is a meme,
+      a not-meme or unlabeled, never two: setting one replaces the other. Not-memes are saved to the
+      dataset's `not_memes` list on every change, shown on strip rows and in the large view, listed
+      beside the marks, and the human-label filter has meme / not meme / unlabeled.
+- [ ] AC17: `./labeler.sh <youtube-url-or-id> [--fps N] [--format-id ID] [--port N] [--proxy URL]`
+      from anywhere starts the server with auto-reload: editing a Python file under `tools/labeling/`
+      restarts it, and a browser refresh picks up `page.html`. Marks survive a restart.
+- [ ] AC18: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
 
@@ -105,8 +113,13 @@ classifier disagrees with me, and keep the result in the repo.
 
 ## Technical Notes
 
-- Standard library `http.server` is enough; no web framework. The page is one static HTML file
-  with inline JS and CSS.
+- Flask serves the page and the API. It is the lightest framework that gives `flask run --debug`
+  (reload on Python changes), and the work here is blocking OpenCV decoding, so async (FastAPI)
+  adds nothing. Flask is in the optional `labeling` group with PyYAML. The page is one static HTML
+  file with inline JS and CSS, read on every request so a browser refresh picks up edits.
+- `labeler.sh` at the project root runs `flask --app tools.labeling.wsgi:create_app run --debug`
+  with the video and options passed in environment variables; `python -m tools.labeling` stays as
+  the plain launcher without reload.
 - Exact indices and timestamps need a sequential decode (dataset AC4). Likely approach: a first
   pass over the file records every frame's presentation time and writes thumbnails for the strip
   to a cache under `.runtime/`; full frames are then decoded on request by reading forward from a
@@ -162,3 +175,12 @@ Resolved by the user (2026-10-07):
   range and Cmd/Ctrl-click toggle in the strip, one bulk mark request; Shift+arrows keep their
   1 s step); the test criterion is now AC16. The shift-click range works on strip rows, since
   those are the frames the classifier sees.
+- 2026-10-07: The user asked to also mark "not_meme". Added AC16 (a second human label with key X,
+  stored in the dataset's `not_memes`, with its own filter value); the test criterion is now AC17.
+- 2026-10-07: The user asked for a dev server that reloads on source changes and chose Flask. The
+  server moved from `http.server` to Flask (`create_flask_app`), `labeler.sh` starts it with
+  `flask run --debug`, Flask joined the `labeling` extra, and the host check now compares host
+  names (any port) because the port is the CLI's choice. AC17 added; tests are now AC18.
+- 2026-10-07: Added `labeler-run.sh`: `./labeler.sh FtU4MuksCzE --fps 3 --port 8765` (the settings
+  used so far), where a leading video id/URL replaces the default and any other options are
+  passed through.

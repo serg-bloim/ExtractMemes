@@ -73,6 +73,7 @@ ExtractMemes/
 │   ├── lan_proxy_relay.py        ← Loopback→LAN TCP relay; lets a Homebrew interpreter reach a
 │                                   LAN proxy on macOS (see ADR 017). Runs under /usr/bin/python3.
 │   └── labeling/                 ← Dev-only dataset labeler (not in the package or the image); run
+│                                   `./labeler.sh <url>` (Flask dev server, reloads on edits) or
 │                                   `python -m tools.labeling <url>`. Needs `pip install -e ".[labeling]"`.
 ├── sample/                       ← Local video fixtures, supplied by hand (gitignored)
 ├── data/

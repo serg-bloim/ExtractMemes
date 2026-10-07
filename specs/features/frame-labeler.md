@@ -165,17 +165,24 @@ classifier disagrees with me, and keep the result in the repo.
       `{min, max}`, a missing bound open; `invert`: the names of the inverted filters) and a
       `schema` version. A name is 1-64 letters, digits,
       `_` or `-`, so nothing can be written outside that folder. Profiles belong to no video.
-- [ ] AC24: **Precise view.** A "Precise" button beside Frame and Histogram switches the main area to
-      the large frame with a **horizontal strip of every native frame** under it (a thumbnail with its
-      index and timestamp, `/small/<n>.jpg`), scrollable over the whole video by trackpad, scrollbar or
-      mouse wheel, and centred on the selected frame whenever the selection moves (a click in the strip
-      selects without moving it). Clicking a frame selects it; Set start / Set end (`[` / `]`, available in this view) mark the selected frame as the start/end of the meme
-      that covers it or is nearest within ±1 s (or of a new meme), refusing a start after the end or an end before
-      the start; a meme with a start/end counts as a meme on every frame of the range (strip rows, large view,
-      unmarking any frame in it removes the whole meme); marking a not-meme inside a range, or moving a ranged
-      meme with Shift+M, is refused; ranges are saved on every change as optional `meme_start_ts/frame` and
-      `meme_end_ts/frame` on the meme ([labeled-video-dataset](labeled-video-dataset.md) AC3). Frames of a marked meme are outlined, its start and end carry a badge, and the
-      strip updates as the marks change.
+- [ ] AC24: **Frame view modes and start/end.** The Frame tab has three view modes, chosen with
+      Preview / Gallery / Tiles buttons beside the tabs (hidden on the histogram; the choice is
+      remembered by the browser):
+      - **Preview:** the large frame only;
+      - **Gallery:** the large frame with a horizontal strip of every native frame under it
+        (thumbnail, index, timestamp; `/small/<n>.jpg`), scrollable over the whole video by trackpad,
+        scrollbar or mouse wheel;
+      - **Tiles:** every native frame as a tile in rows filling the main area, scrolled vertically
+        (no large frame).
+      In Gallery and Tiles the selected frame is outlined and kept in view whenever the selection moves
+      (a click on a thumbnail selects without moving the view); the meme's frames are outlined and its
+      start and end badged, updating as marks change. In every mode `[` / `]` (and the Set start / Set end
+      buttons) make the selected frame the start / end of the meme that covers it or is nearest within
+      ±1 s, or of a new meme; a start after the end (or an end before the start) is refused. A meme with
+      a start/end counts as a meme on every frame of the range (strip rows, large view; unmarking any
+      frame in it removes the whole meme); marking a not-meme inside a range, or moving a ranged meme
+      with Shift+M, is refused. Ranges are saved on every change as optional `meme_start_ts/frame` and
+      `meme_end_ts/frame` on the meme ([labeled-video-dataset](labeled-video-dataset.md) AC3).
 - [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
@@ -365,3 +372,9 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: The user dropped the settings modal. Removed it together with the precise-mode setting and its
   ±window filter of the strip (AC23 is folded into AC24); the Precise view stays and finds the meme for
   Set start/end within a fixed ±1 s. Re-ran the headless check (strip, edges, unmark).
+- 2026-10-07: The user replaced the separate Precise tab with view modes of the Frame tab (Finder-style):
+  Preview (large frame), Gallery (large frame + horizontal frame strip) and Tiles (rows of tiles). AC24 rewritten;
+  Set start/end is available in every mode. Checked in headless Chrome on `FtU4MuksCzE`: all three modes render and
+  switch, a tile click selects, start/end set a ranged meme with badges, histogram hides the mode buttons (screenshot of
+  Tiles viewed). With a short window the Tiles area shows only a couple of rows because the info panel and marks list
+  share the column. Not used by hand yet.

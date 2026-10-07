@@ -72,12 +72,16 @@
   #vid { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   #pstrip { flex:none; height:112px; overflow-x:scroll; overflow-y:hidden; position:relative; background:var(--panel);
             border:1px solid var(--line); user-select:none; }
-  #pstrip[hidden] { display:none; }
+  #pstrip[hidden], #tiles[hidden] { display:none; }
+  #tiles { flex:1; min-height:0; overflow-y:scroll; position:relative; background:var(--panel); border:1px solid var(--line); user-select:none; }
+  #modes { margin-left:14px; display:inline-flex; gap:2px; }
+  #modes button.on { border-color:var(--sel); color:var(--sel); } #modes[hidden] { display:none; }
   .pf { position:absolute; top:4px; width:112px; height:96px; padding:0 3px; cursor:pointer; font-size:10px; line-height:1.25; text-align:center; color:var(--dim); }
   .pf img { width:106px; height:60px; object-fit:cover; background:#000; display:block; border:2px solid transparent; }
   .pf:hover img { border-color:var(--dim); }
   .pf.inrange img { border-color:var(--mark); } .pf.sel img { border-color:var(--sel); box-shadow:0 0 0 1px var(--sel); }
   .pf.sel { color:var(--text); } .pf .badge { color:var(--mark); font-weight:700; min-height:12px; }
+  #tiles .pf { height:100px; }
   #opener { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; z-index:10; }
   #opener[hidden] { display:none; }
   #opener .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; width:min(560px, 92vw); }
@@ -122,7 +126,8 @@
 </div>
 <div id="main">
   <div id="tabs">
-    <button id="tab-frame" class="on">Frame</button><button id="tab-hist" title="H">Histogram</button><button id="tab-precise" title="Frame-by-frame strip around the selected frame, to mark a meme's start and end">Precise</button>
+    <button id="tab-frame" class="on">Frame</button><button id="tab-hist" title="H">Histogram</button>
+    <span id="modes" class="seg" title="How the frames are shown"><button data-mode="preview" title="One large frame">Preview</button><button data-mode="gallery" title="The large frame with a strip of every frame under it">Gallery</button><button data-mode="tiles" title="Every frame as a tile, in rows">Tiles</button></span>
     <span id="hist-controls" hidden>
       <select id="metric"></select>
       bins <input id="bins" type="number" min="5" max="200" value="40">
@@ -134,6 +139,7 @@
   </div>
   <div id="view"><img id="big" alt=""><div id="none" class="dim" hidden>No frame selected</div></div>
   <div id="pstrip" hidden><div id="pspacer"></div></div>
+  <div id="tiles" hidden><div id="tspacer"></div></div>
   <div id="hist">
     <div id="hist-scope"></div>
     <svg id="hist-svg" viewBox="0 0 820 380" preserveAspectRatio="xMidYMid meet"></svg>
@@ -143,11 +149,11 @@
   <div id="info">
     <table id="facts"></table>
     <div>
-      <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <span id="edges" hidden><button id="set-start" title="Make the selected frame the first frame of the meme at/near it, or of a new meme">Set start ([)</button> <button id="set-end" title="Make the selected frame the last frame of the meme at/near it, or of a new meme">Set end (])</button></span> <button id="copy" title="Copy video id, format id, timestamp and frame index">Copy locator (C)</button> <span id="err"></span></div>
+      <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <span id="edges"><button id="set-start" title="Make the selected frame the first frame of the meme at/near it, or of a new meme">Set start ([)</button> <button id="set-end" title="Make the selected frame the last frame of the meme at/near it, or of a new meme">Set end (])</button></span> <button id="copy" title="Copy video id, format id, timestamp and frame index">Copy locator (C)</button> <span id="err"></span></div>
       <div id="help">
         <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>Shift</kbd>/<kbd>⌘</kbd>+click rows to select several (<kbd>A</kbd> selects all shown, <kbd>Esc</kbd> clears) · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
         <kbd>M</kbd> meme · <kbd>X</kbd> not a meme · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
-        <span id="precise-help" hidden><kbd>[</kbd> start · <kbd>]</kbd> end of the meme (Precise view) · </span><kbd>C</kbd> copy locator · <kbd>H</kbd> frame/histogram · <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
+        <kbd>[</kbd> start · <kbd>]</kbd> end of the meme · <kbd>C</kbd> copy locator · <kbd>H</kbd> frame/histogram · <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
       </div>
     </div>
     <div><input id="goto" placeholder="jump to time (s or m:s)" size="20"></div>
@@ -342,7 +348,7 @@ function select(frame, scroll = true, keepMulti = false) {
   $("err").textContent = "";
   renderInfo();
   if (scroll) scrollToSelection();
-  if (preciseOn && !skipCenter) centerPrecise();
+  if (!skipCenter) centerFrames();
   renderStrip();
 }
 
@@ -380,7 +386,7 @@ function rangeText(m) {
 
 function renderInfo() {
   renderInfoPanel();
-  renderPrecise();
+  renderFrames();
   renderHistogram();
 }
 
@@ -415,7 +421,7 @@ function renderInfoPanel() {
     "<tr><td class='dim'>frame</td><td>#" + sel + (onRow ? "" : " <span class='dim'>(between scanned frames; scored row #" + S.rows[r] + ")</span>") + "</td></tr>" +
     "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : notMarked ? "<span class='no'>✗ not a meme</span>" : (rowMarked[r] || rowNot[r] ? "near a mark" : "unlabeled")) + "</td></tr>" +
     "<tr><td class='dim'>classifier</td><td>" + (S.verdict[r] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td></tr>";
-  const meme = preciseOn ? S.memes.find(m => { const e = extent(m); return e.lo <= sel && sel <= e.hi; }) : null;
+  const meme = S.memes.find(m => { const e = extent(m); return (m.start_frame != null || m.end_frame != null) && e.lo <= sel && sel <= e.hi; });
   if (meme) html += "<tr><td class='dim'>meme range</td><td>" + rangeText(meme) + "</td></tr>";
   for (const c of S.criteria)
     html += "<tr><td class='dim'>" + c.name + "</td><td>" + S.scores[c.name][r] +
@@ -480,9 +486,9 @@ async function toggleLabel(label) {
 }
 const toggleMark = () => toggleLabel("meme");
 
-// Precise mode: the selected frame becomes the start or end of the meme at/near it, or of a new meme.
+// The selected frame becomes the start or end of the meme at/near it, or of a new meme.
 async function setEdge(edge) {
-  if (!preciseOn || !hasSel) return;
+  if (!hasSel) return;
   try {
     applyLabels(await api("/api/edge", {frame: sel, edge, window: S.window}));
     refilter(); renderInfo();
@@ -601,7 +607,8 @@ window.addEventListener("resize", renderStrip);
 
 // ---- histogram view ---------------------------------------------------------------------------
 let histOn = false;
-let preciseOn = false;       // the precise view (frame strip) is showing
+let frameMode = "preview";   // how the Frame tab shows frames: preview | gallery | tiles
+try { const m = localStorage.getItem("labeler.frameMode"); if (["preview", "gallery", "tiles"].includes(m)) frameMode = m; } catch (e) { /* no storage */ }
 let histZoom = null;         // {name, lo, hi}: the visible x window while zoomed in; null = the whole range
 let zoomFrame = 0;           // pending animation frame while wheel events stream in
 let histGeom = null;         // the last drawn chart's geometry, for turning a drag into values
@@ -847,64 +854,96 @@ function zoomHistogram(e) {
   if (!zoomFrame) zoomFrame = requestAnimationFrame(() => { zoomFrame = 0; renderHistogram(); });
 }
 
-function setView(histogram) { showMode(histogram ? "hist" : "frame"); }
+function setView(histogram) { histOn = histogram; layoutMain(); }
 
-// The main area shows one of: the frame, the histogram, or the frame with the precise strip under it.
-function showMode(mode) {
-  histOn = mode === "hist";
-  preciseOn = mode === "precise";
-  $("view").style.display = histOn ? "none" : "";
+// The Frame tab shows the frames as a preview, a gallery or tiles (frameMode); the other tab is the histogram.
+function layoutMain() {
+  const gallery = !histOn && frameMode === "gallery", tiles = !histOn && frameMode === "tiles";
+  $("view").style.display = histOn || tiles ? "none" : "";
   $("hist").classList.toggle("on", histOn);
   $("hist-controls").hidden = !histOn;
-  $("pstrip").hidden = !preciseOn;
-  $("tab-frame").classList.toggle("on", mode === "frame");
+  $("modes").hidden = histOn;
+  $("pstrip").hidden = !gallery;
+  $("tiles").hidden = !tiles;
+  $("tab-frame").classList.toggle("on", !histOn);
   $("tab-hist").classList.toggle("on", histOn);
-  $("tab-precise").classList.toggle("on", preciseOn);
-  $("edges").hidden = $("precise-help").hidden = !preciseOn;
-  if (preciseOn) { renderPrecise(); centerPrecise(); }   // size the strip before scrolling it
+  for (const b of document.querySelectorAll("#modes button")) b.classList.toggle("on", b.dataset.mode === frameMode);
+  renderFrames();      // size the strip / grid first, then scroll to the selection
+  centerFrames();
   renderHistogram();
 }
 
-// ---- precise view: one thumbnail per native frame, scrollable over the whole video -------------
-const PF_W = 112;
-let skipCenter = false;      // a click in the strip selects without moving the strip under the pointer
+// ---- gallery and tiles: one thumbnail per native frame -----------------------------------------
+const PF_W = 112, TILE_H = 104;
+let skipCenter = false;      // a click on a thumbnail selects without moving the view under the pointer
 
-function centerPrecise() {
-  const box = $("pstrip");
-  box.scrollLeft = Math.max(0, sel * PF_W - box.clientWidth / 2 + PF_W / 2);
+function tileCols() { return Math.max(1, Math.floor($("tiles").clientWidth / PF_W)); }
+
+function centerFrames() {
+  if (histOn) return;
+  if (frameMode === "gallery") {
+    const box = $("pstrip");
+    box.scrollLeft = Math.max(0, sel * PF_W - box.clientWidth / 2 + PF_W / 2);
+  } else if (frameMode === "tiles") {
+    const box = $("tiles"), top = Math.floor(sel / tileCols()) * TILE_H;
+    if (top < box.scrollTop || top + TILE_H > box.scrollTop + box.clientHeight)
+      box.scrollTop = Math.max(0, top - box.clientHeight / 2 + TILE_H / 2);
+  }
 }
 
-function renderPrecise() {
-  if (!preciseOn) return;
-  const box = $("pstrip");
-  $("pspacer").style.width = S.frame_count * PF_W + "px";
-  const first = Math.max(0, Math.floor(box.scrollLeft / PF_W) - 3);
-  const last = Math.min(S.frame_count, Math.ceil((box.scrollLeft + box.clientWidth) / PF_W) + 3);
+// One frame's thumbnail with its index and time; a meme's frames are outlined, its start and end badged.
+function frameCell(f, spans) {
+  const hit = spans.find(x => x.lo <= f && f <= x.hi);
+  const ranged = hit && (hit.m.start_frame != null || hit.m.end_frame != null);
+  const badge = !hit ? "" : ranged ? (f === hit.m.start_frame ? "▶ start " : "") + (f === hit.m.end_frame ? "end ◀" : "") : "★ meme";
+  const el = document.createElement("div");
+  el.className = "pf" + (hit ? " inrange" : "") + (hasSel && f === sel ? " sel" : "");
+  el.innerHTML = '<div class="badge">' + badge + '</div><img src="/small/' + f + '.jpg?v=' + S.version + '">' +
+                 "<div>#" + f + "</div><div>" + fmt(S.pts[f]) + "</div>";
+  el.onclick = () => { skipCenter = true; select(f); skipCenter = false; };
+  return el;
+}
+
+function renderFrames() {
+  if (histOn || frameMode === "preview") return;
   const spans = S.memes.map(m => ({m, ...extent(m)}));
   const frag = document.createDocumentFragment();
-  for (let f = first; f < last; f++) {
-    const hit = spans.find(x => x.lo <= f && f <= x.hi);
-    const ranged = hit && (hit.m.start_frame != null || hit.m.end_frame != null);
-    const badge = !hit ? "" : ranged ? (f === hit.m.start_frame ? "▶ start " : "") + (f === hit.m.end_frame ? "end ◀" : "") : "★ meme";
-    const el = document.createElement("div");
-    el.className = "pf" + (hit ? " inrange" : "") + (hasSel && f === sel ? " sel" : "");
-    el.style.left = f * PF_W + "px";
-    el.innerHTML = '<div class="badge">' + badge + '</div><img src="/small/' + f + '.jpg?v=' + S.version + '">' +
-                   "<div>#" + f + "</div><div>" + fmt(S.pts[f]) + "</div>";
-    el.onclick = () => { skipCenter = true; select(f); skipCenter = false; };
-    frag.appendChild(el);
+  if (frameMode === "gallery") {
+    const box = $("pstrip");
+    $("pspacer").style.width = S.frame_count * PF_W + "px";
+    const first = Math.max(0, Math.floor(box.scrollLeft / PF_W) - 3);
+    const last = Math.min(S.frame_count, Math.ceil((box.scrollLeft + box.clientWidth) / PF_W) + 3);
+    for (let f = first; f < last; f++) { const el = frameCell(f, spans); el.style.left = f * PF_W + "px"; frag.appendChild(el); }
+    $("pspacer").replaceChildren(frag);
+  } else {
+    const box = $("tiles"), cols = tileCols(), rows = Math.ceil(S.frame_count / cols);
+    $("tspacer").style.height = rows * TILE_H + "px";
+    const first = Math.max(0, Math.floor(box.scrollTop / TILE_H) - 1);
+    const last = Math.min(rows, Math.ceil((box.scrollTop + box.clientHeight) / TILE_H) + 1);
+    for (let r = first; r < last; r++)
+      for (let c = 0; c < cols && r * cols + c < S.frame_count; c++) {
+        const el = frameCell(r * cols + c, spans);
+        el.style.left = c * PF_W + "px"; el.style.top = r * TILE_H + 4 + "px";
+        frag.appendChild(el);
+      }
+    $("tspacer").replaceChildren(frag);
   }
-  $("pspacer").replaceChildren(frag);
 }
 
-function wirePrecise() {
-  const box = $("pstrip");
-  box.addEventListener("scroll", renderPrecise);
-  box.addEventListener("wheel", e => {           // a mouse wheel scrolls sideways too
-    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { box.scrollLeft += e.deltaY; e.preventDefault(); }
+function wireFrames() {
+  const strip = $("pstrip");
+  strip.addEventListener("scroll", renderFrames);
+  $("tiles").addEventListener("scroll", renderFrames);
+  strip.addEventListener("wheel", e => {         // a mouse wheel scrolls sideways too
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { strip.scrollLeft += e.deltaY; e.preventDefault(); }
   }, {passive: false});
-  $("tab-precise").onclick = () => showMode("precise");
-  window.addEventListener("resize", renderPrecise);
+  for (const b of document.querySelectorAll("#modes button"))
+    b.onclick = () => {
+      frameMode = b.dataset.mode;
+      try { localStorage.setItem("labeler.frameMode", frameMode); } catch (e) { /* not remembered */ }
+      layoutMain();
+    };
+  window.addEventListener("resize", renderFrames);
 }
 
 function wireZoom() {
@@ -1142,7 +1181,8 @@ $("src").addEventListener("keydown", e => { if (e.key === "Enter") lookup($("src
   document.title = "Labeler — " + S.video.id;
   buildFilterInputs();
   buildHistogramControls();
-  wirePrecise();
+  wireFrames();
+  layoutMain();
   refreshProfiles().catch(e => profileMessage(String(e), true));
   applyLabels(S);
   refilter();

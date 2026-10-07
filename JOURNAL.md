@@ -138,3 +138,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: The labeler has a precise mode (settings modal, ±1 s window around memes) in which a meme's start and end can be marked — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: The labeler has a Precise view: a horizontal strip of every native frame around the selected one, for picking a meme's start and end — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: Removed the labeler's settings modal and precise-mode filter; marking start/end is done in the Precise view — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler's Frame tab has Preview, Gallery and Tiles view modes instead of a separate Precise tab — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

@@ -54,7 +54,12 @@
   .chip { border:1px solid var(--line); border-radius:12px; padding:1px 4px 1px 9px; cursor:pointer; background:var(--panel); }
   .chip.cur { border-color:var(--mark); }
   .chip b { margin-left:5px; color:var(--dim); cursor:pointer; padding:0 3px; } .chip b:hover { color:var(--flag); }
-  #help { color:var(--dim); font-size:12px; }
+  #hotkeys { position:relative; } #hotkeys > button { color:var(--dim); }
+  #hotkeys-pop { display:none; position:absolute; right:0; top:100%; z-index:20; background:var(--panel); border:1px solid var(--line);
+                 border-radius:6px; padding:10px 14px; box-shadow:0 8px 24px rgba(0,0,0,.5); width:max-content; max-width:min(720px, 90vw); font-size:12px; }
+  #hotkeys:hover #hotkeys-pop, #hotkeys:focus-within #hotkeys-pop { display:block; }
+  #hotkeys-pop table { border-collapse:collapse; } #hotkeys-pop td { padding:2px 0; vertical-align:top; } #hotkeys-pop td:first-child { white-space:nowrap; }
+  #hotkeys-pop td:first-child { padding-right:16px; } #hotkeys-pop h4 { margin:8px 0 2px; color:var(--dim); font-weight:600; } #hotkeys-pop h4:first-child { margin-top:0; }
   kbd { background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:0 4px; }
   #err { color:var(--flag); }
   #tabs { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
@@ -137,6 +142,30 @@
       <button id="hist-clear" hidden title="Remove the range filter on this metric (or double-click the chart)">Clear range</button>
     </span>
     <span class="sp"></span>
+    <span id="hotkeys"><button tabindex="0">Hotkeys</button>
+      <div id="hotkeys-pop"><table>
+        <tr><td colspan="2"><h4>Moving</h4></td></tr>
+        <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>previous / next frame</td></tr>
+        <tr><td><kbd>Shift</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>back / forward 1 second</td></tr>
+        <tr><td><kbd>↑</kbd> <kbd>↓</kbd> · <kbd>K</kbd> <kbd>J</kbd></td><td>previous / next row in the strip (matching the filters)</td></tr>
+        <tr><td><kbd>N</kbd> <kbd>P</kbd></td><td>next / previous mark</td></tr>
+        <tr><td><kbd>U</kbd></td><td>next unlabeled stretch (not within ±1 s of a mark)</td></tr>
+        <tr><td><kbd>G</kbd></td><td>jump to a time</td></tr>
+        <tr><td colspan="2"><h4>Selecting</h4></td></tr>
+        <tr><td><kbd>Shift</kbd>+click</td><td>select a range of frames</td></tr>
+        <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click</td><td>add or remove one frame</td></tr>
+        <tr><td><kbd>A</kbd></td><td>select all frames the strip shows</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>clear the selection</td></tr>
+        <tr><td colspan="2"><h4>Labeling</h4></td></tr>
+        <tr><td><kbd>M</kbd> · <kbd>Space</kbd></td><td>mark / unmark as a meme (several frames: each run becomes a start–end meme, a lone frame a single meme)</td></tr>
+        <tr><td><kbd>X</kbd></td><td>mark / unmark as not a meme</td></tr>
+        <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>set the start / end of the meme at the selected frame</td></tr>
+        <tr><td><kbd>Shift</kbd>+<kbd>M</kbd></td><td>move the nearest mark here</td></tr>
+        <tr><td colspan="2"><h4>Other</h4></td></tr>
+        <tr><td><kbd>C</kbd></td><td>copy the frame locator(s)</td></tr>
+        <tr><td><kbd>H</kbd></td><td>switch between frames and histogram</td></tr>
+      </table></div>
+    </span>
   </div>
   <div id="view"><img id="big" alt=""><div id="none" class="dim" hidden>No frame selected</div></div>
   <div id="pstrip" hidden><div id="pspacer"></div></div>
@@ -151,11 +180,6 @@
     <table id="facts"></table>
     <div>
       <div><button id="toggle">Mark as meme (M)</button> <button id="toggle-not">Mark as not a meme (X)</button> <span id="edges"><button id="set-start" title="Make the selected frame the first frame of the meme at/near it, or of a new meme">Set start ([)</button> <button id="set-end" title="Make the selected frame the last frame of the meme at/near it, or of a new meme">Set end (])</button></span> <button id="copy" title="Copy video id, format id, timestamp and frame index">Copy locator (C)</button> <span id="err"></span></div>
-      <div id="help">
-        <kbd>←</kbd><kbd>→</kbd> frame · <kbd>Shift</kbd>+arrows 1 s · <kbd>Shift</kbd>/<kbd>⌘</kbd>+click rows to select several (<kbd>A</kbd> selects all shown, <kbd>Esc</kbd> clears) · <kbd>↑</kbd><kbd>↓</kbd> row in strip ·
-        <kbd>M</kbd> meme (several frames: runs become start–end memes) · <kbd>X</kbd> not a meme · <kbd>Shift</kbd>+<kbd>M</kbd> move the nearest mark here · <kbd>N</kbd>/<kbd>P</kbd> next/prev mark · <kbd>U</kbd> next unlabeled stretch ·
-        <kbd>[</kbd> start · <kbd>]</kbd> end of the meme · <kbd>C</kbd> copy locator · <kbd>H</kbd> frame/histogram · <kbd>J</kbd>/<kbd>K</kbd> next/prev in filter · <kbd>G</kbd> jump to time
-      </div>
     </div>
     <div><input id="goto" placeholder="jump to time (s or m:s)" size="20"></div>
   </div>

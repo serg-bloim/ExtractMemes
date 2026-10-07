@@ -192,6 +192,9 @@ classifier disagrees with me, and keep the result in the repo.
       ((start + end) // 2), however the window was made (`[` / `]` or `M`); individual marks inside a window made with
       `[` / `]` are unmarked too. If every selected frame is already a meme, `M` unmarks them. Ranges are saved on every change as optional `meme_start_ts/frame` and
       `meme_end_ts/frame` on the meme ([labeled-video-dataset](labeled-video-dataset.md) AC3).
+- [ ] AC25: **Hotkeys help.** The main area has no keyboard help text; a "Hotkeys" button at the right end of the
+      tab line shows a popup listing every hotkey (grouped: moving, selecting, labeling, other) while the pointer is
+      over it or it has keyboard focus.
 - [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
@@ -401,3 +404,6 @@ Resolved by the user (2026-10-07):
   marks inside the window are unmarked. `Dataset.set_range` and `set_edge` (both edges set) now put the frame at
   (start + end) // 2 instead of keeping the first absorbed mark's frame, and `set_edge` unmarks individual memes inside
   the new window instead of refusing (an overlapping region is still refused). Tests updated and added.
+- 2026-10-07: The user asked to remove the hotkey description from the main area and put it in a popup opened by a
+  "Hotkeys" button at the right of the tab line. Added AC25. Checked in headless Chrome (popup forced open for the screenshot;
+  the hover itself is plain CSS and was not exercised).

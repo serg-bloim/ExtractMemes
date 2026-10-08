@@ -1,10 +1,14 @@
 """The labeler's web app: the page, a state endpoint, thumbnails, frames and the marks API.
 
-`LabelerApp` holds the labeling state; `create_flask_app` exposes it over HTTP. Meant to run on
-loopback only. Every change to the marks is written to the dataset file straight away.
+`LabelerApp` holds the labeling state; `create_flask_app` exposes it over HTTP. It listens on every
+address and has no login, so anyone on the local network can use it; requests addressed by a public
+name or address are refused. Every change to the marks is written to the dataset file straight away.
 """
 
+import ipaddress
+import socket
 import threading
+from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -179,6 +183,30 @@ def _host_of(netloc: str | None) -> str | None:
     return urlsplit("//" + netloc).hostname if netloc else None
 
 
+@cache
+def _own_names() -> frozenset[str]:
+    name = socket.gethostname().lower()
+    return frozenset({name, name.removesuffix(".local") + ".local"})
+
+
+def _local_host(host: str | None) -> bool:
+    """Whether a request addressed to `host` is meant for this machine on its own network.
+
+    That is localhost, this machine's name, or an address in a private, loopback or link-local range.
+    Any other name (what a DNS-rebinding page would use) or a public address is refused.
+    """
+    if not host:
+        return False
+    host = host.lower()
+    if host in _LOOPBACK_HOSTS or host in _own_names():
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_private or address.is_loopback or address.is_link_local
+
+
 def create_flask_app(workspace: Workspace | LabelerApp, profiles_dir: Path = profiles_module.PROFILES_DIR) -> Flask:
     """The HTTP interface of the workspace: the page, its API, thumbnails and frames.
 
@@ -190,12 +218,12 @@ def create_flask_app(workspace: Workspace | LabelerApp, profiles_dir: Path = pro
     web = Flask(__name__)
 
     @web.before_request
-    def only_loopback_hosts():
+    def only_local_hosts():
         # Refuses requests addressed to another name (DNS rebinding) and cross-site posts.
-        if _host_of(request.host) not in _LOOPBACK_HOSTS:
+        if not _local_host(_host_of(request.host)):
             return Response("forbidden", 403, mimetype="text/plain")
         origin = request.headers.get("Origin")
-        if origin is not None and _host_of(urlsplit(origin).netloc) not in _LOOPBACK_HOSTS:
+        if origin is not None and not _local_host(_host_of(urlsplit(origin).netloc)):
             return Response("forbidden", 403, mimetype="text/plain")
 
     @web.after_request

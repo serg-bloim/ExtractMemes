@@ -66,8 +66,13 @@ classifier disagrees with me, and keep the result in the repo.
       the same frame back.
 - [x] AC9: No frame images are written into the repo. Any thumbnail or index cache goes under
       `.runtime/` (gitignored).
-- [x] AC10: The server binds only to loopback and rejects requests whose paths aren't the page, its
-      own API, a thumbnail or a frame request.
+- [x] AC10: The server listens on every address (so it can be opened from another device on the local
+      network) and prints both its loopback and its local-network address at startup. It has no
+      login. It answers only requests whose paths are the page, its own API, a thumbnail or a frame,
+      and only those addressed to this machine on its own network: `localhost`, this machine's
+      name, or an address in a private, loopback or link-local range. A request addressed by any
+      other name or a public address (what a DNS-rebinding page would send) and a cross-site
+      request (an `Origin` that is not such a host) get 403. The Werkzeug debugger is off.
 - [x] AC11: This code is not in the installable package, and its dependency (PyYAML) is in an
       optional group, not `[project.dependencies]` (dataset AC10).
 - [x] AC12: Each strip row and the large view show **classifier info** for the frame: the verdict of
@@ -229,8 +234,8 @@ classifier disagrees with me, and keep the result in the repo.
   (reload on Python changes), and the work here is blocking OpenCV decoding, so async (FastAPI)
   adds nothing. Flask is in the optional `labeling` group with PyYAML. The page is one static HTML
   file with inline JS and CSS, read on every request so a browser refresh picks up edits.
-- `labeler.sh` at the project root runs `flask --app tools.labeling.wsgi:create_app run --debug
-  --no-reload` under `watchfiles`, which restarts it on any Python change (Flask's own reloader
+- `labeler.sh` at the project root runs `flask --app tools.labeling.wsgi:create_app run
+  --no-reload --host 0.0.0.0` under `watchfiles`, which restarts it on any Python change (Flask's own reloader
   doesn't notice new files), with the video and options passed in environment variables; `python -m tools.labeling` stays as
   the plain launcher without reload.
 - Exact indices and timestamps need a sequential decode (dataset AC4). Likely approach: a first
@@ -459,3 +464,13 @@ Resolved by the user (2026-10-07):
   writes the thumbnails of the rows' middle frames (`(first + last) // 2`) in a second, light decode
   after the rows are known; with a filter that leaves part of a row the middle matching frame's
   thumbnail is made on request.
+- 2026-10-07: The user asked for the dev server's address on the local network and then to listen on
+  all addresses always, with no extra option. AC10 changed from loopback-only: the server binds
+  `0.0.0.0` (`labeler.sh`, `python -m tools.labeling`), prints `http://127.0.0.1:<port>/` and
+  `http://<lan address>:<port>/` (`tools/labeling/network.py`), and accepts requests addressed to
+  localhost, this machine's name or a private/loopback/link-local address (the old check only allowed
+  `127.0.0.1` and `localhost`, which would have answered 403 on the network address); other names and
+  public addresses stay refused. There is still no login: anyone on the network can read the frames and
+  change the marks, which the user accepted. Flask's `--debug` was dropped from `labeler.sh`, because
+  its interactive debugger must not be reachable from the network (reloading is done by `watchfiles`).
+  Checked: `http://192.168.1.208:8767/` answers 200, Host `8.8.8.8` and `evil.example` answer 403.

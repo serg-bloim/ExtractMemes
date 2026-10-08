@@ -314,6 +314,27 @@ def test_only_the_page_and_its_api_are_served_to_this_host(labeler):
     assert cross_site.value.code == 403
 
 
+def test_hosts_on_this_machines_network_are_accepted_and_everything_else_is_refused(labeler):
+    import socket
+
+    from tools.labeling.server import _local_host
+
+    _, base, _ = labeler
+
+    for host in ("127.0.0.1", "localhost", "LOCALHOST", "192.168.1.208", "10.0.0.7", "172.16.5.4", "169.254.1.1",
+                 "[::1]".strip("[]"), socket.gethostname()):
+        assert _local_host(host), host
+    for host in ("evil.example", "8.8.8.8", "93.184.216.34", "192.168.1.208.evil.example", "", None, "localhost.evil.example"):
+        assert not _local_host(host), host
+    assert get(base + "/api/state", {"Host": "192.168.1.208:8765"}).status == 200
+    with pytest.raises(urllib.error.HTTPError) as public:
+        get(base + "/api/state", {"Host": "8.8.8.8"})
+    assert public.value.code == 403
+    request = urllib.request.Request(base + "/api/mark", b'{"frame":1,"on":false}', {"Origin": "http://192.168.1.50:8765",
+                                                                                    "Content-Type": "application/json"})
+    assert urllib.request.urlopen(request).status == 200
+
+
 # --- opening a video from the page ----------------------------------------------------------------
 
 

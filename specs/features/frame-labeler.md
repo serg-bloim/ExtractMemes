@@ -478,3 +478,6 @@ Resolved by the user (2026-10-07):
 - 2026-10-08: The user found the per-criterion score ranges on each strip row clumsy; removed them.
   A row now shows only its timestamps, frame count and meme / not meme / flagged marks (scores stay in
   the frame detail and the histogram).
+- 2026-10-08: The user asked for zoom in the gallery and tiles modes. Added zoom-out / zoom-in (magnifier icon) buttons (shown in
+  those modes) and Ctrl/Cmd + scroll (trackpad pinch) that resize the cells, 0.5×–2.5×, keeping the
+  middle frame in place; the size is remembered in the browser.

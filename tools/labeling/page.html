@@ -76,18 +76,20 @@
   #bar { display:flex; gap:8px; align-items:center; padding:8px; border-bottom:1px solid var(--line); }
   #vid a { color:inherit; text-decoration:none; } #vid a:hover { text-decoration:underline; color:var(--sel); }
   #vid { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
-  #pstrip { flex:none; height:112px; overflow-x:scroll; overflow-y:hidden; position:relative; background:var(--panel);
+  :root { --z:1; }                /* tile zoom: scales gallery and tile cells */
+  #pstrip { flex:none; height:calc(112px * var(--z)); overflow-x:scroll; overflow-y:hidden; position:relative; background:var(--panel);
             border:1px solid var(--line); user-select:none; }
   #pstrip[hidden], #tiles[hidden] { display:none; }
   #tiles { flex:1; min-height:0; overflow-y:scroll; position:relative; background:var(--panel); border:1px solid var(--line); user-select:none; }
   #modes { margin-left:14px; display:inline-flex; gap:2px; }
   #modes button.on { border-color:var(--sel); color:var(--sel); } #modes[hidden] { display:none; }
-  .pf { position:absolute; top:4px; width:112px; height:96px; padding:0 3px; cursor:pointer; font-size:10px; line-height:1.25; text-align:center; color:var(--dim); }
-  .pf img { width:106px; height:60px; object-fit:cover; background:#000; display:block; border:2px solid transparent; }
+  .pf { position:absolute; top:4px; width:calc(112px * var(--z)); height:calc(96px * var(--z)); padding:0 3px; cursor:pointer; font-size:10px; line-height:1.25; text-align:center; color:var(--dim); }
+  .pf img { width:calc(106px * var(--z)); height:calc(60px * var(--z)); object-fit:cover; background:#000; display:block; border:2px solid transparent; }
   .pf:hover img { border-color:var(--dim); }
   .pf.inrange img { border-color:var(--mark); } .pf.sel img { border-color:var(--sel); box-shadow:0 0 0 1px var(--sel); }
   .pf.sel { color:var(--text); } .pf .badge { color:var(--mark); font-weight:700; min-height:12px; }
-  #tiles .pf { height:100px; }
+  #tiles .pf { height:calc(100px * var(--z)); }
+  #zoomctl { margin-left:6px; display:inline-flex; gap:2px; align-items:center; } #zoomctl[hidden] { display:none; } #zoomctl button { display:inline-flex; align-items:center; padding:3px 6px; }
   #opener { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; z-index:10; }
   #opener[hidden] { display:none; }
   #opener .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; width:min(560px, 92vw); }
@@ -133,7 +135,7 @@
 <div id="main">
   <div id="tabs">
     <button id="tab-frame" class="on">Frame</button><button id="tab-hist" title="H">Histogram</button>
-    <span id="modes" class="seg" title="How the frames are shown"><button data-mode="preview" title="One large frame">Preview</button><button data-mode="gallery" title="The large frame with a strip of every frame under it">Gallery</button><button data-mode="tiles" title="Every frame as a tile, in rows">Tiles</button></span>
+    <span id="modes" class="seg" title="How the frames are shown"><button data-mode="preview" title="One large frame">Preview</button><button data-mode="gallery" title="The large frame with a strip of every frame under it">Gallery</button><button data-mode="tiles" title="Every frame as a tile, in rows">Tiles</button></span><span id="zoomctl" hidden><button id="zoom-out" title="Zoom out: smaller tiles (Ctrl/Cmd + scroll)" aria-label="Zoom out"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4M4.5 6.5h4"/></svg></button><button id="zoom-in" title="Zoom in: larger tiles (Ctrl/Cmd + scroll)" aria-label="Zoom in"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4M4.5 6.5h4M6.5 4.5v4"/></svg></button></span>
     <span id="hist-controls" hidden>
       <select id="metric"></select>
       bins <input id="bins" type="number" min="5" max="200" value="40">
@@ -985,6 +987,7 @@ function layoutMain() {
   $("hist").classList.toggle("on", histOn);
   $("hist-controls").hidden = !histOn;
   $("modes").hidden = histOn;
+  $("zoomctl").hidden = !(gallery || tiles);
   $("pstrip").hidden = !gallery;
   $("tiles").hidden = !tiles;
   $("tab-frame").classList.toggle("on", !histOn);
@@ -996,7 +999,29 @@ function layoutMain() {
 }
 
 // ---- gallery and tiles: one thumbnail per native frame -----------------------------------------
-const PF_W = 112, TILE_H = 104;
+const PF_W0 = 112, TILE_H0 = 104, ZOOM_MIN = 0.5, ZOOM_MAX = 2.5;
+let tileZoom = 1;            // gallery / tile size factor
+try { const z = parseFloat(localStorage.getItem("labeler.tileZoom")); if (z >= ZOOM_MIN && z <= ZOOM_MAX) tileZoom = z; } catch (e) { /* no storage */ }
+let PF_W = PF_W0 * tileZoom, TILE_H = TILE_H0 * tileZoom;
+document.documentElement.style.setProperty("--z", tileZoom);
+
+// Resize the gallery / tiles by `factor`, keeping the frame in the middle of the view where it was.
+function zoomTiles(factor) {
+  const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, tileZoom * factor));
+  if (z === tileZoom) return;
+  let anchor = 0;
+  if (frameMode === "gallery") { const b = $("pstrip"); anchor = (b.scrollLeft + b.clientWidth / 2) / PF_W; }
+  else { const b = $("tiles"); anchor = (b.scrollTop + b.clientHeight / 2) / TILE_H * tileCols(); }
+  tileZoom = z; PF_W = PF_W0 * z; TILE_H = TILE_H0 * z;
+  document.documentElement.style.setProperty("--z", z);
+  try { localStorage.setItem("labeler.tileZoom", z); } catch (e) { /* not remembered */ }
+  if (frameMode === "gallery") {
+    const b = $("pstrip"); renderFrames(); b.scrollLeft = Math.max(0, anchor * PF_W - b.clientWidth / 2);
+  } else {
+    const b = $("tiles"); renderFrames(); b.scrollTop = Math.max(0, anchor / tileCols() * TILE_H - b.clientHeight / 2);
+  }
+  renderFrames();
+}
 let skipCenter = false;      // a click on a thumbnail selects without moving the view under the pointer
 
 function tileCols() { return Math.max(1, Math.floor($("tiles").clientWidth / PF_W)); }
@@ -1056,7 +1081,15 @@ function wireFrames() {
   const strip = $("pstrip");
   strip.addEventListener("scroll", renderFrames);
   $("tiles").addEventListener("scroll", renderFrames);
+  const wheelZoom = e => {                        // Ctrl/Cmd + scroll, or a trackpad pinch, resizes the tiles
+    if (!e.ctrlKey && !e.metaKey) return false;
+    e.preventDefault(); zoomTiles(Math.exp(-e.deltaY * 0.01)); return true;
+  };
+  $("tiles").addEventListener("wheel", wheelZoom, {passive: false});
+  $("zoom-in").onclick = () => zoomTiles(1.25);
+  $("zoom-out").onclick = () => zoomTiles(0.8);
   strip.addEventListener("wheel", e => {         // a mouse wheel scrolls sideways too
+    if (wheelZoom(e)) return;
     if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { strip.scrollLeft += e.deltaY; e.preventDefault(); }
   }, {passive: false});
   for (const b of document.querySelectorAll("#modes button"))

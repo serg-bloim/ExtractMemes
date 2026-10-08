@@ -106,12 +106,33 @@
   #fmt-list label { display:flex; gap:10px; padding:4px 8px; cursor:pointer; align-items:center; }
   #fmt-list label:hover { background:#242832; } #fmt-list label.off { opacity:.45; cursor:default; }
   .warn { color:var(--mark); }
+  #pane-sort { padding:8px; border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
+  #sorters { margin-top:8px; display:flex; flex-direction:column; gap:4px; }
+  #sorters .empty { color:var(--dim); }
+  .sorter { display:flex; align-items:center; gap:8px; padding:3px 6px; border:1px solid var(--line); border-radius:4px; background:var(--bg); cursor:grab; }
+  .sorter.off .desc { opacity:.45; text-decoration:line-through; }
+  .sorter.dragging { opacity:.4; }
+  .sorter.over-before { box-shadow:0 -2px 0 var(--sel); } .sorter.over-after { box-shadow:0 2px 0 var(--sel); }
+  .sorter .grip { color:var(--dim); user-select:none; }
+  .sorter .desc { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sorter .ctl { display:flex; gap:6px; align-items:center; flex:none; margin-left:auto; }
+  .sorter .ctl button { display:inline-flex; align-items:center; padding:2px 4px; color:var(--dim); }
+  .sorter .ctl button:hover { color:var(--text); }
+  .sorter .ctl button.inv.on { color:var(--sel); border-color:var(--sel); }
+  .sorter .ctl button.dis.on { color:var(--flag); border-color:var(--flag); }
+  .sorter .ctl button.rm:hover { color:var(--flag); }
+  #wizard { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; z-index:10; }
+  #wizard[hidden] { display:none; }
+  #wizard .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; width:min(420px, 92vw); }
+  #wizard h3 { margin:0 0 10px; }
+  #wizard .row { display:flex; gap:8px; align-items:center; margin-bottom:10px; } #wizard .row > label { width:130px; flex:none; color:var(--dim); } #wizard .row select { flex:1; padding:4px 6px; }
+  #wizard .btns { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
 </style>
 </head>
 <body>
 <div id="side">
   <div id="bar"><span id="vid">no video</span><button id="open-btn">Open video…</button></div>
-  <div id="side-tabs"><button data-pane="pane-filter" class="on">Filter</button><button data-pane="pane-test">Test</button></div>
+  <div id="side-tabs"><button data-pane="pane-filter" class="on">Filter</button><button data-pane="pane-sort">Sort</button></div>
   <div id="pane-filter" class="side-pane">
   <div id="profiles">
     <div class="row"><label>Profile</label><select id="profile-select" title="Load a saved set of classifier filters"></select></div>
@@ -135,7 +156,10 @@
       <button id="reset">Reset</button></div>
   </div>
   </div>
-  <div id="pane-test" class="side-pane" hidden></div>
+  <div id="pane-sort" class="side-pane" hidden>
+    <button id="sorter-add" title="Add a sorter to the list">Add sorter…</button>
+    <div id="sorters"></div>
+  </div>
   <div id="count"></div>
   <div id="strip"><div id="spacer"></div></div>
 </div>
@@ -194,6 +218,25 @@
     <div><input id="goto" placeholder="jump to time (s or m:s)" size="20"></div>
   </div>
   <div id="marks"></div>
+</div>
+<div id="wizard" hidden>
+  <div class="panel">
+    <h3 id="wz-title">Add sorter</h3>
+    <div class="row"><label for="wz-type">Type</label>
+      <select id="wz-type"><option value="score">Score</option><option value="label">Label</option></select></div>
+    <div id="wz-score">
+      <div class="row"><label for="wz-crit">Criterion</label><select id="wz-crit"></select></div>
+      <div class="row"><label for="wz-reduce">Score of a scene</label>
+        <select id="wz-reduce"><option value="min">minimum</option><option value="max">maximum</option><option value="mean">mean</option><option value="median">median</option><option value="middle">middle frame</option></select></div>
+      <div class="row"><label for="wz-dir">Order</label>
+        <select id="wz-dir"><option value="desc">highest first</option><option value="asc">lowest first</option></select></div>
+    </div>
+    <div id="wz-label" hidden>
+      <div class="row"><label for="wz-state">Put first</label>
+        <select id="wz-state"><option value="flagged">flagged</option><option value="meme">marked as meme</option><option value="not_meme">marked as not a meme</option><option value="unlabeled">unlabeled</option></select></div>
+    </div>
+    <div class="btns"><button id="wz-cancel">Cancel</button><button id="wz-apply">Apply</button></div>
+  </div>
 </div>
 <div id="opener" hidden>
   <div class="panel">
@@ -299,6 +342,161 @@ function syncResets() {
   }
 }
 
+// ---- sorters: the order of the strip's rows --------------------------------------------------
+// A sorter is {type: "score", criterion, reduce, dir} or {type: "label", state}, plus {invert, disabled}.
+// The first enabled sorter is the primary key; ties fall to the next one, then to video order.
+let sorters = [];
+const ICON = (paths) => '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+const ICONS = {
+  modify: ICON('<path d="M11 2.5l2.5 2.5L5.5 13 2 14l1-3.5z"/>'),
+  invert: ICON('<path d="M5 13V3M2.5 5.5L5 3l2.5 2.5M11 3v10M8.5 10.5L11 13l2.5-2.5"/>'),
+  disable: ICON('<circle cx="8" cy="8" r="5.5"/><path d="M4 12L12 4"/>'),
+  remove: ICON('<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5M7 7v4M9 7v4"/>'),
+};
+const REDUCE_NAMES = {min: "minimum", max: "maximum", mean: "mean", median: "median", middle: "middle frame"};
+const STATE_NAMES = {flagged: "flagged", meme: "marked as meme", not_meme: "marked as not a meme", unlabeled: "unlabeled"};
+
+function reduceScores(values, how) {
+  if (how === "min") return values.reduce((a, b) => Math.min(a, b));
+  if (how === "max") return values.reduce((a, b) => Math.max(a, b));
+  if (how === "mean") return values.reduce((a, b) => a + b, 0) / values.length;
+  const v = [...values].sort((a, b) => a - b), m = v.length >> 1;
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+
+// The value one sorter orders a row by (smaller sorts first), before the sorter's invert.
+function sortKey(sorter, r, hit) {
+  if (sorter.type === "score") {
+    const sc = S.scores[sorter.criterion];
+    const v = sorter.reduce === "middle" ? sc[rowShow[r]] : reduceScores(hit.map(fr => sc[fr]), sorter.reduce);
+    return sorter.dir === "desc" ? -v : v;
+  }
+  const has = {
+    flagged: () => hit.some(fr => S.verdict[fr]),
+    meme: () => hit.some(fr => frameMeme[fr]),
+    not_meme: () => hit.some(fr => frameNot[fr]),
+    unlabeled: () => !hit.some(fr => frameMeme[fr] || frameNot[fr] || S.verdict[fr]),
+  }[sorter.state]();
+  return has ? 0 : 1;
+}
+
+function sortView(hits) {
+  const active = sorters.filter(x => !x.disabled);
+  if (!active.length) return;
+  const keys = new Map(view.map(r => [r, active.map(x => (x.invert ? -1 : 1) * sortKey(x, r, hits.get(r)))]));
+  view.sort((a, b) => {
+    const ka = keys.get(a), kb = keys.get(b);
+    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] < kb[i] ? -1 : 1;
+    return a - b;
+  });
+}
+
+function describeSorter(x) {
+  return x.type === "score"
+    ? x.criterion + " · " + REDUCE_NAMES[x.reduce] + " · " + (x.dir === "desc" ? "highest first" : "lowest first")
+    : STATE_NAMES[x.state] + " first";
+}
+
+function saveSorters() {
+  try { localStorage.setItem("labeler.sorters", JSON.stringify(sorters)); } catch (e) { /* not remembered */ }
+}
+
+function loadSorters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("labeler.sorters") || "[]");
+    sorters = saved.filter(x => x && (x.type === "label" ? x.state in STATE_NAMES
+      : x.type === "score" && S.scores[x.criterion] && x.reduce in REDUCE_NAMES && (x.dir === "asc" || x.dir === "desc")));
+  } catch (e) { sorters = []; }
+}
+
+function sortersChanged() {
+  saveSorters();
+  renderSorters();
+  refilter();
+}
+
+let dragFrom = -1;           // index of the sorter being dragged
+function renderSorters() {
+  const box = $("sorters");
+  box.replaceChildren();
+  if (!sorters.length) { box.innerHTML = '<div class="empty">No sorters: the strip is in video order.</div>'; return; }
+  sorters.forEach((x, i) => {
+    const el = document.createElement("div");
+    el.className = "sorter" + (x.disabled ? " off" : "");
+    el.draggable = true;
+    el.innerHTML = '<span class="grip" title="Drag to reorder">⠿</span><span class="desc"></span>' +
+      '<span class="ctl"><button class="mod" title="Modify" aria-label="Modify">' + ICONS.modify + '</button>' +
+      '<button class="inv' + (x.invert ? ' on' : '') + '" title="Invert the order" aria-label="Invert" aria-pressed="' + !!x.invert + '">' + ICONS.invert + '</button>' +
+      '<button class="dis' + (x.disabled ? ' on' : '') + '" title="Disable this sorter" aria-label="Disable" aria-pressed="' + !!x.disabled + '">' + ICONS.disable + '</button>' +
+      '<button class="rm" title="Remove" aria-label="Remove">' + ICONS.remove + '</button></span>';
+    el.querySelector(".desc").textContent = (i + 1) + ". " + describeSorter(x);
+    el.querySelector(".mod").onclick = () => openWizard(i);
+    el.querySelector(".inv").onclick = () => { x.invert = !x.invert; sortersChanged(); };
+    el.querySelector(".dis").onclick = () => { x.disabled = !x.disabled; sortersChanged(); };
+    el.querySelector(".rm").onclick = () => { sorters.splice(i, 1); sortersChanged(); };
+    el.ondragstart = e => { dragFrom = i; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); el.classList.add("dragging"); };
+    el.ondragend = () => { dragFrom = -1; renderSorters(); };
+    el.ondragover = e => {
+      if (dragFrom < 0) return;
+      e.preventDefault();
+      const after = e.clientY > el.getBoundingClientRect().top + el.offsetHeight / 2;
+      el.classList.toggle("over-after", after); el.classList.toggle("over-before", !after);
+    };
+    el.ondragleave = () => el.classList.remove("over-before", "over-after");
+    el.ondrop = e => {
+      e.preventDefault();
+      if (dragFrom < 0) return;
+      const after = e.clientY > el.getBoundingClientRect().top + el.offsetHeight / 2;
+      const [moved] = sorters.splice(dragFrom, 1);
+      let to = i + (after ? 1 : 0);
+      if (dragFrom < to) to--;                         // the list shrank before the target
+      sorters.splice(to, 0, moved);
+      dragFrom = -1;
+      sortersChanged();
+    };
+    box.appendChild(el);
+  });
+}
+
+// The wizard: adds a sorter, or (editing >= 0) changes the one at that index.
+let editing = -1;
+function openWizard(index) {
+  editing = index;
+  const x = index >= 0 ? sorters[index] : {type: "score", criterion: S.criteria[0].name, reduce: "max", dir: "desc", state: "flagged"};
+  $("wz-title").textContent = index >= 0 ? "Modify sorter" : "Add sorter";
+  $("wz-crit").replaceChildren(...S.criteria.map(c => new Option(c.name, c.name)));
+  $("wz-type").value = x.type;
+  if (x.type === "score") { $("wz-crit").value = x.criterion; $("wz-reduce").value = x.reduce; $("wz-dir").value = x.dir; }
+  else $("wz-state").value = x.state;
+  showWizardType();
+  $("wizard").hidden = false;
+  $("wz-type").focus();
+}
+function closeWizard() { $("wizard").hidden = true; }
+function showWizardType() {
+  const score = $("wz-type").value === "score";
+  $("wz-score").hidden = !score;
+  $("wz-label").hidden = score;
+}
+function applyWizard() {
+  const x = $("wz-type").value === "score"
+    ? {type: "score", criterion: $("wz-crit").value, reduce: $("wz-reduce").value, dir: $("wz-dir").value}
+    : {type: "label", state: $("wz-state").value};
+  if (editing >= 0) { x.invert = sorters[editing].invert; x.disabled = sorters[editing].disabled; sorters[editing] = x; }
+  else sorters.push(x);
+  closeWizard();
+  sortersChanged();
+}
+function wireSorters() {
+  $("sorter-add").onclick = () => openWizard(-1);
+  $("wz-type").onchange = showWizardType;
+  $("wz-cancel").onclick = closeWizard;
+  $("wz-apply").onclick = applyWizard;
+  $("wizard").addEventListener("mousedown", e => { if (e.target === $("wizard")) closeWizard(); });
+  loadSorters();
+  renderSorters();
+}
+
 function refilter() {
   syncResets();
   const f = filters();
@@ -306,11 +504,13 @@ function refilter() {
   rowShow = new Array(S.rows.length).fill(-1);
   rowHits = new Array(S.rows.length).fill(0);
   let shown = 0;
+  const hits = new Map();                         // row -> its matching frames, for the sorters
   for (let r = 0; r < S.rows.length; r++) {       // the middle frame: a row's first and last frames can be fades
     const hit = [];
     for (let fr = S.rows[r]; fr <= S.row_last[r]; fr++) if (matches(fr, f)) hit.push(fr);
-    if (hit.length) { rowShow[r] = hit[(hit.length - 1) >> 1]; rowHits[r] = hit.length; view.push(r); shown += hit.length; }
+    if (hit.length) { rowShow[r] = hit[(hit.length - 1) >> 1]; rowHits[r] = hit.length; view.push(r); shown += hit.length; hits.set(r, hit); }
   }
+  sortView(hits);
   $("count").textContent = view.length + " of " + S.rows.length + " rows · " + shown + " of " + S.frame_count +
                            " frames match · " + S.memes.length + " marked";
   $("spacer").style.height = view.length * ROW_H + "px";
@@ -649,8 +849,9 @@ function jumpUnlabeled() {
 }
 
 function jumpInView(dir) {
-  const cur = rowOf(sel);
-  const r = dir > 0 ? view.find(v => v > cur) : [...view].reverse().find(v => v < cur);
+  const cur = rowOf(sel), at = view.indexOf(cur);
+  const r = at >= 0 ? view[at + dir]                   // the strip's order, sorted or not
+    : dir > 0 ? view.find(v => v > cur) : [...view].reverse().find(v => v < cur);
   if (r !== undefined) select(rowShow[r]);
 }
 
@@ -667,6 +868,7 @@ function gotoTime(t) {
 }
 
 document.addEventListener("keydown", e => {
+  if (!$("wizard").hidden) { if (e.key === "Escape") closeWizard(); return; }   // the wizard owns the keyboard
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") {
     if (e.target.id === "goto" && e.key === "Enter") {
       const t = parseTime(e.target.value);
@@ -1084,7 +1286,7 @@ function renderFrames() {
   }
 }
 
-// The side panel's tabs: the filter view and, for now, an empty test tab. The strip below them is
+// The side panel's tabs: the filter view and the sorters. The strip below them is
 // not part of any tab and stays on.
 function wireSideTabs() {
   const show = id => {
@@ -1147,6 +1349,7 @@ function buildHistogramControls() {
   $("metric").onchange = () => { histZoom = null; renderHistogram(); };   // another metric, another scale
   wireZoom();
   wireSideTabs();
+  wireSorters();
   const svg = $("hist-svg");
   svg.addEventListener("mousedown", e => {
     if (!histGeom || e.button !== 0) return;

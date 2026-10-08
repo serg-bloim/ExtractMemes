@@ -165,3 +165,6 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-08: Gallery and tiles modes of the labeler can be zoomed (tile size) with −/+ or Ctrl/Cmd+scroll — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-08: Labeler zoom buttons now show magnifier icons instead of − / + — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-08: Labeler left panel now has tabs: the filter view and an empty test tab — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-08: Drafted the spec for a Sort tab (list of scene sorters, add wizard, reorder by dragging) in the labeler; awaiting review — [specs/features/scene-sorting.md](specs/features/scene-sorting.md).
+- 2026-10-08: Sort tab in the labeler: a draggable list of scene sorters (score, label) with an add wizard; the strip follows it — [specs/features/scene-sorting.md](specs/features/scene-sorting.md).
+- 2026-10-08: Sorter controls in the labeler Sort tab are icon buttons that change color when on — [specs/features/scene-sorting.md](specs/features/scene-sorting.md).

@@ -486,3 +486,5 @@ Resolved by the user (2026-10-07):
   trying it out); the chosen tab is remembered in the browser.
   The match count and the row strip sit below the tabs, outside any tab, so they stay on whichever
   tab is open.
+- 2026-10-08: The empty "Test" side tab became the "Sort" tab ([scene-sorting](scene-sorting.md)); the
+  strip's row order and ↑ ↓ navigation now follow its sorters.

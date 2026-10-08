@@ -170,3 +170,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-08: Sorter controls in the labeler Sort tab are icon buttons that change color when on — [specs/features/scene-sorting.md](specs/features/scene-sorting.md).
 - 2026-10-08: Labeler details table shows a selection column (label counts, score ranges) when several frames are selected — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-08: Clicking a strip row in the labeler selects all its matching frames, current frame at the middle — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-08: `band` now reads the outermost 5% on each side instead of the 20% margins; threshold stays 180 — [specs/features/classifier-criteria.md](specs/features/classifier-criteria.md).

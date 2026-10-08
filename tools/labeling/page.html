@@ -309,17 +309,15 @@ function refilter() {
   renderHistogram();
 }
 
-// What a row shows of its frames: the range of each criterion over the row's frames that match the filters.
+// What a row shows of its frames: the counts over the row's frames that match the filters.
 function rowStats(r, f) {
   const lo = S.rows[r], hi = S.row_last[r];
   let flagged = 0, memes = 0, nots = 0, n = 0;
-  const range = S.criteria.map(() => [Infinity, -Infinity]);
   for (let fr = lo; fr <= hi; fr++) {
     if (!matches(fr, f)) continue;
     n++; flagged += S.verdict[fr]; memes += frameMeme[fr]; nots += frameNot[fr];
-    S.criteria.forEach((c, k) => { const v = S.scores[c.name][fr]; if (v < range[k][0]) range[k][0] = v; if (v > range[k][1]) range[k][1] = v; });
   }
-  return {n, flagged, memes, nots, range};
+  return {n, flagged, memes, nots};
 }
 
 function renderStrip() {
@@ -337,17 +335,12 @@ function renderStrip() {
     el.className = "row-item" + (r === selRow ? " sel" : "") + (inMulti ? " multi" : "");
     el.style.top = i * ROW_H + "px";
     const part = k => k === st.n || st.n === 0 ? "" : k + "/" + st.n + " ";
-    const scores = S.criteria.map((c, k) => {
-      const [a, b] = st.range[k];
-      return c.name.slice(0, 6) + " " + (a === b ? a : a + "–" + b);
-    }).join(" · ");
     el.innerHTML = '<img loading="lazy" src="/thumb/' + idx + '.jpg?v=' + S.version + '">' +
       '<div class="meta"><div><span class="ts">' + fmt(S.pts[lo]) + (hi > lo ? "–" + fmt(S.pts[hi]) : "") + '</span> <span class="dim">#' + lo +
       (hi > lo ? "–" + hi + " · " + (st.n === total ? total : st.n + " of " + total) + " frames" : "") + '</span> ' +
       (st.memes ? '<span class="star">★ ' + part(st.memes) + 'meme</span> ' : '') +
       (st.nots ? '<span class="no">✗ ' + part(st.nots) + 'not meme</span> ' : '') +
-      (st.flagged ? '<span class="flag">⚑ ' + part(st.flagged) + 'flagged</span>' : '') + '</div>' +
-      '<div class="dim">' + scores + '</div></div>';
+      (st.flagged ? '<span class="flag">⚑ ' + part(st.flagged) + 'flagged</span>' : '') + '</div></div>';
     el.onclick = e => clickRow(r, i, e);
     frag.appendChild(el);
   }

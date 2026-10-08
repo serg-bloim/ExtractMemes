@@ -43,9 +43,8 @@ classifier disagrees with me, and keep the result in the repo.
       FtU4MuksCzE: 397 rows for 75,631 frames, and every meme window is exactly one row). Rows only
       group the timeline; **every frame keeps its own scores, verdict and label**, and selecting,
       marking, filtering and the histogram work on frames. A row shows a thumbnail of its middle frame
-      among those that match the filters (a shot's first and last frames can be fades), its time and frame range, how many of its frames match, and, per
-      criterion, the range of that criterion over those frames, with counts of marked, not-meme and
-      flagged frames. The strip is virtualised and thumbnails load lazily. Clicking a row selects
+      among those that match the filters (a shot's first and last frames can be fades), its time and frame range, how many of its frames match, and
+      counts of marked, not-meme and flagged frames (no per-criterion scores). The strip is virtualised and thumbnails load lazily. Clicking a row selects
       that frame; Shift/Cmd+click select all matching frames of the rows involved; the
       strip highlights the row of the selected frame. There is no scan-rate option.
 - [x] AC4: A large view shows the selected frame with its timestamp and index. Left/right step one
@@ -476,3 +475,6 @@ Resolved by the user (2026-10-07):
   Checked: `http://192.168.1.208:8767/` answers 200, Host `8.8.8.8` and `evil.example` answer 403.
 - 2026-10-08: `labeler.sh` now runs the server in a loop: if it exits or fails it is restarted after
   2 s; Ctrl+C or SIGTERM stops the loop.
+- 2026-10-08: The user found the per-criterion score ranges on each strip row clumsy; removed them.
+  A row now shows only its timestamps, frame count and meme / not meme / flagged marks (scores stay in
+  the frame detail and the histogram).

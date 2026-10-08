@@ -79,6 +79,8 @@ ExtractMemes/
 │   └── labeling/                 ← Dev-only dataset labeler (not in the package or the image); run
 │                                   `./labeler.sh <url>` (Flask dev server, restarts on edits incl. new criterion files) or
 │                                   `python -m tools.labeling <url>`. Needs `pip install -e ".[labeling]"`.
+│   └── evaluation/               ← Dev-only criteria evaluation: per-criterion errors / separation margin and a
+│                                   search for the smallest rule; `python -m tools.evaluation` (see criteria-evaluation spec).
 ├── sample/                       ← Local video fixtures, supplied by hand (gitignored)
 ├── data/
 │   ├── datasets/<video-id>.yaml  ← Labeled videos: exact format + marked memes (frame, ts); no images

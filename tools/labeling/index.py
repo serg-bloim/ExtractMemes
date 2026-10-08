@@ -44,6 +44,7 @@ class Index:
     fps: float
     step: int
     thumb_dir: Path
+    version: str = ""  # identifies this video file and scan step, so cached images can't be mixed up
 
 
 def _read_meta(path: Path) -> dict:
@@ -119,6 +120,7 @@ def build(
         fps=fps,
         step=step,
         thumb_dir=thumb_dir,
+        version=f"{identity['size']}-{identity['mtime']}-{identity['step']}",
     )
 
 
@@ -192,6 +194,7 @@ class FrameReader:
     _FORWARD = 200  # read forward instead of seeking when the target is this close ahead
 
     def __init__(self, video_path: Path, pts: np.ndarray) -> None:
+        self._path = video_path
         self._cap = cv2.VideoCapture(str(video_path))
         if not self._cap.isOpened():
             raise RuntimeError(f"Could not open video file: {video_path}")
@@ -215,6 +218,16 @@ class FrameReader:
         if found >= len(self._pts) or abs(self._pts[found] - ts) > 0.0005:
             raise RuntimeError(f"A frame at {ts:.3f}s has no matching index")
         return found
+
+    def _reopen(self) -> None:
+        """Start decoding from the first frame again. Some streams (H.264 with B-frames) can't be
+        seeked to their first frames: a seek to 0 lands on the first frame the decoder can restart
+        from, which can be over a hundred frames in."""
+        self._cap.release()
+        self._cap = cv2.VideoCapture(str(self._path))
+        if not self._cap.isOpened():
+            raise RuntimeError(f"Could not open video file: {self._path}")
+        self._pos = 0
 
     def _seek(self, start: int) -> int:
         """Land near `start`; return the index of the frame that was read there."""
@@ -240,7 +253,8 @@ class FrameReader:
                 if landed <= index:
                     break
                 if start == 0:
-                    raise RuntimeError(f"Could not reach frame {index}")
+                    self._reopen()      # seeking can't get this early; decode from the beginning
+                    break
                 start = max(0, start - 100)
             while self._pos <= index:
                 ok, frame = self._cap.read()

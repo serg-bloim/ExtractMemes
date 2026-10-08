@@ -42,10 +42,29 @@ class VideoInfo:
 
 @dataclass(frozen=True)
 class Meme:
-    """One marked meme (standard mode): any one frame while the meme is on screen."""
+    """One marked meme: any one frame while it is on screen (`meme_frame`, the anchor).
+
+    The precise labeling can also record where it starts and ends; an edge left unset means the
+    anchor. The anchor always lies between the edges.
+    """
 
     meme_ts: float
     meme_frame: int
+    start_ts: float | None = None
+    start_frame: int | None = None
+    end_ts: float | None = None
+    end_frame: int | None = None
+
+    @property
+    def first(self) -> int:
+        return self.meme_frame if self.start_frame is None else self.start_frame
+
+    @property
+    def last(self) -> int:
+        return self.meme_frame if self.end_frame is None else self.end_frame
+
+    def contains(self, frame: int) -> bool:
+        return self.first <= frame <= self.last
 
 
 @dataclass(frozen=True)
@@ -63,17 +82,115 @@ class Dataset:
     not_memes: list[NotMeme] = field(default_factory=list)
     mode: str = "standard"
 
+    def meme_at(self, frame: int) -> Meme | None:
+        """The meme whose start..end covers `frame`."""
+        return next((m for m in self.memes if m.contains(frame)), None)
+
     def add(self, frame: int, ts: float) -> None:
-        """Mark `frame` as a meme (replacing any label it had), keeping the memes sorted."""
+        """Mark `frame` as a meme (replacing any label it had), keeping the memes sorted.
+
+        A frame inside a meme that is already marked changes nothing.
+        """
         self.remove_not_meme(frame)
-        self.memes = sorted([m for m in self.memes if m.meme_frame != frame] + [Meme(round(ts, 3), frame)],
-                            key=lambda m: m.meme_frame)
+        if self.meme_at(frame):
+            return
+        self.memes = sorted(self.memes + [Meme(round(ts, 3), frame)], key=lambda m: m.meme_frame)
 
     def remove(self, frame: int) -> None:
-        self.memes = [m for m in self.memes if m.meme_frame != frame]
+        """Unmark the meme `frame` belongs to (the whole meme, if it has a start and end)."""
+        self.memes = [m for m in self.memes if not m.contains(frame)]
+
+    def nearest_meme(self, frame: int, ts_of: Callable[[int], float], window: float) -> Meme | None:
+        """The meme covering `frame`, else the one whose start..end is closest within `window` seconds."""
+        found = self.meme_at(frame)
+        if found:
+            return found
+        here = ts_of(frame)
+        near = [(min(abs(ts_of(m.first) - here), abs(ts_of(m.last) - here)), m) for m in self.memes]
+        near = [(d, m) for d, m in near if d <= window]
+        return min(near, key=lambda pair: pair[0])[1] if near else None
+
+    def set_edge(self, frame: int, edge: str, ts_of: Callable[[int], float], window: float) -> None:
+        """Make `frame` the start or the end of a meme: the one `nearest_meme` finds, else a new one.
+
+        With both a start and an end the meme's own frame is the window's center. Raises `ValueError` if that
+        would put the start after the end or overlap another region.
+        """
+        if edge not in ("start", "end"):
+            raise ValueError("edge must be 'start' or 'end'")
+        target = self.nearest_meme(frame, ts_of, window)
+        if target is None:
+            first, last, anchor = frame, frame, frame
+            start = end = None
+        else:
+            start, end, anchor = target.start_frame, target.end_frame, target.meme_frame
+            first, last = target.first, target.last
+        if edge == "start":
+            if end is not None and frame > end:
+                raise ValueError("the start can't be after the end")
+            start, first = frame, frame
+            if last < frame:
+                last = anchor = frame
+        else:
+            if start is not None and frame < start:
+                raise ValueError("the end can't be before the start")
+            end, last = frame, frame
+            if first > frame:
+                first = anchor = frame
+        anchor = (first + last) // 2 if start is not None and end is not None else min(max(anchor, first), last)
+        # individual marks inside the new window are unmarked; another region in the way is refused
+        others = [m for m in self.memes if m is not target and not (
+            m.start_frame is None and m.end_frame is None and first <= m.meme_frame <= last)]
+        if any(m.first <= last and first <= m.last for m in others):
+            raise ValueError("a meme can't overlap another meme")
+        made = Meme(
+            round(ts_of(anchor), 3), anchor,
+            None if start is None else round(ts_of(start), 3), start,
+            None if end is None else round(ts_of(end), 3), end,
+        )
+        self.memes = sorted(others + [made], key=lambda m: m.meme_frame)
+        self.remove_not_meme_in(first, last)
+
+    def set_range(self, first: int, last: int, ts_of: Callable[[int], float]) -> None:
+        """Make `first`..`last` one meme, replacing every meme that overlaps it.
+
+        The meme's own frame is the window's center, so any individual mark that lay inside the window
+        is unmarked, and any not-meme inside it is dropped.
+        """
+        if first > last:
+            raise ValueError("the start can't be after the end")
+        overlapped = [m for m in self.memes if m.first <= last and first <= m.last]
+        anchor = (first + last) // 2
+        made = Meme(round(ts_of(anchor), 3), anchor, round(ts_of(first), 3), first, round(ts_of(last), 3), last)
+        self.memes = sorted([m for m in self.memes if m not in overlapped] + [made], key=lambda m: m.meme_frame)
+        self.remove_not_meme_in(first, last)
+
+    def add_many(self, frames: list[int], ts_of: Callable[[int], float]) -> None:
+        """Mark `frames` as memes: each run of consecutive frames becomes one start..end meme and a
+        frame on its own a single-frame meme. A region replaces the memes it overlaps; its own frame is its center."""
+        runs: list[list[int]] = []
+        for frame in sorted(set(frames)):
+            if runs and frame == runs[-1][-1] + 1:
+                runs[-1].append(frame)
+            else:
+                runs.append([frame])
+        for run in runs:
+            if len(run) > 1:
+                self.set_range(run[0], run[-1], ts_of)
+        for run in runs:
+            if len(run) == 1:
+                self.remove_not_meme(run[0])
+                if not self.meme_at(run[0]):
+                    self.add(run[0], ts_of(run[0]))
+
+    def remove_not_meme_in(self, first: int, last: int) -> None:
+        self.not_memes = [n for n in self.not_memes if not first <= n.not_meme_frame <= last]
 
     def add_not_meme(self, frame: int, ts: float) -> None:
         """Mark `frame` as not a meme (replacing any label it had), keeping the list sorted."""
+        inside = self.meme_at(frame)
+        if inside and (inside.start_frame is not None or inside.end_frame is not None):
+            raise ValueError("that frame is inside a meme's start..end; unmark the meme first")
         self.remove(frame)
         self.not_memes = sorted(
             [n for n in self.not_memes if n.not_meme_frame != frame] + [NotMeme(round(ts, 3), frame)],
@@ -114,6 +231,24 @@ def list_datasets(datasets_dir: Path = DATASETS_DIR) -> list[dict]:
     return found
 
 
+def _meme_line(m: Meme) -> str:
+    parts = [f"meme_ts: {m.meme_ts:.3f}", f"meme_frame: {m.meme_frame}"]
+    if m.start_frame is not None:
+        parts += [f"meme_start_ts: {m.start_ts:.3f}", f"meme_start_frame: {m.start_frame}"]
+    if m.end_frame is not None:
+        parts += [f"meme_end_ts: {m.end_ts:.3f}", f"meme_end_frame: {m.end_frame}"]
+    return "{" + ", ".join(parts) + "}"
+
+
+def _read_meme(entry: dict) -> Meme:
+    def edge(name: str) -> tuple[float | None, int | None]:
+        frame = entry.get(f"meme_{name}_frame")
+        return (None, None) if frame is None else (float(entry[f"meme_{name}_ts"]), int(frame))
+
+    (start_ts, start_frame), (end_ts, end_frame) = edge("start"), edge("end")
+    return Meme(float(entry["meme_ts"]), int(entry["meme_frame"]), start_ts, start_frame, end_ts, end_frame)
+
+
 def save(dataset: Dataset, path: Path) -> None:
     """Write `dataset` to `path` as YAML, creating the folder, with one meme per line."""
     import yaml
@@ -136,9 +271,7 @@ def save(dataset: Dataset, path: Path) -> None:
     }
     text = yaml.safe_dump(header, sort_keys=False, default_flow_style=False)
     if dataset.memes:
-        text += "memes:\n" + "".join(
-            f"  - {{meme_ts: {m.meme_ts:.3f}, meme_frame: {m.meme_frame}}}\n" for m in dataset.memes
-        )
+        text += "memes:\n" + "".join(f"  - {_meme_line(m)}\n" for m in dataset.memes)
     else:
         text += "memes: []\n"
     if dataset.not_memes:
@@ -166,7 +299,7 @@ def load(path: Path) -> Dataset:
         raise DatasetError(f"{path}: unknown mode {mode!r}")
     try:
         video = VideoInfo(**{**data["video"], "format_id": str(data["video"]["format_id"])})
-        memes = [Meme(float(m["meme_ts"]), int(m["meme_frame"])) for m in data.get("memes") or []]
+        memes = [_read_meme(m) for m in data.get("memes") or []]
         not_memes = [
             NotMeme(float(n["not_meme_ts"]), int(n["not_meme_frame"])) for n in data.get("not_memes") or []
         ]
@@ -175,10 +308,14 @@ def load(path: Path) -> Dataset:
     frames = [m.meme_frame for m in memes]
     if frames != sorted(set(frames)):
         raise DatasetError(f"{path}: memes must be sorted by frame with no duplicates")
+    if any(m.first > m.meme_frame or m.meme_frame > m.last for m in memes) or any(
+        a.last >= b.first for a, b in zip(memes, memes[1:])
+    ):
+        raise DatasetError(f"{path}: a meme's frame must lie between its start and end, and memes can't overlap")
     not_frames = [n.not_meme_frame for n in not_memes]
     if not_frames != sorted(set(not_frames)):
         raise DatasetError(f"{path}: not_memes must be sorted by frame with no duplicates")
-    if set(frames) & set(not_frames):
+    if any(m.contains(f) for m in memes for f in not_frames):
         raise DatasetError(f"{path}: a frame can't be both a meme and a not-meme")
     return Dataset(video=video, memes=memes, not_memes=not_memes, mode=mode)
 
@@ -417,11 +554,13 @@ def negative_frames(
     """Scan-rate frames more than `exclusion_window` seconds from every mark.
 
     A meme lasts several frames and standard mode marks one, so the frames around a mark are
-    neither positive nor safely negative and are left out.
+    neither positive nor safely negative and are left out; a meme with a start and end is excluded
+    from its start to its end, plus the window on both sides.
     """
     step = scan_step(video_path, fps)
-    marks = np.array([m.meme_ts for m in dataset.memes])
+    spans = np.array([(m.start_ts if m.start_ts is not None else m.meme_ts,
+                       m.end_ts if m.end_ts is not None else m.meme_ts) for m in dataset.memes])
     for index, timestamp, frame in iter_frames(video_path, lambda i: i % step == 0):
-        if marks.size and np.abs(marks - timestamp).min() <= exclusion_window:
+        if len(spans) and ((spans[:, 0] - exclusion_window <= timestamp) & (timestamp <= spans[:, 1] + exclusion_window)).any():
             continue
         yield index, timestamp, frame

@@ -42,7 +42,10 @@ keeping images on disk.
         while the meme is on screen;
       - precise mode: `meme_start_ts`, `meme_start_frame`, `meme_end_ts`, `meme_end_frame` — the
         first and last frame of the meme.
-      Memes are sorted by frame and a frame appears in at most one meme.
+      A standard-mode meme may additionally carry the optional `meme_start_ts`/`meme_start_frame`
+      and `meme_end_ts`/`meme_end_frame` (set by the labeler's Precise view); its `meme_frame` then lies
+      between them, and an unset edge means `meme_frame`.
+      Memes are sorted by frame and a frame appears in at most one meme (ranges don't overlap).
       An optional `not_memes` list holds frames the human explicitly marked as *not* a meme (hard
       negatives, such as a look-alike that a classifier wrongly flags): each entry has
       `not_meme_ts` and `not_meme_frame`, sorted by frame. A frame can't be both a meme and a
@@ -143,3 +146,6 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: The user asked to also mark "not_meme". Added the optional `not_memes` list
   (`not_meme_ts`, `not_meme_frame`) and AC11 (loader yields them as hard negatives). Existing
   files stay valid (schema is still 1). Implemented in `tools/labeling/dataset.py`.
+- 2026-10-07: Optional per-meme start/end added to standard-mode memes for the labeler's precise mode
+  ([frame-labeler](frame-labeler.md) AC24); `negative_frames` excludes a ranged meme from its start to its end
+  plus the window. File `mode` is unchanged.

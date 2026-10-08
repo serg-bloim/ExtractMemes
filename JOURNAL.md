@@ -129,3 +129,19 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: The labeler histogram's dimmed out-of-range bars keep their meme / not-a-meme / unlabeled colours — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: Labeler criteria now depend on the production classifier (shared margin geometry, threshold read from it, cache invalidated when its source changes) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: Moved all classifier criteria into `extract_memes.criteria` (one auto-discovered module each) with a rule layer (`Condition`/`AllOf`/`AnyOf`/`RuleClassifier`); the labeler reuses them with no copies, and a new criterion file shows up in it — [specs/features/classifier-criteria.md](specs/features/classifier-criteria.md).
+- 2026-10-07: Fixed "could not load frame N" on the first frames of H.264 videos whose seek can't reach them — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler selects all shown frames with the A key — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler can save its classifier filters as a named profile (`data/datasets/profiles/classifier/<name>.yaml`, default `profile1`) and load them back — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Each labeler filter has a "not" checkbox that inverts it (also saved in profiles) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Fixed the labeler's filter-line alignment and shrank the invert checkbox to a bare box — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Fixed the labeler showing another video's thumbnails after a switch (browser-cached image URLs are now versioned per video) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler has a precise mode (settings modal, ±1 s window around memes) in which a meme's start and end can be marked — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler has a Precise view: a horizontal strip of every native frame around the selected one, for picking a meme's start and end — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Removed the labeler's settings modal and precise-mode filter; marking start/end is done in the Precise view — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler's Frame tab has Preview, Gallery and Tiles view modes instead of a separate Precise tab — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: Gallery and Tiles support Shift/Cmd multi-selection of frames, shared with the strip — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: In the labeler, M on several frames marks each run of consecutive frames as a start–end meme and each lone frame as a single meme — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: A labeler meme window stores its center frame as meme_ts/meme_frame and unmarks individual marks inside it — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: The labeler's hotkey help moved from the main area to a hover popup behind a "Hotkeys" button on the tab line — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: In the labeler, W expands the selection to the adjacent frames of the same shot (stops at a cut) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: In the labeler, N/P search from the end/beginning of a selected range and skip the meme you are in — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

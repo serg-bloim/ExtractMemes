@@ -51,7 +51,8 @@ classifier disagrees with me, and keep the result in the repo.
 - [x] AC5: A key (and a button) toggles "meme" on the selected frame. Marks can be added, moved
       (select another frame of the same meme and re-mark it) and removed from the strip or the
       large view. A list of all marks lets me jump to one.
-- [x] AC6: Keys jump to the next/previous mark, and to the next frame not within ±1 s of any mark,
+- [x] AC6: Keys jump to the next/previous mark (a meme counts by its start..end; with several frames selected the search
+      starts after the end / before the beginning of the selection, and the meme you are in is skipped), and to the next frame not within ±1 s of any mark,
       so unlabeled stretches can be skimmed.
 - [x] AC7: Marks are written to the dataset file on every change (no separate save step), through
       the server, as `meme_ts`/`meme_frame` per meme (dataset AC3). The file stays valid (sorted, no
@@ -85,6 +86,10 @@ classifier disagrees with me, and keep the result in the repo.
       - by each criterion's score: a min/max range;
       - and combinations of these, so "flagged but not marked" (false positives) and "marked but
         not flagged" (misses) are one click each.
+      Each filter line also has a compact checkbox (no text; its tooltip says what it does) that inverts it: the strip then shows the frames
+      that do not pass that filter (for a criterion, the values outside its min/max). It is only
+      available while the filter is set, is cleared when the filter returns to its default, and the
+      histogram's shaded band shows the excluded range's complement while it is on.
       Each filter line has its own small reset button that puts only that filter back to its default
       (greyed out when it already is); "Reset" still clears them all.
       Prev/next-in-filter keys jump to the neighbouring matching row, and the filter survives
@@ -93,7 +98,7 @@ classifier disagrees with me, and keep the result in the repo.
       shown, after filtering) from the last clicked row to this one; Cmd/Ctrl+click adds or removes
       one row. The selected rows are highlighted and counted, and the mark key then applies to all of
       them in one request: if every selected row is marked it unmarks them, otherwise it marks the
-      unmarked ones. Esc clears the selection and leaves no frame selected (the large view is empty and the mark keys do nothing until a frame is selected again; the arrow keys resume from the last frame). A plain click or keyboard navigation replaces the selection.
+      unmarked ones. The A key selects every row the strip shows (so, with filters, all the frames that pass them). Esc clears the selection and leaves no frame selected (the large view is empty and the mark keys do nothing until a frame is selected again; the arrow keys resume from the last frame). A plain click or keyboard navigation replaces the selection.
 - [ ] AC16: A second human label, **not a meme**, can be set on the selected frame or on a
       multi-selection with its own key (X) and button, and cleared the same way. A frame is a meme,
       a not-meme or unlabeled, never two: setting one replaces the other. Not-memes are saved to the
@@ -151,13 +156,62 @@ classifier disagrees with me, and keep the result in the repo.
       `video=<id> format=<format id> ts=<seconds, 3 decimals> frame=<index>`. With several frames
       selected it copies one such line per frame, in frame order. The button is inactive when
       nothing is selected, shows how many locators it will copy, and confirms after copying.
+- [ ] AC21a: **Filter profiles.** The classifier filters (human label, classifier verdict and every
+      criterion's min/max) can be saved under a name and loaded back. A "Save filters" button with a
+      name field (default `profile1`) writes `data/datasets/profiles/classifier/<name>.yaml`,
+      replacing a profile of the same name, and a dropdown lists the saved profiles and applies the
+      one picked (a criterion the build doesn't have is skipped and reported). The file is plain
+      YAML with readable values (`human_label`: any / meme / not_meme / unlabeled /
+      anything_but_meme; `classifier`: any / flagged / not_flagged; `ranges`: per criterion
+      `{min, max}`, a missing bound open; `invert`: the names of the inverted filters) and a
+      `schema` version. A name is 1-64 letters, digits,
+      `_` or `-`, so nothing can be written outside that folder. Profiles belong to no video.
+- [ ] AC24: **Frame view modes and start/end.** The Frame tab has three view modes, chosen with
+      Preview / Gallery / Tiles buttons beside the tabs (hidden on the histogram; the choice is
+      remembered by the browser):
+      - **Preview:** the large frame only;
+      - **Gallery:** the large frame with a horizontal strip of every native frame under it
+        (thumbnail, index, timestamp; `/small/<n>.jpg`), scrollable over the whole video by trackpad,
+        scrollbar or mouse wheel;
+      - **Tiles:** every native frame as a tile in rows filling the main area, scrolled vertically
+        (no large frame).
+      Shift+click on a thumbnail in Gallery or Tiles selects every native frame from the last clicked one to
+      this one, Cmd/Ctrl+click adds or removes one, and a plain click replaces the selection; the selection
+      is the same as the strip's (AC15: highlighted and counted, mark / not-meme / copy-locator / histogram act
+      on it), so it carries between the strip and these views.
+      In Gallery and Tiles the selected frame is outlined and kept in view whenever the selection moves
+      (a click on a thumbnail selects without moving the view); the meme's frames are outlined and its
+      start and end badged, updating as marks change. In every mode `[` / `]` (and the Set start / Set end
+      buttons) make the selected frame the start / end of the meme that covers it or is nearest within
+      ±1 s, or of a new meme; a start after the end (or an end before the start) is refused. A meme with
+      a start/end counts as a meme on every frame of the range (strip rows, large view; unmarking any
+      frame in it removes the whole meme); marking a not-meme inside a range, or moving a ranged meme
+      with Shift+M, is refused. With several frames selected, `M` marks each run of consecutive
+      frames as one start..end meme and each frame on its own as a single-frame meme; a region replaces the memes it
+      overlaps (individual marks inside it are unmarked and saved only as the region), and not-memes inside it are
+      dropped. A meme with both a start and an end has its own `meme_ts`/`meme_frame` at the window's center frame
+      ((start + end) // 2), however the window was made (`[` / `]` or `M`); individual marks inside a window made with
+      `[` / `]` are unmarked too. If every selected frame is already a meme, `M` unmarks them. Ranges are saved on every change as optional `meme_start_ts/frame` and
+      `meme_end_ts/frame` on the meme ([labeled-video-dataset](labeled-video-dataset.md) AC3).
+- [ ] AC25: **Hotkeys help.** The main area has no keyboard help text; a "Hotkeys" button at the right end of the
+      tab line shows a popup listing every hotkey (grouped: moving, selecting, labeling, other) while the pointer is
+      over it or it has keyboard focus.
+- [ ] AC26: **Expand the selection to the same shot.** `W` (and an "Expand selection" button) grows the selection
+      (the selected frame, or the first..last of a multi-selection) to the adjacent frames that look like the same
+      shot, selecting all frames in between, so that `M` then marks them as one window. *Comparison:* the step between
+      neighbouring frames, the mean absolute difference of their 32x18 grayscale thumbnails, not the similarity to the
+      selected frame (a glitch card animates, so its frames differ from each other as much as from the scene around it).
+      *Expansion:* outward on each side while the next step is at most 40 (0..255), at most 3 s per side, stopping at the
+      first step above that (a cut) and at the video's ends; if nothing is added the page says so. Server side
+      (`POST /api/expand`, `tools/labeling/similarity.py`).
 - [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
 
 ## Out of Scope
 
-- Precise mode (selecting a meme's start and end and labeling every frame in it).
+- Labeling every frame inside a precise range individually (a range is stored as start/end only), and a
+  strip with a row per native frame in precise mode (it keeps the scan-rate rows; the arrows step by frame).
 - Choosing the final classifier or its thresholds (a later spec); this one only displays scores and
   filters on them.
 - Auto-marking frames from a classifier: the human label is only ever set by the user.
@@ -294,3 +348,83 @@ Resolved by the user (2026-10-07):
   [classifier-criteria](classifier-criteria.md)): AC13 rewritten (no registry or scoring code in
   the labeler; verdict and thresholds from `HeuristicClassifier()`), AC17 and the dev-server note
   updated (`labeler.sh` now runs Flask under `watchfiles` so a new criterion file restarts it).
+- 2026-10-07: Frames 0 to ~127 of H.264 videos in format 269 failed with "could not load frame N":
+  the seek to those frames lands on the first restartable frame (128 in the two videos checked),
+  past the target. The frame reader now decodes from the start when a seek can't get that early
+  (AC8: the frame shown is the frame the index names). Checked 16 frames, early, late and in jumping
+  order, against a sequential decode on `FtU4MuksCzE` format 269: all identical.
+- 2026-10-07: The user asked for a shortcut to select all. A selects every row the strip shows
+  (AC15), so it respects the filters; Cmd/Ctrl+A is left to the browser.
+- 2026-10-07: The user asked to save the classifier filters as a profile in
+  `data/datasets/profiles/classifier/<name | profile1>.yaml`. Added AC21a: save, plus loading from a
+  dropdown (a saved profile that can't be applied back is of little use). `tools/labeling/profiles.py`
+  holds the file format; the API is `GET /api/profiles`, `GET`/`PUT /api/profiles/<name>`. The folder
+  is under `data/datasets/`, which `.gitignore` already excludes, so profiles stay local unless that
+  rule is changed.
+- 2026-10-07: The user asked for an invert checkbox next to each filter's reset button. Added to
+  AC14 ("not": matches the frames that don't pass that filter; for a range, outside min/max) and
+  to the profile file (`invert: [names]`, AC21a). Dragging a new range on the histogram clears that
+  metric's invert, since the drag selects the values inside.
+- 2026-10-07: The invert checkbox claimed a whole label column because the row-label style matched
+  its `<label>`, which broke the filter lines' alignment. The "not" text is gone (a tooltip remains)
+  and every filter line is now label | controls | checkbox | reset in fixed columns, with the label
+  column wide enough for `hue_consistency`. Checked on a headless-Chrome screenshot of the page.
+- 2026-10-07: A strip thumbnail showed another video's picture. The server tells the browser to cache
+  `/thumb/<n>.jpg` and `/frame/<n>.jpg` for an hour, and the URL named only the row, so after
+  switching videos the browser reused the previous video's images for any row it had already shown
+  (`5vGNfK5jL4U` and `FtU4MuksCzE` are both 25 fps, so their row numbers line up, and #4248/#4256 are
+  memes in both). Thumbnail and frame URLs now carry `?v=<video id>-<format>-<file size>-<mtime>-<step>`
+  (AC8: the frame shown is the frame the index names, in whatever video is open).
+
+- 2026-10-07: The user asked for a precise mode with a settings modal (window ±1 s by default) in which a
+  meme's start and end (timestamp and frame) can be marked. Added AC23. Decision: a meme keeps its
+  `meme_ts`/`meme_frame` and gains optional start/end attributes, the file `mode` stays `standard`
+  (the loader's `precise` is still reserved). Server `POST /api/edge`; the dataset validates ordering and overlap. Offline
+  tests added (dataset round trip, edges, rejections, negative frames excluding the whole range).
+  The page was driven in headless Chrome against `FtU4MuksCzE` (precise on: 9,454 rows → 591; start/end
+  set at frames 250/256 gave one ranged meme, covered rows marked, unmarking inside removed it; precise off restored all rows); the settings modal's look was not
+  checked by eye, so AC23 stays unchecked until used by hand.
+- 2026-10-07: The user asked for a "Precise" button next to Frame and Histogram that shows a horizontal
+  strip of frames around the selected frame, scrollable, to pick a start and end frame. Added AC24 and
+  `GET /small/<n>.jpg` (a native frame at 160 px). Read as a third main-area view (large frame plus the
+  strip under it) since the request was cut off. Driven in headless Chrome on `FtU4MuksCzE`: the strip
+  rendered and loaded its images, a click selected without scrolling, stepping re-centred it, start/end at
+  frames 252/258 gave a ranged meme with start/end badges (screenshot checked). Not used by hand yet.
+- 2026-10-07: The user dropped the settings modal. Removed it together with the precise-mode setting and its
+  ±window filter of the strip (AC23 is folded into AC24); the Precise view stays and finds the meme for
+  Set start/end within a fixed ±1 s. Re-ran the headless check (strip, edges, unmark).
+- 2026-10-07: The user replaced the separate Precise tab with view modes of the Frame tab (Finder-style):
+  Preview (large frame), Gallery (large frame + horizontal frame strip) and Tiles (rows of tiles). AC24 rewritten;
+  Set start/end is available in every mode. Checked in headless Chrome on `FtU4MuksCzE`: all three modes render and
+  switch, a tile click selects, start/end set a ranged meme with badges, histogram hides the mode buttons (screenshot of
+  Tiles viewed). With a short window the Tiles area shows only a couple of rows because the info panel and marks list
+  share the column. Not used by hand yet.
+- 2026-10-07: The user asked for multi-selection with Shift/Cmd in Gallery and Tiles. The multi-selection now holds
+  native frames instead of strip rows, shared by the strip, Gallery and Tiles (a strip row stands for its scanned frame; a
+  mark between two rows still counts for the row it is shown on, so the strip behaves as before). Checked in headless
+  Chrome: Shift range (also across tile rows), Cmd add/remove, plain click reset, mark and unmark of a selection, strip
+  shift-click and A.
+- 2026-10-07: The user asked that M on a multi-selection mark regions instead of a separate W key. `mark_many` (meme,
+  on) now groups the selected frames into runs on the server (`Dataset.add_many`): a run of two or more frames is one
+  start..end meme, a lone frame a single meme, regions absorb overlapped memes. Tests added (dataset, server); checked in
+  headless Chrome on tiles (a Shift run plus a Cmd-clicked frame, an individual mark inside the run absorbed, a later
+  run over both merged them, M again unmarked).
+- 2026-10-07: The user asked that a meme window's `meme_ts`/`meme_frame` is its center frame and that individual
+  marks inside the window are unmarked. `Dataset.set_range` and `set_edge` (both edges set) now put the frame at
+  (start + end) // 2 instead of keeping the first absorbed mark's frame, and `set_edge` unmarks individual memes inside
+  the new window instead of refusing (an overlapping region is still refused). Tests updated and added.
+- 2026-10-07: The user asked to remove the hotkey description from the main area and put it in a popup opened by a
+  "Hotkeys" button at the right of the tab line. Added AC25. Checked in headless Chrome (popup forced open for the screenshot;
+  the hover itself is plain CSS and was not exercised).
+- 2026-10-07: The user asked for W to expand the selection to adjacent frames that look alike, naming two concerns: how
+  to compare and how to expand. Measured on `FtU4MuksCzE` (format 269, 32x18 grayscale mean absolute difference): inside a
+  card consecutive frames differ by 13..26, at its edges by 55..100, and the distance to the selected frame overlaps
+  inside and outside (15..70 vs 50..100), so comparing to the seed can't tell them apart while the neighbour step can.
+  Decision: grow while the neighbour step is <= 40, capped at 3 s per side (AC26). Run on all 126 existing marks, 121 grew
+  to 12-13 frames (the card), four at the video's start to 25 (the intro card up to a cut) and one to 8. Tests added;
+  W then M checked in headless Chrome (a mark grew to frames 2740..2752 and M saved one window with its center at 2746).
+  In a static scene W grows to the 3 s cap, which is why the cap exists. The 40 threshold and the 3 s cap are constants
+  in `similarity.py`, not settings.
+- 2026-10-07: The user asked that N/P, with a range selected, search after its end / before its beginning. `jumpMark` now
+  starts from the selection's last / first frame and compares each meme's start..end (so a meme you are inside is skipped
+  too). Checked in headless Chrome on synthetic in-page memes (single, inside a window, with ranges selected); the dataset file was not written.

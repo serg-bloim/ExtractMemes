@@ -1,0 +1,10 @@
+schema: 1
+name: profile1
+filters:
+  human_label: any
+  classifier: any
+  ranges:
+    band:
+      min: 180.0
+    hue_consistency:
+      max: 0.7525

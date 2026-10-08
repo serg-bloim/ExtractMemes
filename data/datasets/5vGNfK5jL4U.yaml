@@ -1,0 +1,116 @@
+schema: 1
+mode: standard
+video:
+  url: https://www.youtube.com/watch?v=5vGNfK5jL4U
+  id: 5vGNfK5jL4U
+  format_id: '269'
+  vcodec: avc1.4D400C
+  ext: mp4
+  width: 256
+  height: 144
+  fps: 25.0
+  frame_count: 91623
+memes:
+  - {meme_ts: 0.000, meme_frame: 0}
+  - {meme_ts: 0.320, meme_frame: 8}
+  - {meme_ts: 0.640, meme_frame: 16}
+  - {meme_ts: 0.960, meme_frame: 24}
+  - {meme_ts: 82.240, meme_frame: 2056}
+  - {meme_ts: 82.560, meme_frame: 2064}
+  - {meme_ts: 94.720, meme_frame: 2368}
+  - {meme_ts: 95.040, meme_frame: 2376}
+  - {meme_ts: 280.320, meme_frame: 7008}
+  - {meme_ts: 339.520, meme_frame: 8488}
+  - {meme_ts: 339.840, meme_frame: 8496}
+  - {meme_ts: 379.200, meme_frame: 9480}
+  - {meme_ts: 392.320, meme_frame: 9808}
+  - {meme_ts: 449.600, meme_frame: 11240}
+  - {meme_ts: 449.920, meme_frame: 11248}
+  - {meme_ts: 522.560, meme_frame: 13064}
+  - {meme_ts: 536.960, meme_frame: 13424}
+  - {meme_ts: 565.120, meme_frame: 14128}
+  - {meme_ts: 642.880, meme_frame: 16072}
+  - {meme_ts: 840.640, meme_frame: 21016}
+  - {meme_ts: 840.960, meme_frame: 21024}
+  - {meme_ts: 863.040, meme_frame: 21576}
+  - {meme_ts: 900.800, meme_frame: 22520}
+  - {meme_ts: 901.120, meme_frame: 22528}
+  - {meme_ts: 913.600, meme_frame: 22840}
+  - {meme_ts: 946.880, meme_frame: 23672}
+  - {meme_ts: 976.640, meme_frame: 24416}
+  - {meme_ts: 995.520, meme_frame: 24888}
+  - {meme_ts: 995.840, meme_frame: 24896}
+  - {meme_ts: 1005.440, meme_frame: 25136}
+  - {meme_ts: 1041.280, meme_frame: 26032}
+  - {meme_ts: 1041.600, meme_frame: 26040}
+  - {meme_ts: 1084.480, meme_frame: 27112}
+  - {meme_ts: 1084.800, meme_frame: 27120}
+  - {meme_ts: 1113.920, meme_frame: 27848}
+  - {meme_ts: 1156.480, meme_frame: 28912}
+  - {meme_ts: 1274.880, meme_frame: 31872}
+  - {meme_ts: 1294.080, meme_frame: 32352}
+  - {meme_ts: 1294.400, meme_frame: 32360}
+  - {meme_ts: 1311.360, meme_frame: 32784}
+  - {meme_ts: 1335.040, meme_frame: 33376}
+  - {meme_ts: 1348.480, meme_frame: 33712}
+  - {meme_ts: 1348.800, meme_frame: 33720}
+  - {meme_ts: 1425.920, meme_frame: 35648}
+  - {meme_ts: 1426.240, meme_frame: 35656}
+  - {meme_ts: 1444.800, meme_frame: 36120}
+  - {meme_ts: 1445.120, meme_frame: 36128}
+  - {meme_ts: 1560.320, meme_frame: 39008}
+  - {meme_ts: 1603.520, meme_frame: 40088}
+  - {meme_ts: 1627.520, meme_frame: 40688}
+  - {meme_ts: 1627.840, meme_frame: 40696}
+  - {meme_ts: 1641.600, meme_frame: 41040}
+  - {meme_ts: 1641.920, meme_frame: 41048}
+  - {meme_ts: 1659.200, meme_frame: 41480}
+  - {meme_ts: 1659.520, meme_frame: 41488}
+  - {meme_ts: 2521.600, meme_frame: 63040}
+  - {meme_ts: 2560.000, meme_frame: 64000}
+  - {meme_ts: 2596.480, meme_frame: 64912}
+  - {meme_ts: 2611.520, meme_frame: 65288}
+  - {meme_ts: 2660.480, meme_frame: 66512}
+  - {meme_ts: 2674.560, meme_frame: 66864}
+  - {meme_ts: 2716.480, meme_frame: 67912}
+  - {meme_ts: 2759.680, meme_frame: 68992}
+  - {meme_ts: 2773.760, meme_frame: 69344}
+  - {meme_ts: 2788.480, meme_frame: 69712}
+  - {meme_ts: 2859.520, meme_frame: 71488}
+  - {meme_ts: 2859.840, meme_frame: 71496}
+  - {meme_ts: 2879.680, meme_frame: 71992}
+  - {meme_ts: 2899.840, meme_frame: 72496}
+  - {meme_ts: 2920.640, meme_frame: 73016}
+  - {meme_ts: 2951.360, meme_frame: 73784}
+  - {meme_ts: 2965.760, meme_frame: 74144}
+  - {meme_ts: 2966.080, meme_frame: 74152}
+  - {meme_ts: 2979.840, meme_frame: 74496}
+  - {meme_ts: 2990.720, meme_frame: 74768}
+  - {meme_ts: 3005.440, meme_frame: 75136}
+  - {meme_ts: 3017.600, meme_frame: 75440}
+  - {meme_ts: 3017.920, meme_frame: 75448}
+  - {meme_ts: 3037.440, meme_frame: 75936}
+  - {meme_ts: 3057.280, meme_frame: 76432}
+  - {meme_ts: 3085.760, meme_frame: 77144}
+  - {meme_ts: 3103.040, meme_frame: 77576}
+  - {meme_ts: 3103.360, meme_frame: 77584}
+  - {meme_ts: 3116.800, meme_frame: 77920}
+  - {meme_ts: 3141.760, meme_frame: 78544}
+  - {meme_ts: 3142.080, meme_frame: 78552}
+  - {meme_ts: 3230.080, meme_frame: 80752}
+  - {meme_ts: 3230.400, meme_frame: 80760}
+  - {meme_ts: 3245.120, meme_frame: 81128}
+  - {meme_ts: 3310.720, meme_frame: 82768}
+  - {meme_ts: 3390.400, meme_frame: 84760}
+  - {meme_ts: 3394.240, meme_frame: 84856}
+  - {meme_ts: 3424.320, meme_frame: 85608}
+  - {meme_ts: 3486.400, meme_frame: 87160}
+  - {meme_ts: 3496.320, meme_frame: 87408}
+  - {meme_ts: 3506.240, meme_frame: 87656}
+  - {meme_ts: 3524.160, meme_frame: 88104}
+  - {meme_ts: 3524.480, meme_frame: 88112}
+  - {meme_ts: 3539.200, meme_frame: 88480}
+  - {meme_ts: 3555.520, meme_frame: 88888}
+  - {meme_ts: 3600.960, meme_frame: 90024}
+  - {meme_ts: 3606.720, meme_frame: 90168}
+  - {meme_ts: 3607.040, meme_frame: 90176}

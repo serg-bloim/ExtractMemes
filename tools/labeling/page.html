@@ -586,10 +586,14 @@ async function moveNearestMark() {
   } catch (e) { $("err").textContent = String(e); }
 }
 
+// N / P: the next / previous meme. With several frames selected the search starts after their end / before
+// their beginning; a meme counts by its start..end, so the one you are in is skipped.
 function jumpMark(dir) {
-  const sorted = S.memes.map(m => m.frame);
-  const next = dir > 0 ? sorted.find(f => f > sel) : [...sorted].reverse().find(f => f < sel);
-  if (next !== undefined) select(next);
+  const frames = multi.size > 1 ? Array.from(multi) : [sel];
+  const from = dir > 0 ? Math.max(...frames) : Math.min(...frames);
+  const found = dir > 0 ? S.memes.find(m => extent(m).lo > from)
+                        : [...S.memes].reverse().find(m => extent(m).hi < from);
+  if (found) select(found.frame);
 }
 
 function jumpUnlabeled() {

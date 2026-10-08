@@ -51,7 +51,8 @@ classifier disagrees with me, and keep the result in the repo.
 - [x] AC5: A key (and a button) toggles "meme" on the selected frame. Marks can be added, moved
       (select another frame of the same meme and re-mark it) and removed from the strip or the
       large view. A list of all marks lets me jump to one.
-- [x] AC6: Keys jump to the next/previous mark, and to the next frame not within ±1 s of any mark,
+- [x] AC6: Keys jump to the next/previous mark (a meme counts by its start..end; with several frames selected the search
+      starts after the end / before the beginning of the selection, and the meme you are in is skipped), and to the next frame not within ±1 s of any mark,
       so unlabeled stretches can be skimmed.
 - [x] AC7: Marks are written to the dataset file on every change (no separate save step), through
       the server, as `meme_ts`/`meme_frame` per meme (dataset AC3). The file stays valid (sorted, no
@@ -424,3 +425,6 @@ Resolved by the user (2026-10-07):
   W then M checked in headless Chrome (a mark grew to frames 2740..2752 and M saved one window with its center at 2746).
   In a static scene W grows to the 3 s cap, which is why the cap exists. The 40 threshold and the 3 s cap are constants
   in `similarity.py`, not settings.
+- 2026-10-07: The user asked that N/P, with a range selected, search after its end / before its beginning. `jumpMark` now
+  starts from the selection's last / first frame and compares each meme's start..end (so a meme you are inside is skipped
+  too). Checked in headless Chrome on synthetic in-page memes (single, inside a window, with ranges selected); the dataset file was not written.

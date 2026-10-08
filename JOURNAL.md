@@ -144,3 +144,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: A labeler meme window stores its center frame as meme_ts/meme_frame and unmarks individual marks inside it — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: The labeler's hotkey help moved from the main area to a hover popup behind a "Hotkeys" button on the tab line — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: In the labeler, W expands the selection to the adjacent frames of the same shot (stops at a cut) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-07: In the labeler, N/P search from the end/beginning of a selected range and skip the meme you are in — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

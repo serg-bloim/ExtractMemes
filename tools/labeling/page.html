@@ -714,15 +714,30 @@ function renderInfoPanel() {
   $("toggle-not").textContent = many
     ? (Array.from(multi).every(f => flagged(f, "not_meme")) ? "Unmark " : "Mark ") + multi.size + " selected as not a meme (X)"
     : (notMarked ? "Unmark not-a-meme" : "Mark as not a meme") + " (X)";
-  let html = "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td></tr>" +
-    "<tr><td class='dim'>frame</td><td>#" + sel + "</td></tr>" +
-    "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : notMarked ? "<span class='no'>✗ not a meme</span>" : (nearMark(sel) ? "near a mark" : "unlabeled")) + "</td></tr>" +
-    "<tr><td class='dim'>classifier</td><td>" + (S.verdict[sel] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td></tr>";
+  // With several frames selected, a second column describes the selection: how many of its frames share
+  // the current frame's label, and the range of each score over it.
+  const picked = many ? Array.from(multi) : [];
+  const col2 = text => many ? "<td>" + text + "</td>" : "";
+  const share = test => { const n = picked.filter(test).length; return "<span class='dim'>" + n + "/" + picked.length + "</span>"; };
+  const curLabel = marked ? "meme" : notMarked ? "not_meme" : "none";
+  const sameLabel = f => (memeFrames.has(f) ? "meme" : notFrames.has(f) ? "not_meme" : "none") === curLabel;
+  let html = many ? "<tr><td></td><td class='dim'>current frame</td><td class='dim'>selection (" + picked.length + ")</td></tr>" : "";
+  html += "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td>" + col2("") + "</tr>" +
+    "<tr><td class='dim'>frame</td><td>#" + sel + "</td>" + col2("") + "</tr>" +
+    "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : notMarked ? "<span class='no'>✗ not a meme</span>" : (nearMark(sel) ? "near a mark" : "unlabeled")) + "</td>" + col2(share(sameLabel)) + "</tr>" +
+    "<tr><td class='dim'>classifier</td><td>" + (S.verdict[sel] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td>" + col2(share(f => S.verdict[f] === S.verdict[sel])) + "</tr>";
   const meme = S.memes.find(m => { const e = extent(m); return (m.start_frame != null || m.end_frame != null) && e.lo <= sel && sel <= e.hi; });
-  if (meme) html += "<tr><td class='dim'>meme range</td><td>" + rangeText(meme) + "</td></tr>";
-  for (const c of S.criteria)
-    html += "<tr><td class='dim'>" + c.name + "</td><td>" + S.scores[c.name][sel] +
-            (c.thresholds.length ? " <span class='dim'>(classifier: " + c.thresholds.map(t => t.op + " " + t.value).join(", ") + ")</span>" : "") + "</td></tr>";
+  if (meme) html += "<tr><td class='dim'>meme range</td><td>" + rangeText(meme) + "</td>" + col2("") + "</tr>";
+  for (const c of S.criteria) {
+    const sc = S.scores[c.name];
+    let range = "";
+    if (many) {
+      const lo = picked.reduce((a, f) => Math.min(a, sc[f]), Infinity), hi = picked.reduce((a, f) => Math.max(a, sc[f]), -Infinity);
+      range = lo === hi ? String(lo) : lo + " – " + hi;
+    }
+    html += "<tr><td class='dim'>" + c.name + "</td><td>" + sc[sel] +
+            (c.thresholds.length ? " <span class='dim'>(classifier: " + c.thresholds.map(t => t.op + " " + t.value).join(", ") + ")</span>" : "") + "</td>" + col2(range) + "</tr>";
+  }
   $("facts").innerHTML = html;
   renderChips();
 }

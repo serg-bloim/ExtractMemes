@@ -488,3 +488,8 @@ Resolved by the user (2026-10-07):
   tab is open.
 - 2026-10-08: The empty "Test" side tab became the "Sort" tab ([scene-sorting](scene-sorting.md)); the
   strip's row order and ↑ ↓ navigation now follow its sorters.
+- 2026-10-08: The user asked the details table to describe the selection when several frames are
+  selected. With more than one frame selected the table gets a second column, "selection (N)", next to
+  the current frame's values: for the human label and the classifier, how many of the selected frames
+  share the current frame's value (e.g. 3/13); for each criterion, the range of its score over the
+  selection. A single frame shows the table as before.

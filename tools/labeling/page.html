@@ -593,9 +593,10 @@ function clickRow(r, i, e) {
     for (const fr of frames) all ? multi.delete(fr) : multi.add(fr);
     anchorFrame = rowShow[r];
     select(rowShow[r], false, true);
-  } else {
+  } else {                                            // all the row's matching frames; `sel` is its middle one
+    multi = new Set(framesOfRows([r]));
     anchorFrame = rowShow[r];
-    select(rowShow[r], false);
+    select(rowShow[r], false, true);
   }
 }
 

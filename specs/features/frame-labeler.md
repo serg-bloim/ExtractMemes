@@ -45,7 +45,8 @@ classifier disagrees with me, and keep the result in the repo.
       marking, filtering and the histogram work on frames. A row shows a thumbnail of its middle frame
       among those that match the filters (a shot's first and last frames can be fades), its time and frame range, how many of its frames match, and
       counts of marked, not-meme and flagged frames (no per-criterion scores). The strip is virtualised and thumbnails load lazily. Clicking a row selects
-      that frame; Shift/Cmd+click select all matching frames of the rows involved; the
+      all its matching frames, with the middle one as the current frame (the one shown and described);
+      Shift/Cmd+click select all matching frames of the rows involved; the
       strip highlights the row of the selected frame. There is no scan-rate option.
 - [x] AC4: A large view shows the selected frame with its timestamp and index. Left/right step one
       frame, shift+left/right one second, and a jump-to-timestamp box moves the selection; holding a
@@ -493,3 +494,5 @@ Resolved by the user (2026-10-07):
   the current frame's values: for the human label and the classifier, how many of the selected frames
   share the current frame's value (e.g. 3/13); for each criterion, the range of its score over the
   selection. A single frame shows the table as before.
+- 2026-10-08: The user asked that clicking a strip row select all its matching frames. The current frame
+  (`sel`, the one shown and whose values the details table lists) is the row's middle matching frame.

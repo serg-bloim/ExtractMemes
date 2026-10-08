@@ -155,3 +155,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-07: The labeler's rows group consecutive similar frames (same rule as W); every frame keeps its own scores, filters and label — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-07: A labeler row's thumbnail (and the frame a click selects) is its middle frame, since a shot's first and last frames can be fades — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-08: The labeler listens on all addresses and prints its local-network URL; requests for non-local hosts are still refused (no login) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-08: ADR 021: all tools share one video download cache in .runtime/downloads/, files named <video-id>_<format-id>.<ext> and reused before downloading — [decisions/021-shared-video-download-cache.md](decisions/021-shared-video-download-cache.md).

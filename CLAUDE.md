@@ -251,6 +251,10 @@ custom value the human configured intentionally (ask first rather than overwriti
 Significant architectural and workflow decisions are recorded in `decisions/` as ADRs. See
 `decisions/README.md` for the format and when to write one.
 
+**Downloading videos:** whenever the work involves downloading a video (any tool, the pipeline, the CLI,
+the labeler, a playground), read [ADR 021](decisions/021-shared-video-download-cache.md) first. Videos are
+cached in `.runtime/downloads/` as `<video-id>_<format-id>.<ext>` and reused instead of re-downloaded.
+
 When Claude makes an architectural decision during implementation:
 1. Note it as a decision point.
 2. Ask whether an ADR should be written.

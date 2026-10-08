@@ -67,7 +67,7 @@ ExtractMemes/
 │       │                           the single place the scores come from (pipeline and labeler)
 │       │                       `data/` holds reference files a criterion needs (built by tools/evaluation/build_template.py)
 │       ├── rule_classifier.py    ← Condition / AllOf / AnyOf rules + RuleClassifier over the criteria
-│       ├── heuristic_classifier.py ← The production classifier: the rule `band > 180`
+│       ├── heuristic_classifier.py ← The production classifier: the rule `edge_histogram < 2.1`
 │       └── pipeline.py           ← Orchestrates download → scan → classify → extract → save
 ├── tests/                        ← pytest suite, mirrors src/extract_memes/ modules
 ├── playground/

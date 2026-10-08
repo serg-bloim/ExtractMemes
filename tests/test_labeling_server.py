@@ -534,7 +534,8 @@ def test_the_page_gets_the_classifiers_thresholds_for_the_criteria_it_uses(label
 
     criteria = {c["name"]: c for c in json.load(get(base + "/api/state"))["criteria"]}
 
-    assert criteria["band"]["thresholds"] == [{"op": ">", "value": 180.0}]
+    assert criteria["edge_histogram"]["thresholds"] == [{"op": "<", "value": 2.1}]
+    assert criteria["band"]["thresholds"] == []
     assert criteria["texture"]["thresholds"] == []
     assert criteria["margin_luma"]["description"]
 

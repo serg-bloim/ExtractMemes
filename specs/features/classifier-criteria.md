@@ -109,3 +109,6 @@ Resolved by the user's request (2026-10-07):
   so the threshold still separates them (15/15 caught, 0/23 false positives). `pytest -m "not slow"`:
   475 passed. Stored `band` stats in the scene database predate this and are stale until the videos
   are populated again; the labeler recomputes `band` for a video the next time it opens it.
+- 2026-10-08: `HeuristicClassifier` is now `RuleClassifier(Condition("edge_histogram", "<", 2.1))` and
+  `FrameScores` gains `edge_histogram` ([heuristic-edge-histogram](heuristic-edge-histogram.md)); this amends AC5's
+  "behaves as before" for the rule and the constructor (`edge_histogram_threshold`).

@@ -9,6 +9,9 @@ depends-on: ["heuristic-classifier"]
 
 # Heuristic Classifier Decides on Band Only
 
+> **Amended by [heuristic-edge-histogram](heuristic-edge-histogram.md):** the production rule is now
+> `edge_histogram < 2.1`; `band_threshold` is replaced by `edge_histogram_threshold`.
+
 ## Problem Statement
 
 [heuristic-classifier](heuristic-classifier.md) flags a frame when `band > 180` **and**
@@ -122,3 +125,4 @@ Resolved with the defaults the draft proposed when the user answered "go" (2026-
     (445 before) and the lowest flagged band is 220.6. `pytest -m "not slow"`: 255 passed.
 - 2026-10-08: `band` now measures the outermost 5% on each side instead of the 20% margins (see
   [classifier-criteria](classifier-criteria.md) changelog); the threshold stays 180.
+- 2026-10-08: Superseded as the production rule by [heuristic-edge-histogram](heuristic-edge-histogram.md).

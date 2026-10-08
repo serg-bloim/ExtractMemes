@@ -118,7 +118,7 @@ def test_the_heuristic_classifiers_scores_are_the_criteria_scores():
 
     assert scores.band == criteria.get("band").score(card)
     assert scores.texture == criteria.get("texture").score(card)
-    assert scores.band > 180
+    assert scores.edge_histogram == criteria.get("edge_histogram").score(card)
 
 
 def test_margin_luma_tells_dark_static_from_a_bright_scene():

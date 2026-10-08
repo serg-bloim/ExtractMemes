@@ -120,3 +120,5 @@ Resolved with the defaults the draft proposed when the user answered "go" (2026-
     item 60 marked resolved.
   - **Measured (AC7):** on every frame of `Ij427pW96aI_worst.mp4` (46,988), 541 frames are flagged
     (445 before) and the lowest flagged band is 220.6. `pytest -m "not slow"`: 255 passed.
+- 2026-10-08: `band` now measures the outermost 5% on each side instead of the 20% margins (see
+  [classifier-criteria](classifier-criteria.md) changelog); the threshold stays 180.

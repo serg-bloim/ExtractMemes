@@ -1,11 +1,14 @@
 """A cache of per-frame facts about one video, built in one sequential pass, and random frame access.
 
-The labeler needs, for the video it labels: every frame's own timestamp, a thumbnail and a score per
-criterion for each scanned frame, and the production classifier's verdict for it. These are cached
+The labeler needs, for the video it labels: every frame's own timestamp, a score per criterion for
+every frame, the production classifier's verdict for it, and a grouping of the frames into rows (a row
+is a run of consecutive frames that look alike, so a row is a shot or a glitch card) with a thumbnail
+for the middle frame of each row (the first and last frames of a shot can be fades). These are cached
 under `.runtime/labeler/` (never in the repo). A pass over the video is only made for what is
 missing, so adding a criterion computes just that criterion.
 """
 
+import hashlib
 import json
 import threading
 from collections import OrderedDict
@@ -23,28 +26,28 @@ from extract_memes.criteria import Criterion
 from extract_memes.heuristic_classifier import HeuristicClassifier
 from extract_memes.rule_classifier import RuleClassifier
 
-from .dataset import scan_step
+from . import similarity
 
 CACHE_ROOT = Path(".runtime/labeler")
 THUMB_SIZE = (192, 108)
 _VERDICT = "__verdict__"
+_STEPS = "__steps__"  # how much each frame differs from the one before it (see `similarity`)
 
 
 @dataclass
 class Index:
-    """Everything the page needs about the scanned frames."""
+    """Everything the page needs about the frames and their rows."""
 
     pts: np.ndarray  # timestamp (seconds) of every decoded frame, by frame index
-    rows: np.ndarray  # frame index of each scanned frame, ascending
+    rows: np.ndarray  # first frame of each row, ascending; a row runs to the frame before the next row
+    row_last: np.ndarray  # last frame of each row
     criteria: list[Criterion]  # every criterion in extract_memes.criteria, as scored
-    scores: dict[str, np.ndarray]  # criterion name -> score per row
+    scores: dict[str, np.ndarray]  # criterion name -> score per frame
     thresholds: dict[str, list[dict]]  # criterion name -> the classifier's conditions on it [{op, value}]
-    verdict: np.ndarray  # the production classifier's decision per row
+    verdict: np.ndarray  # the production classifier's decision per frame
     native_fps: float
-    fps: float
-    step: int
     thumb_dir: Path
-    version: str = ""  # identifies this video file and scan step, so cached images can't be mixed up
+    version: str = ""  # identifies this video file, so cached images can't be mixed up
 
 
 def _read_meta(path: Path) -> dict:
@@ -54,10 +57,20 @@ def _read_meta(path: Path) -> dict:
         return {}
 
 
+def write_thumb(path: Path, frame: np.ndarray) -> None:
+    small = cv2.resize(frame, THUMB_SIZE, interpolation=cv2.INTER_AREA)
+    cv2.imwrite(str(path), small, [cv2.IMWRITE_JPEG_QUALITY, 70])
+
+
+def row_bounds(steps: np.ndarray, threshold: float = similarity.CUT_THRESHOLD) -> tuple[np.ndarray, np.ndarray]:
+    """`(first, last)` frame of each row: a new row starts where a frame differs from the one before it by more than `threshold`."""
+    first = np.flatnonzero(np.concatenate([[True], steps[1:] > threshold]))
+    return first, np.append(first[1:] - 1, len(steps) - 1)
+
+
 def build(
     video_path: Path,
     cache_dir: Path,
-    fps: float = 3.0,
     criteria: list[Criterion] | None = None,
     progress: Callable[[str, float | None], None] | None = None,
     classifier: FrameClassifier | None = None,
@@ -73,10 +86,8 @@ def build(
     cache_dir.mkdir(parents=True, exist_ok=True)
     thumb_dir = cache_dir / "thumbs"
     thumb_dir.mkdir(exist_ok=True)
-    step = scan_step(video_path, fps)
-
     stat = video_path.stat()
-    identity = {"size": stat.st_size, "mtime": int(stat.st_mtime), "step": step}
+    identity = {"size": stat.st_size, "mtime": int(stat.st_mtime), "every_frame": True, "rows": "similar-frames"}
     meta_path = cache_dir / "meta.json"
     meta = _read_meta(meta_path)
     if {k: meta.get(k) for k in identity} != identity:
@@ -89,38 +100,40 @@ def build(
 
     wanted = {c.name: c.fingerprint() for c in criteria}
     wanted[_VERDICT] = _classifier_fingerprint(classifier)
+    wanted[_STEPS] = hashlib.sha1(Path(similarity.__file__).read_bytes()).hexdigest()[:12]
     stale_scores = {name for name, h in wanted.items() if hashes.get(name) != h
-                    or not (cache_dir / f"{name}.npy").is_file()}
+                    or not (cache_dir / (f"{name}.npy" if name != _STEPS else "steps.npy")).is_file()}
     pts_path = cache_dir / "pts.npy"
     need_pts = not pts_path.is_file()
-    n_expected = int(np.ceil(len(np.load(pts_path)) / step)) if not need_pts else None
-    need_thumbs = need_pts or any(
-        not (thumb_dir / f"{i * step}.jpg").is_file() for i in range(n_expected or 0)
-    )
+    steps_path = cache_dir / "steps.npy"
 
-    if need_pts or need_thumbs or stale_scores:
-        _run_pass(video_path, cache_dir, step, criteria, stale_scores, need_pts, need_thumbs, thumb_dir, progress, classifier)
+    if need_pts or stale_scores:
+        _run_pass(video_path, cache_dir, criteria, stale_scores, need_pts, progress, classifier)
+        hashes[_STEPS] = wanted[_STEPS]
         for name in stale_scores:
             hashes[name] = wanted[name]
         meta_path.write_text(json.dumps(meta))
 
     pts = np.load(pts_path)
-    rows = np.arange(0, len(pts), step)
+    rows, row_last = row_bounds(np.load(steps_path))
+    middle = (rows + row_last) // 2
+    missing = {int(f) for f in middle if not (thumb_dir / f"{f}.jpg").is_file()}
+    if missing:
+        _write_thumbs(video_path, missing, thumb_dir, progress)
     cap = cv2.VideoCapture(str(video_path))
-    native_fps = cap.get(cv2.CAP_PROP_FPS) or fps
+    native_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     cap.release()
     return Index(
         pts=pts,
         rows=rows,
+        row_last=row_last,
         criteria=criteria,
         scores={c.name: np.load(cache_dir / f"{c.name}.npy") for c in criteria},
         thresholds=_thresholds(classifier),
         verdict=np.load(cache_dir / f"{_VERDICT}.npy"),
         native_fps=native_fps,
-        fps=fps,
-        step=step,
         thumb_dir=thumb_dir,
-        version=f"{identity['size']}-{identity['mtime']}-{identity['step']}",
+        version=f"{identity['size']}-{identity['mtime']}-rows",
     )
 
 
@@ -142,7 +155,27 @@ def _thresholds(classifier: FrameClassifier) -> dict[str, list[dict]]:
     return found
 
 
-def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumbs, thumb_dir, progress=None,
+def _write_thumbs(video_path: Path, wanted: set[int], thumb_dir: Path, progress=None) -> None:
+    """Write the thumbnails of the `wanted` frames in one sequential decode."""
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open video file: {video_path}")
+    last = max(wanted)
+    try:
+        for index in range(last + 1):
+            if not cap.grab():
+                break
+            if index in wanted:
+                ok, frame = cap.retrieve()
+                if ok:
+                    write_thumb(thumb_dir / f"{index}.jpg", frame)
+            if progress and index % 2000 == 0:
+                progress("Making thumbnails", min(1.0, index / (last + 1)))
+    finally:
+        cap.release()
+
+
+def _run_pass(video_path, cache_dir, criteria, stale, need_pts, progress=None,
               classifier=None) -> None:
     """One sequential decode that fills in whatever is missing."""
     cap = cv2.VideoCapture(str(video_path))
@@ -150,8 +183,9 @@ def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumb
         raise RuntimeError(f"Could not open video file: {video_path}")
     todo = [c for c in criteria if c.name in stale]
     do_verdict = _VERDICT in stale
-    needs_frame = need_thumbs or bool(todo) or do_verdict
     pts: list[float] = []
+    steps: list[float] = []
+    previous = None
     scores: dict[str, list[float]] = {c.name: [] for c in todo}
     verdicts: list[bool] = []
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or None
@@ -161,23 +195,22 @@ def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumb
             while cap.grab():
                 if need_pts:
                     pts.append(cap.get(cv2.CAP_PROP_POS_MSEC) / 1000)
-                if needs_frame and index % step == 0:
-                    ok, frame = cap.retrieve()
-                    if ok:
-                        thumb = thumb_dir / f"{index}.jpg"
-                        if need_thumbs and not thumb.is_file():
-                            small = cv2.resize(frame, THUMB_SIZE, interpolation=cv2.INTER_AREA)
-                            cv2.imwrite(str(thumb), small, [cv2.IMWRITE_JPEG_QUALITY, 70])
-                        for criterion in todo:
-                            scores[criterion.name].append(criterion.score(frame))
-                        if do_verdict:
-                            verdicts.append(classifier.is_meme_frame(frame))
+                ok, frame = cap.retrieve()
+                if ok:
+                    current = similarity.descriptor(frame)
+                    steps.append(np.inf if previous is None else similarity.step(previous, current))
+                    previous = current
+                    for criterion in todo:
+                        scores[criterion.name].append(criterion.score(frame))
+                    if do_verdict:
+                        verdicts.append(classifier.is_meme_frame(frame))
                 index += 1
                 bar.update(1)
                 if progress and total and index % 500 == 0:
                     progress("Indexing video", min(1.0, index / total))
     finally:
         cap.release()
+    np.save(cache_dir / "steps.npy", np.array(steps, dtype=np.float32))
     if need_pts:
         np.save(cache_dir / "pts.npy", np.array(pts))
     for name, values in scores.items():

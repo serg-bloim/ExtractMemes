@@ -33,6 +33,7 @@ class Criterion:
     score: Callable[[np.ndarray], float]
     description: str = ""
     module: str | None = None
+    data: tuple[str, ...] = ()  # reference files in `criteria/data/` the score depends on
 
     def fingerprint(self) -> str:
         """Changes when this criterion's code changes, which invalidates anything cached from it.
@@ -48,14 +49,24 @@ class Criterion:
         else:
             for name in (self.module, f"{__name__}._common"):
                 digest.update(Path(sys.modules[name].__file__).read_bytes())
+            for name in self.data:
+                path = DATA_DIR / name
+                digest.update(path.read_bytes() if path.is_file() else b"missing:" + name.encode())
         return digest.hexdigest()[:12]
 
 
+DATA_DIR = Path(__file__).parent / "data"
 _REGISTRY: dict[str, Criterion] = {}
 
 
-def criterion(name: str) -> Callable[[Callable[[np.ndarray], float]], Callable[[np.ndarray], float]]:
-    """Register the decorated function as the criterion `name`; its docstring is the description."""
+def criterion(
+    name: str, data: tuple[str, ...] = ()
+) -> Callable[[Callable[[np.ndarray], float]], Callable[[np.ndarray], float]]:
+    """Register the decorated function as the criterion `name`; its docstring is the description.
+
+    `data` names reference files in `criteria/data/` that the score depends on; their contents are
+    part of the fingerprint, so cached scores are recomputed when one changes.
+    """
 
     def register(function):
         if name in _REGISTRY and _REGISTRY[name].score is not function:
@@ -65,6 +76,7 @@ def criterion(name: str) -> Callable[[Callable[[np.ndarray], float]], Callable[[
             score=function,
             description=" ".join((function.__doc__ or "").split()),
             module=function.__module__,
+            data=tuple(data),
         )
         return function
 

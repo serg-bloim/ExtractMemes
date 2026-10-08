@@ -36,14 +36,18 @@ classifier disagrees with me, and keep the result in the repo.
       "worst" tier; `--format-id` overrides) and creates `data/datasets/<video-id>.yaml` with the
       video identity on the first mark. Given a URL or id that already has a dataset, it loads that
       exact format (dataset AC5/AC6) and shows the existing marks.
-- [x] AC3: The page has a **vertical strip of thumbnails** on one side. It scrolls through the whole
-      video and shows **every frame the scan classifies**: the same frames `sample_frames` yields
-      at the scan rate (`--fps`, default 3.0 like the pipeline), chosen by the same rule
-      (every `max(1, round(native_fps / fps))`-th decoded frame). So at 3 fps the strip has 3 rows
-      per second, and the rows are exactly the frames a classifier would see. Each thumbnail shows
-      its timestamp and index, thumbnails load lazily as they scroll into view, and marked frames
-      carry a visible indicator. Clicking a thumbnail selects that frame. A mark on a frame that
-      isn't a strip row (set by stepping) is shown on the nearest row before it.
+- [x] AC3: The page has a **vertical strip** on one side that scrolls through the whole video in
+      **rows**. A row is a run of consecutive frames that look alike: a frame joins the row of the
+      frame before it when the step between them is at most the cut threshold of `similarity` (the
+      rule the W key uses), else it starts a new row. So a shot or a glitch card is one row (on
+      FtU4MuksCzE: 397 rows for 75,631 frames, and every meme window is exactly one row). Rows only
+      group the timeline; **every frame keeps its own scores, verdict and label**, and selecting,
+      marking, filtering and the histogram work on frames. A row shows a thumbnail of its middle frame
+      among those that match the filters (a shot's first and last frames can be fades), its time and frame range, how many of its frames match, and
+      counts of marked, not-meme and flagged frames (no per-criterion scores). The strip is virtualised and thumbnails load lazily. Clicking a row selects
+      all its matching frames, with the middle one as the current frame (the one shown and described);
+      Shift/Cmd+click select all matching frames of the rows involved; the
+      strip highlights the row of the selected frame. There is no scan-rate option.
 - [x] AC4: A large view shows the selected frame with its timestamp and index. Left/right step one
       frame, shift+left/right one second, and a jump-to-timestamp box moves the selection; holding a
       key repeats. The strip follows the selection, and neighbouring frames are preloaded so
@@ -62,15 +66,20 @@ classifier disagrees with me, and keep the result in the repo.
       the same frame back.
 - [x] AC9: No frame images are written into the repo. Any thumbnail or index cache goes under
       `.runtime/` (gitignored).
-- [x] AC10: The server binds only to loopback and rejects requests whose paths aren't the page, its
-      own API, a thumbnail or a frame request.
+- [x] AC10: The server listens on every address (so it can be opened from another device on the local
+      network) and prints both its loopback and its local-network address at startup. It has no
+      login. It answers only requests whose paths are the page, its own API, a thumbnail or a frame,
+      and only those addressed to this machine on its own network: `localhost`, this machine's
+      name, or an address in a private, loopback or link-local range. A request addressed by any
+      other name or a public address (what a DNS-rebinding page would send) and a cross-site
+      request (an `Origin` that is not such a host) get 403. The Werkzeug debugger is off.
 - [x] AC11: This code is not in the installable package, and its dependency (PyYAML) is in an
       optional group, not `[project.dependencies]` (dataset AC10).
 - [x] AC12: Each strip row and the large view show **classifier info** for the frame: the verdict of
       the production classifier (`HeuristicClassifier`: flagged or not) and the score of every
       registered criterion (at least `band` and `texture` from `HeuristicClassifier.scores`), next to
-      the human label (marked or not). Scores are computed on the scanned frames only, in the same
-      sequential pass that builds the thumbnails, and cached under `.runtime/` (AC9), so scrolling
+      the human label (marked or not). Scores are computed for every frame, in the same
+      sequential pass that groups the rows and makes their thumbnails, and cached under `.runtime/` (AC9), so scrolling
       and filtering don't decode video.
 - [x] AC13: The criteria shown are the ones in `extract_memes.criteria` (see
       [classifier-criteria](classifier-criteria.md)), all of them, discovered at start: the labeler
@@ -104,7 +113,7 @@ classifier disagrees with me, and keep the result in the repo.
       a not-meme or unlabeled, never two: setting one replaces the other. Not-memes are saved to the
       dataset's `not_memes` list on every change, shown on strip rows and in the large view, listed
       beside the marks, and the human-label filter has meme / not meme / unlabeled.
-- [ ] AC17: `./labeler.sh <youtube-url-or-id> [--fps N] [--format-id ID] [--port N] [--proxy URL]`
+- [ ] AC17: `./labeler.sh <youtube-url-or-id> [--format-id ID] [--port N] [--proxy URL]`
       from anywhere starts the server with auto-reload: editing, adding or removing a Python file
       under `tools/labeling/` or `src/extract_memes/` restarts it, and a browser refresh picks up `page.html`. Marks survive a restart.
 - [ ] AC18: **Choosing the video in the page.** An "Open video" button opens a modal where I paste
@@ -225,8 +234,8 @@ classifier disagrees with me, and keep the result in the repo.
   (reload on Python changes), and the work here is blocking OpenCV decoding, so async (FastAPI)
   adds nothing. Flask is in the optional `labeling` group with PyYAML. The page is one static HTML
   file with inline JS and CSS, read on every request so a browser refresh picks up edits.
-- `labeler.sh` at the project root runs `flask --app tools.labeling.wsgi:create_app run --debug
-  --no-reload` under `watchfiles`, which restarts it on any Python change (Flask's own reloader
+- `labeler.sh` at the project root runs `flask --app tools.labeling.wsgi:create_app run
+  --no-reload --host 0.0.0.0` under `watchfiles`, which restarts it on any Python change (Flask's own reloader
   doesn't notice new files), with the video and options passed in environment variables; `python -m tools.labeling` stays as
   the plain launcher without reload.
 - Exact indices and timestamps need a sequential decode (dataset AC4). Likely approach: a first
@@ -234,16 +243,18 @@ classifier disagrees with me, and keep the result in the repo.
   to a cache under `.runtime/`; full frames are then decoded on request by reading forward from a
   nearby position and checking the index, because seeking alone can land on a different frame.
   A long video needs a progress indicator on that first pass.
-- A strip at 3 fps of an hour-long video is ~10,800 rows, so it must be virtualised (only rows near
-  the viewport exist in the DOM). Using `sample_frames`'s step rule means the strip rows match what
-  the pipeline scans, so a classifier evaluated on the dataset is judged on those same frames.
+- Rows come from `steps.npy` (the step between each frame and the one before, from 32x18 grayscale
+  descriptors, cached with a fingerprint of `similarity.py`), cut at the threshold when the index is
+  loaded, so a different threshold needs no new pass. Thumbnails are made for the middle frame of
+  each row after the pass (~400 per video, a few MB) and for any other frame on first request. The
+  strip is virtualised (only rows near the viewport exist in the DOM). The evaluation tool still judges the frames a 3 fps
+  scan would classify, by taking every `step`-th cached row.
 - Frames are served as JPEG at the video's own resolution; thumbnails smaller.
-- Stepping is by native frame even though the strip shows only the scanned frames, because a card
-  lasts only ~10 frames and the scan can skip it entirely (ADR 008, the sampling gap); the labeler
-  must let you mark a card the scan would miss.
+- A card lasts only ~10 frames and a 3 fps scan can skip it entirely (ADR 008, the sampling gap); the
+  labeler shows every frame so you can mark a card the scan would miss.
 
-- Scoring every scanned frame of an hour-long video at 3 fps is ~10,800 frames at about 0.5 ms
-  each (ADR 008), so it adds seconds to the first pass. Scores are kept per criterion so adding
+- Scoring every frame of an hour-long 25 fps video is ~90,000 frames; the first pass takes about a
+  minute. Scores are kept per criterion so adding
   one doesn't redo the others.
 - Filtering can be done in the page over the cached scores (no round trip per change); the server
   only has to serve the score table.
@@ -257,7 +268,7 @@ Resolved by the user (2026-10-07):
 - Q2: Overview? **A scrollable vertical timestrip of frames to select and edit labels** — AC3, AC5.
 - Quality: **a low-quality video is fine** — AC2.
 
-- Q3: Strip density? **Every frame the classifier sees (3 fps by default)** — AC3.
+- Q3: Strip density? ~~Every frame the classifier sees (3 fps by default)~~ **Every frame is scored, always; the strip groups similar consecutive frames into rows** (2026-10-07, after rows spanning several sampled frames showed wrong scores and rigged the filters) — AC3.
 
 ## Changelog
 
@@ -428,3 +439,60 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: The user asked that N/P, with a range selected, search after its end / before its beginning. `jumpMark` now
   starts from the selection's last / first frame and compares each meme's start..end (so a meme you are inside is skipped
   too). Checked in headless Chrome on synthetic in-page memes (single, inside a window, with ranges selected); the dataset file was not written.
+- 2026-10-07: The user asked to score each frame all the time and drop the scan-rate option: with a row
+  standing for up to 8 frames, a frame showed another frame's scores, a row could mix meme and
+  non-meme frames, and the filters and histogram were wrong. AC3, AC12 and Q3 rewritten: rows are
+  frames (`rows[i] == i`), every frame is scored and gets a thumbnail, `--fps`/`LABELER_FPS` and the
+  index's `fps`/`step` are gone, and the page's "between scanned frames" handling is removed. The
+  cache identity no longer includes a step, so existing caches are rebuilt once (~50 s and ~350 MB per
+  video at 25 fps, mostly thumbnails). The evaluation tool still judges at the pipeline's 3 fps by
+  taking every `step`-th cached row (`--scan-fps`, `--all-frames`), so its numbers are unchanged.
+- 2026-10-07: Rows redefined (see AC3): a row is a run of consecutive similar frames (step between
+  neighbours at most `similarity.CUT_THRESHOLD`), the same grouping the W key uses, while every frame
+  keeps its own scores, verdict and label and the filters, histogram and selection work on frames. The
+  index stores `steps.npy` and the rows are cut from it (`index.rows`, `index.row_last`, state
+  `rows`/`row_last`); thumbnails exist only for each row's first frame plus on demand, so the cache
+  shrank from ~350 MB to ~5 MB per video (the pass costs about the same). On the labeled videos:
+  FtU4MuksCzE 397 rows (max 3,495 frames), 5vGNfK5jL4U 468 rows; in FtU4MuksCzE all 81 marked memes
+  are exactly one row each with no unmarked frame in it, and the frames the labeler used to show with
+  another frame's scores (2741, 15776) are in rows of their own shot. Page changes: a row's filter
+  match is any of its frames; "A", Shift and Cmd+click select the matching frames of the rows; the
+  info panel's "near a mark" is computed per frame. The page was not checked in a browser (the Chrome
+  extension wasn't connected); the data and server behaviour were checked through the API and tests.
+- 2026-10-07: A row's thumbnail, and the frame a click selects, is now the middle one of its matching
+  frames instead of the first, because the first and last frames of a shot can be fades. The index
+  writes the thumbnails of the rows' middle frames (`(first + last) // 2`) in a second, light decode
+  after the rows are known; with a filter that leaves part of a row the middle matching frame's
+  thumbnail is made on request.
+- 2026-10-07: The user asked for the dev server's address on the local network and then to listen on
+  all addresses always, with no extra option. AC10 changed from loopback-only: the server binds
+  `0.0.0.0` (`labeler.sh`, `python -m tools.labeling`), prints `http://127.0.0.1:<port>/` and
+  `http://<lan address>:<port>/` (`tools/labeling/network.py`), and accepts requests addressed to
+  localhost, this machine's name or a private/loopback/link-local address (the old check only allowed
+  `127.0.0.1` and `localhost`, which would have answered 403 on the network address); other names and
+  public addresses stay refused. There is still no login: anyone on the network can read the frames and
+  change the marks, which the user accepted. Flask's `--debug` was dropped from `labeler.sh`, because
+  its interactive debugger must not be reachable from the network (reloading is done by `watchfiles`).
+  Checked: `http://192.168.1.208:8767/` answers 200, Host `8.8.8.8` and `evil.example` answer 403.
+- 2026-10-08: `labeler.sh` now runs the server in a loop: if it exits or fails it is restarted after
+  2 s; Ctrl+C or SIGTERM stops the loop.
+- 2026-10-08: The user found the per-criterion score ranges on each strip row clumsy; removed them.
+  A row now shows only its timestamps, frame count and meme / not meme / flagged marks (scores stay in
+  the frame detail and the histogram).
+- 2026-10-08: The user asked for zoom in the gallery and tiles modes. Added zoom-out / zoom-in (magnifier icon) buttons (shown in
+  those modes) and Ctrl/Cmd + scroll (trackpad pinch) that resize the cells, 0.5×–2.5×, keeping the
+  middle frame in place; the size is remembered in the browser.
+- 2026-10-08: The user asked to wrap the filter view (profiles, filters, count, strip) in a tab of the
+  left panel so other tabs can take its place. Added a tab bar ("Filter", and an empty "Test" tab for
+  trying it out); the chosen tab is remembered in the browser.
+  The match count and the row strip sit below the tabs, outside any tab, so they stay on whichever
+  tab is open.
+- 2026-10-08: The empty "Test" side tab became the "Sort" tab ([scene-sorting](scene-sorting.md)); the
+  strip's row order and ↑ ↓ navigation now follow its sorters.
+- 2026-10-08: The user asked the details table to describe the selection when several frames are
+  selected. With more than one frame selected the table gets a second column, "selection (N)", next to
+  the current frame's values: for the human label and the classifier, how many of the selected frames
+  share the current frame's value (e.g. 3/13); for each criterion, the range of its score over the
+  selection. A single frame shows the table as before.
+- 2026-10-08: The user asked that clicking a strip row select all its matching frames. The current frame
+  (`sel`, the one shown and whose values the details table lists) is the row's middle matching frame.

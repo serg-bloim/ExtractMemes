@@ -27,6 +27,10 @@ extract-memes = "extract_memes.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# Reference data of the classifier criteria (see criteria/data/).
+extract_memes = ["criteria/data/*.json"]
+
 [tool.pytest.ini_options]
 # A bare `pytest` only collects tests/; playground/ files still run when given explicitly (IDE run icon).
 testpaths = ["tests"]

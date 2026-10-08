@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Start the frame labeler dev server; it restarts when a Python file under tools/labeling/ or
+# Start the frame labeler dev server on every address (http://<this machine's address>:8765/ opens it from
+# the local network; there is no login). It restarts when a Python file under tools/labeling/ or
 # src/extract_memes/ changes, including a new criterion file added there
 # (refresh the browser tab after a restart; page.html edits need only a refresh).
 #
-#   ./labeler.sh [youtube-url-or-id] [--fps N] [--format-id ID] [--port N] [--proxy URL]
+#   ./labeler.sh [youtube-url-or-id] [--format-id ID] [--port N] [--proxy URL]
 #
 # Without a video, the page opens on a field where you enter one.
 #
@@ -17,7 +18,6 @@ source_arg=""
 port=8765
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --fps)       export LABELER_FPS="${2:?--fps needs a value}"; shift 2 ;;
     --format-id) export LABELER_FORMAT_ID="${2:?--format-id needs a value}"; shift 2 ;;
     --proxy)     export LABELER_PROXY="${2:?--proxy needs a value}"; shift 2 ;;
     --port)      port="${2:?--port needs a value}"; shift 2 ;;
@@ -34,6 +34,16 @@ python=".venv/bin/python"
 # watchfiles restarts Flask whenever a Python file under src/extract_memes (the criteria and the
 # classifiers) or tools/labeling changes, new files included, which Flask's own reloader doesn't
 # notice (a criterion added as a new file is picked up).
-exec "$python" -m watchfiles --filter python \
-  "$python -m flask --app tools.labeling.wsgi:create_app run --debug --no-reload --host 127.0.0.1 --port $port" \
-  src/extract_memes tools/labeling
+"$python" -m tools.labeling.network "$port"
+
+# Run in a loop: if the server exits or fails, start it again after a short pause.
+# Ctrl+C (or SIGTERM) stops the loop.
+trap 'exit 0' INT TERM
+while true; do
+  status=0
+  "$python" -m watchfiles --filter python \
+    "$python -m flask --app tools.labeling.wsgi:create_app run --no-reload --host 0.0.0.0 --port $port" \
+    src/extract_memes tools/labeling || status=$?
+  echo "labeler: server exited (status $status); restarting in 2s (Ctrl+C to stop)" >&2
+  sleep 2
+done

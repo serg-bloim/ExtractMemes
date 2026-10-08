@@ -65,6 +65,7 @@ ExtractMemes/
 │       ├── classifier.py         ← FrameClassifier interface + ClaudeCliClassifier
 │       ├── criteria/             ← Classifier criteria, one module each (`@criterion`), auto-discovered;
 │       │                           the single place the scores come from (pipeline and labeler)
+│       │                       `data/` holds reference files a criterion needs (built by tools/evaluation/build_template.py)
 │       ├── rule_classifier.py    ← Condition / AllOf / AnyOf rules + RuleClassifier over the criteria
 │       ├── heuristic_classifier.py ← The production classifier: the rule `band > 180`
 │       └── pipeline.py           ← Orchestrates download → scan → classify → extract → save
@@ -73,12 +74,17 @@ ExtractMemes/
 │   ├── playground.py             ← Manual IDE entry points (not collected by pytest)
 │   └── scan_playground.py        ← Manual scan-only runs (no extraction)
 ├── run_real_video.py             ← Manual runner: real URL, real or fake classifier
+├── populate_scenes.sh            ← Runner: `./populate_scenes.sh <video-id>...` fills the scene database (see scene-score-analysis spec)
 ├── tools/                        ← Host-environment utilities, outside the package
 │   ├── lan_proxy_relay.py        ← Loopback→LAN TCP relay; lets a Homebrew interpreter reach a
 │                                   LAN proxy on macOS (see ADR 017). Runs under /usr/bin/python3.
 │   └── labeling/                 ← Dev-only dataset labeler (not in the package or the image); run
 │                                   `./labeler.sh <url>` (Flask dev server, restarts on edits incl. new criterion files) or
 │                                   `python -m tools.labeling <url>`. Needs `pip install -e ".[labeling]"`.
+│   └── evaluation/               ← Dev-only criteria evaluation: per-criterion errors / separation margin and a
+│                                   search for the smallest rule; `python -m tools.evaluation` (see criteria-evaluation spec).
+│   └── scene_analysis/           ← Dev-only scene score database (`data/datasets/scene_analysis/scene_analysis.yaml`, gitignored with datasets/), reached only via
+│                                   `store.SceneStore`; `python -m tools.scene_analysis populate <url-or-id>` (see scene-score-analysis spec).
 ├── sample/                       ← Local video fixtures, supplied by hand (gitignored)
 ├── data/
 │   ├── datasets/<video-id>.yaml  ← Labeled videos: exact format + marked memes (frame, ts); no images
@@ -247,6 +253,10 @@ custom value the human configured intentionally (ask first rather than overwriti
 
 Significant architectural and workflow decisions are recorded in `decisions/` as ADRs. See
 `decisions/README.md` for the format and when to write one.
+
+**Downloading videos:** whenever the work involves downloading a video (any tool, the pipeline, the CLI,
+the labeler, a playground), read [ADR 021](decisions/021-shared-video-download-cache.md) first. Videos are
+cached in `.runtime/downloads/` as `<video-id>_<format-id>.<ext>` and reused instead of re-downloaded.
 
 When Claude makes an architectural decision during implementation:
 1. Note it as a decision point.

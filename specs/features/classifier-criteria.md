@@ -102,3 +102,10 @@ Resolved by the user's request (2026-10-07):
   `RuleClassifier`; `tools/labeling/criteria.py` was deleted and the labeler reads the package.
   `pytest -m "not slow"`: 359 passed. A probe criterion file dropped into the package while
   `labeler.sh` ran showed up in the labeler with its scores and left again when deleted.
+- 2026-10-08: The user asked `band` to take 5% from each side instead of the 20% margins. It now reads
+  the outermost 5% of the width on each side (`edges()`, as `edge_black` and `edge_histogram` do); the
+  other criteria still use `margins()`. The rule `band > 180` is unchanged. Measured on the 38 frames
+  of `data/labeled_dataset`: cards 228.1–234.2 (were 230.3–235.7), non-cards 0–88.0 (were 0–124.4),
+  so the threshold still separates them (15/15 caught, 0/23 false positives). `pytest -m "not slow"`:
+  475 passed. Stored `band` stats in the scene database predate this and are stale until the videos
+  are populated again; the labeler recomputes `band` for a video the next time it opens it.

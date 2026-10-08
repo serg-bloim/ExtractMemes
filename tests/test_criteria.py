@@ -26,13 +26,13 @@ def scratch_registry(monkeypatch):
 def test_the_package_lists_its_criteria_by_name():
     found = criteria.all_criteria()
 
-    assert list(found) == ["band", "hue_consistency", "margin_luma", "texture"]
+    assert list(found) == ["band", "edge_black", "edge_histogram", "hue_consistency", "margin_luma", "texture"]
     assert all(c.name == name and c.description and c.module for name, c in found.items())
 
 
 def test_get_names_the_known_criteria_when_one_is_missing():
     assert criteria.get("band").name == "band"
-    with pytest.raises(KeyError, match="known: band, hue_consistency"):
+    with pytest.raises(KeyError, match="known: band, edge_black, edge_histogram, hue_consistency"):
         criteria.get("nope")
 
 
@@ -103,7 +103,7 @@ def test_an_ad_hoc_criterion_is_fingerprinted_by_its_function_source():
     assert Criterion("x", one).fingerprint() != Criterion("x", two).fingerprint()
 
 
-@pytest.mark.parametrize("name", ["band", "texture", "margin_luma", "hue_consistency"])
+@pytest.mark.parametrize("name", ["band", "texture", "margin_luma", "hue_consistency", "edge_black", "edge_histogram"])
 def test_a_score_does_not_depend_on_the_frames_resolution(name):
     card = glitch_card()
     upscaled = np.repeat(np.repeat(card, 2, axis=0), 2, axis=1)
@@ -135,3 +135,24 @@ def test_hue_consistency_tells_one_hue_from_mixed_colours():
 
     assert criteria.get("hue_consistency").score(one_hue) > 0.95
     assert criteria.get("hue_consistency").score(mixed) < 0.3
+
+
+def test_edge_black_is_the_percentage_of_near_black_pixels_in_the_outer_edges():
+    score = criteria.get("edge_black").score
+    frame = np.full((144, 256, 3), 200, dtype=np.uint8)
+
+    assert score(frame) == 0
+    frame[:, :13] = 0  # the whole left edge, half of the 26 edge columns
+    assert score(frame) == pytest.approx(50)
+    frame[:, -13:] = 0
+    assert score(frame) == 100
+    frame[:, :13] = 12  # brightness 12 is under 5% of 255 (12.75), 13 is not
+    frame[:, -13:] = 13
+    assert score(frame) == pytest.approx(50)
+
+
+def test_edge_black_ignores_everything_inside_the_edges():
+    frame = np.full((144, 256, 3), 255, dtype=np.uint8)
+    frame[:, 13:-13] = 0
+
+    assert criteria.get("edge_black").score(frame) == 0

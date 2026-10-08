@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the labeler with the usual settings: video FtU4MuksCzE, 3 fps strip, worst quality, port 8765.
+# Run the labeler with the usual settings: video FtU4MuksCzE, every frame scored, worst quality, port 8765.
 # Anything you pass is added to ./labeler.sh, and a leading video URL or id replaces the default:
 #   ./labeler-run.sh                 # FtU4MuksCzE
 #   ./labeler-run.sh Ij427pW96aI     # another video
@@ -12,4 +12,4 @@ if [[ $# -gt 0 && "$1" != -* ]]; then
   video="$1"
   shift
 fi
-exec ./labeler.sh "$video" --fps 3 --port 8765 "$@"
+exec ./labeler.sh "$video" --port 8765 "$@"

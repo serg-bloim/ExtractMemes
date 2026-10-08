@@ -11,6 +11,9 @@
   body { margin:0; background:var(--bg); color:var(--text); font:13px/1.4 system-ui, sans-serif;
          display:grid; grid-template-columns: 330px 1fr; height:100vh; overflow:hidden; }
   #side { display:flex; flex-direction:column; border-right:1px solid var(--line); min-height:0; }
+  #side-tabs { display:flex; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line); }
+  #side-tabs button.on { border-color:var(--sel); color:var(--sel); }
+  .side-pane { flex:none; max-height:55%; overflow-y:auto; } .side-pane[hidden] { display:none; }
   #filters { padding:8px; border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
   #profiles { padding:8px 8px 3px; border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
   #profiles .row { display:flex; gap:6px; align-items:center; margin-bottom:5px; }
@@ -76,18 +79,20 @@
   #bar { display:flex; gap:8px; align-items:center; padding:8px; border-bottom:1px solid var(--line); }
   #vid a { color:inherit; text-decoration:none; } #vid a:hover { text-decoration:underline; color:var(--sel); }
   #vid { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
-  #pstrip { flex:none; height:112px; overflow-x:scroll; overflow-y:hidden; position:relative; background:var(--panel);
+  :root { --z:1; }                /* tile zoom: scales gallery and tile cells */
+  #pstrip { flex:none; height:calc(112px * var(--z)); overflow-x:scroll; overflow-y:hidden; position:relative; background:var(--panel);
             border:1px solid var(--line); user-select:none; }
   #pstrip[hidden], #tiles[hidden] { display:none; }
   #tiles { flex:1; min-height:0; overflow-y:scroll; position:relative; background:var(--panel); border:1px solid var(--line); user-select:none; }
   #modes { margin-left:14px; display:inline-flex; gap:2px; }
   #modes button.on { border-color:var(--sel); color:var(--sel); } #modes[hidden] { display:none; }
-  .pf { position:absolute; top:4px; width:112px; height:96px; padding:0 3px; cursor:pointer; font-size:10px; line-height:1.25; text-align:center; color:var(--dim); }
-  .pf img { width:106px; height:60px; object-fit:cover; background:#000; display:block; border:2px solid transparent; }
+  .pf { position:absolute; top:4px; width:calc(112px * var(--z)); height:calc(96px * var(--z)); padding:0 3px; cursor:pointer; font-size:10px; line-height:1.25; text-align:center; color:var(--dim); }
+  .pf img { width:calc(106px * var(--z)); height:calc(60px * var(--z)); object-fit:cover; background:#000; display:block; border:2px solid transparent; }
   .pf:hover img { border-color:var(--dim); }
   .pf.inrange img { border-color:var(--mark); } .pf.sel img { border-color:var(--sel); box-shadow:0 0 0 1px var(--sel); }
   .pf.sel { color:var(--text); } .pf .badge { color:var(--mark); font-weight:700; min-height:12px; }
-  #tiles .pf { height:100px; }
+  #tiles .pf { height:calc(100px * var(--z)); }
+  #zoomctl { margin-left:6px; display:inline-flex; gap:2px; align-items:center; } #zoomctl[hidden] { display:none; } #zoomctl button { display:inline-flex; align-items:center; padding:3px 6px; }
   #opener { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; z-index:10; }
   #opener[hidden] { display:none; }
   #opener .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; width:min(560px, 92vw); }
@@ -101,11 +106,34 @@
   #fmt-list label { display:flex; gap:10px; padding:4px 8px; cursor:pointer; align-items:center; }
   #fmt-list label:hover { background:#242832; } #fmt-list label.off { opacity:.45; cursor:default; }
   .warn { color:var(--mark); }
+  #pane-sort { padding:8px; border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
+  #sorters { margin-top:8px; display:flex; flex-direction:column; gap:4px; }
+  #sorters .empty { color:var(--dim); }
+  .sorter { display:flex; align-items:center; gap:8px; padding:3px 6px; border:1px solid var(--line); border-radius:4px; background:var(--bg); cursor:grab; }
+  .sorter.off .desc { opacity:.45; text-decoration:line-through; }
+  .sorter.dragging { opacity:.4; }
+  .sorter.over-before { box-shadow:0 -2px 0 var(--sel); } .sorter.over-after { box-shadow:0 2px 0 var(--sel); }
+  .sorter .grip { color:var(--dim); user-select:none; }
+  .sorter .desc { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sorter .ctl { display:flex; gap:6px; align-items:center; flex:none; margin-left:auto; }
+  .sorter .ctl button { display:inline-flex; align-items:center; padding:2px 4px; color:var(--dim); }
+  .sorter .ctl button:hover { color:var(--text); }
+  .sorter .ctl button.inv.on { color:var(--sel); border-color:var(--sel); }
+  .sorter .ctl button.dis.on { color:var(--flag); border-color:var(--flag); }
+  .sorter .ctl button.rm:hover { color:var(--flag); }
+  #wizard { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; z-index:10; }
+  #wizard[hidden] { display:none; }
+  #wizard .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; width:min(420px, 92vw); }
+  #wizard h3 { margin:0 0 10px; }
+  #wizard .row { display:flex; gap:8px; align-items:center; margin-bottom:10px; } #wizard .row > label { width:130px; flex:none; color:var(--dim); } #wizard .row select { flex:1; padding:4px 6px; }
+  #wizard .btns { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
 </style>
 </head>
 <body>
 <div id="side">
   <div id="bar"><span id="vid">no video</span><button id="open-btn">Open video…</button></div>
+  <div id="side-tabs"><button data-pane="pane-filter" class="on">Filter</button><button data-pane="pane-sort">Sort</button></div>
+  <div id="pane-filter" class="side-pane">
   <div id="profiles">
     <div class="row"><label>Profile</label><select id="profile-select" title="Load a saved set of classifier filters"></select></div>
     <div class="row"><input id="profile-name" placeholder="profile1" size="14" title="Name to save the current filters under (default profile1)">
@@ -127,13 +155,18 @@
       <button id="miss" title="Marked by me but not flagged by the classifier">Misses</button>
       <button id="reset">Reset</button></div>
   </div>
+  </div>
+  <div id="pane-sort" class="side-pane" hidden>
+    <button id="sorter-add" title="Add a sorter to the list">Add sorter…</button>
+    <div id="sorters"></div>
+  </div>
   <div id="count"></div>
   <div id="strip"><div id="spacer"></div></div>
 </div>
 <div id="main">
   <div id="tabs">
     <button id="tab-frame" class="on">Frame</button><button id="tab-hist" title="H">Histogram</button>
-    <span id="modes" class="seg" title="How the frames are shown"><button data-mode="preview" title="One large frame">Preview</button><button data-mode="gallery" title="The large frame with a strip of every frame under it">Gallery</button><button data-mode="tiles" title="Every frame as a tile, in rows">Tiles</button></span>
+    <span id="modes" class="seg" title="How the frames are shown"><button data-mode="preview" title="One large frame">Preview</button><button data-mode="gallery" title="The large frame with a strip of every frame under it">Gallery</button><button data-mode="tiles" title="Every frame as a tile, in rows">Tiles</button></span><span id="zoomctl" hidden><button id="zoom-out" title="Zoom out: smaller tiles (Ctrl/Cmd + scroll)" aria-label="Zoom out"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4M4.5 6.5h4"/></svg></button><button id="zoom-in" title="Zoom in: larger tiles (Ctrl/Cmd + scroll)" aria-label="Zoom in"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4M4.5 6.5h4M6.5 4.5v4"/></svg></button></span>
     <span id="hist-controls" hidden>
       <select id="metric"></select>
       bins <input id="bins" type="number" min="5" max="200" value="40">
@@ -186,6 +219,25 @@
   </div>
   <div id="marks"></div>
 </div>
+<div id="wizard" hidden>
+  <div class="panel">
+    <h3 id="wz-title">Add sorter</h3>
+    <div class="row"><label for="wz-type">Type</label>
+      <select id="wz-type"><option value="score">Score</option><option value="label">Label</option></select></div>
+    <div id="wz-score">
+      <div class="row"><label for="wz-crit">Criterion</label><select id="wz-crit"></select></div>
+      <div class="row"><label for="wz-reduce">Score of a scene</label>
+        <select id="wz-reduce"><option value="min">minimum</option><option value="max">maximum</option><option value="mean">mean</option><option value="median">median</option><option value="middle">middle frame</option></select></div>
+      <div class="row"><label for="wz-dir">Order</label>
+        <select id="wz-dir"><option value="desc">highest first</option><option value="asc">lowest first</option></select></div>
+    </div>
+    <div id="wz-label" hidden>
+      <div class="row"><label for="wz-state">Put first</label>
+        <select id="wz-state"><option value="flagged">flagged</option><option value="meme">marked as meme</option><option value="not_meme">marked as not a meme</option><option value="unlabeled">unlabeled</option></select></div>
+    </div>
+    <div class="btns"><button id="wz-cancel">Cancel</button><button id="wz-apply">Apply</button></div>
+  </div>
+</div>
 <div id="opener" hidden>
   <div class="panel">
     <h3>Open a video</h3>
@@ -208,11 +260,13 @@
 const ROW_H = 68;
 let S;                       // server state
 let sel = 0;                 // selected native frame index
-let view = [];               // strip row numbers (into S.rows) that match the filters
+let view = [];               // strip row numbers (into S.rows) with at least one frame that matches the filters
+let rowShow = [];            // per strip row: the middle one of its frames that match the filters (the frame the row shows and selects)
+let rowHits = [];            // per strip row: how many of its frames match the filters
 let memeFrames = {has: () => false};
 let notFrames = new Set();
-let rowMarked = [];          // per strip row: is there a meme mark mapped to it
-let rowNot = [];             // per strip row: is there a not-a-meme mark mapped to it
+let frameMeme = new Uint8Array(0);   // per frame: is it inside a meme mark
+let frameNot = new Uint8Array(0);    // per frame: is it marked as not a meme
 let loadToken = 0;
 let hasSel = true;           // false after Esc: no frame is selected (`sel` is only where the arrows resume)
 let multi = new Set();       // native frames selected with shift/cmd+click (strip rows, gallery, tiles)
@@ -233,24 +287,24 @@ async function api(path, body, method, payload) {
   return data;
 }
 
-// The strip row a native frame belongs to: the last scanned frame at or before it.
-const rowOf = frame => Math.min(S.rows.length - 1, Math.floor(frame / S.step));
+// The strip row of a frame: a row is a run of consecutive similar frames (S.rows[r]..S.row_last[r]).
+const rowOf = frame => S.row_of[Math.min(S.frame_count - 1, Math.max(0, frame))];
 
 function applyLabels(labels) {
   S.memes = labels.memes;
   S.not_memes = labels.not_memes || [];
   memeFrames = {has: f => S.memes.some(m => extent(m).lo <= f && f <= extent(m).hi)};   // a start..end covers all its frames
   notFrames = new Set(S.not_memes.map(m => m.frame));
-  rowMarked = new Array(S.rows.length).fill(false);
-  rowNot = new Array(S.rows.length).fill(false);
-  for (const m of S.memes) { const e = extent(m); for (let r = rowOf(e.lo); r <= rowOf(e.hi); r++) rowMarked[r] = true; }
-  for (const m of S.not_memes) rowNot[rowOf(m.frame)] = true;
+  frameMeme = new Uint8Array(S.frame_count);
+  frameNot = new Uint8Array(S.frame_count);
+  for (const m of S.memes) { const e = extent(m); frameMeme.fill(1, e.lo, e.hi + 1); }
+  for (const m of S.not_memes) frameNot[m.frame] = 1;
 }
 
 // The frames a meme covers: its start..end, or just its one frame when no edge is set.
 const extent = m => ({lo: m.start_frame ?? m.frame, hi: m.end_frame ?? m.frame});
 
-const humanLabel = r => rowMarked[r] ? "meme" : rowNot[r] ? "not_meme" : "none";
+const humanLabel = frame => frameMeme[frame] ? "meme" : frameNot[frame] ? "not_meme" : "none";
 
 function filters() {
   const f = {human: $("f-human").value, verdict: $("f-verdict").value, ranges: {},
@@ -263,15 +317,15 @@ function filters() {
   return f;
 }
 
-// Whether a row passes the filters; a filter marked "not" passes the rows it would otherwise exclude.
-function matches(row, f) {
+// Whether a frame passes the filters; a filter marked "not" passes the frames it would otherwise exclude.
+function matches(frame, f) {
   if (f.human !== "") {
-    const ok = f.human === "other" ? humanLabel(row) !== "meme" : humanLabel(row) === f.human;
+    const ok = f.human === "other" ? humanLabel(frame) !== "meme" : humanLabel(frame) === f.human;
     if (ok === f.invert.human) return false;
   }
-  if (f.verdict !== "" && (String(S.verdict[row]) === f.verdict) === f.invert.verdict) return false;
+  if (f.verdict !== "" && (String(S.verdict[frame]) === f.verdict) === f.invert.verdict) return false;
   for (const [name, [lo, hi]] of Object.entries(f.ranges)) {
-    const v = S.scores[name][row];
+    const v = S.scores[name][frame];
     if ((v >= lo && v <= hi) === !!f.invert[name]) return false;
   }
   return true;
@@ -288,36 +342,214 @@ function syncResets() {
   }
 }
 
+// ---- sorters: the order of the strip's rows --------------------------------------------------
+// A sorter is {type: "score", criterion, reduce, dir} or {type: "label", state}, plus {invert, disabled}.
+// The first enabled sorter is the primary key; ties fall to the next one, then to video order.
+let sorters = [];
+const ICON = (paths) => '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+const ICONS = {
+  modify: ICON('<path d="M11 2.5l2.5 2.5L5.5 13 2 14l1-3.5z"/>'),
+  invert: ICON('<path d="M5 13V3M2.5 5.5L5 3l2.5 2.5M11 3v10M8.5 10.5L11 13l2.5-2.5"/>'),
+  disable: ICON('<circle cx="8" cy="8" r="5.5"/><path d="M4 12L12 4"/>'),
+  remove: ICON('<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5M7 7v4M9 7v4"/>'),
+};
+const REDUCE_NAMES = {min: "minimum", max: "maximum", mean: "mean", median: "median", middle: "middle frame"};
+const STATE_NAMES = {flagged: "flagged", meme: "marked as meme", not_meme: "marked as not a meme", unlabeled: "unlabeled"};
+
+function reduceScores(values, how) {
+  if (how === "min") return values.reduce((a, b) => Math.min(a, b));
+  if (how === "max") return values.reduce((a, b) => Math.max(a, b));
+  if (how === "mean") return values.reduce((a, b) => a + b, 0) / values.length;
+  const v = [...values].sort((a, b) => a - b), m = v.length >> 1;
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+
+// The value one sorter orders a row by (smaller sorts first), before the sorter's invert.
+function sortKey(sorter, r, hit) {
+  if (sorter.type === "score") {
+    const sc = S.scores[sorter.criterion];
+    const v = sorter.reduce === "middle" ? sc[rowShow[r]] : reduceScores(hit.map(fr => sc[fr]), sorter.reduce);
+    return sorter.dir === "desc" ? -v : v;
+  }
+  const has = {
+    flagged: () => hit.some(fr => S.verdict[fr]),
+    meme: () => hit.some(fr => frameMeme[fr]),
+    not_meme: () => hit.some(fr => frameNot[fr]),
+    unlabeled: () => !hit.some(fr => frameMeme[fr] || frameNot[fr] || S.verdict[fr]),
+  }[sorter.state]();
+  return has ? 0 : 1;
+}
+
+function sortView(hits) {
+  const active = sorters.filter(x => !x.disabled);
+  if (!active.length) return;
+  const keys = new Map(view.map(r => [r, active.map(x => (x.invert ? -1 : 1) * sortKey(x, r, hits.get(r)))]));
+  view.sort((a, b) => {
+    const ka = keys.get(a), kb = keys.get(b);
+    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] < kb[i] ? -1 : 1;
+    return a - b;
+  });
+}
+
+function describeSorter(x) {
+  return x.type === "score"
+    ? x.criterion + " · " + REDUCE_NAMES[x.reduce] + " · " + (x.dir === "desc" ? "highest first" : "lowest first")
+    : STATE_NAMES[x.state] + " first";
+}
+
+function saveSorters() {
+  try { localStorage.setItem("labeler.sorters", JSON.stringify(sorters)); } catch (e) { /* not remembered */ }
+}
+
+function loadSorters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("labeler.sorters") || "[]");
+    sorters = saved.filter(x => x && (x.type === "label" ? x.state in STATE_NAMES
+      : x.type === "score" && S.scores[x.criterion] && x.reduce in REDUCE_NAMES && (x.dir === "asc" || x.dir === "desc")));
+  } catch (e) { sorters = []; }
+}
+
+function sortersChanged() {
+  saveSorters();
+  renderSorters();
+  refilter();
+}
+
+let dragFrom = -1;           // index of the sorter being dragged
+function renderSorters() {
+  const box = $("sorters");
+  box.replaceChildren();
+  if (!sorters.length) { box.innerHTML = '<div class="empty">No sorters: the strip is in video order.</div>'; return; }
+  sorters.forEach((x, i) => {
+    const el = document.createElement("div");
+    el.className = "sorter" + (x.disabled ? " off" : "");
+    el.draggable = true;
+    el.innerHTML = '<span class="grip" title="Drag to reorder">⠿</span><span class="desc"></span>' +
+      '<span class="ctl"><button class="mod" title="Modify" aria-label="Modify">' + ICONS.modify + '</button>' +
+      '<button class="inv' + (x.invert ? ' on' : '') + '" title="Invert the order" aria-label="Invert" aria-pressed="' + !!x.invert + '">' + ICONS.invert + '</button>' +
+      '<button class="dis' + (x.disabled ? ' on' : '') + '" title="Disable this sorter" aria-label="Disable" aria-pressed="' + !!x.disabled + '">' + ICONS.disable + '</button>' +
+      '<button class="rm" title="Remove" aria-label="Remove">' + ICONS.remove + '</button></span>';
+    el.querySelector(".desc").textContent = (i + 1) + ". " + describeSorter(x);
+    el.querySelector(".mod").onclick = () => openWizard(i);
+    el.querySelector(".inv").onclick = () => { x.invert = !x.invert; sortersChanged(); };
+    el.querySelector(".dis").onclick = () => { x.disabled = !x.disabled; sortersChanged(); };
+    el.querySelector(".rm").onclick = () => { sorters.splice(i, 1); sortersChanged(); };
+    el.ondragstart = e => { dragFrom = i; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); el.classList.add("dragging"); };
+    el.ondragend = () => { dragFrom = -1; renderSorters(); };
+    el.ondragover = e => {
+      if (dragFrom < 0) return;
+      e.preventDefault();
+      const after = e.clientY > el.getBoundingClientRect().top + el.offsetHeight / 2;
+      el.classList.toggle("over-after", after); el.classList.toggle("over-before", !after);
+    };
+    el.ondragleave = () => el.classList.remove("over-before", "over-after");
+    el.ondrop = e => {
+      e.preventDefault();
+      if (dragFrom < 0) return;
+      const after = e.clientY > el.getBoundingClientRect().top + el.offsetHeight / 2;
+      const [moved] = sorters.splice(dragFrom, 1);
+      let to = i + (after ? 1 : 0);
+      if (dragFrom < to) to--;                         // the list shrank before the target
+      sorters.splice(to, 0, moved);
+      dragFrom = -1;
+      sortersChanged();
+    };
+    box.appendChild(el);
+  });
+}
+
+// The wizard: adds a sorter, or (editing >= 0) changes the one at that index.
+let editing = -1;
+function openWizard(index) {
+  editing = index;
+  const x = index >= 0 ? sorters[index] : {type: "score", criterion: S.criteria[0].name, reduce: "max", dir: "desc", state: "flagged"};
+  $("wz-title").textContent = index >= 0 ? "Modify sorter" : "Add sorter";
+  $("wz-crit").replaceChildren(...S.criteria.map(c => new Option(c.name, c.name)));
+  $("wz-type").value = x.type;
+  if (x.type === "score") { $("wz-crit").value = x.criterion; $("wz-reduce").value = x.reduce; $("wz-dir").value = x.dir; }
+  else $("wz-state").value = x.state;
+  showWizardType();
+  $("wizard").hidden = false;
+  $("wz-type").focus();
+}
+function closeWizard() { $("wizard").hidden = true; }
+function showWizardType() {
+  const score = $("wz-type").value === "score";
+  $("wz-score").hidden = !score;
+  $("wz-label").hidden = score;
+}
+function applyWizard() {
+  const x = $("wz-type").value === "score"
+    ? {type: "score", criterion: $("wz-crit").value, reduce: $("wz-reduce").value, dir: $("wz-dir").value}
+    : {type: "label", state: $("wz-state").value};
+  if (editing >= 0) { x.invert = sorters[editing].invert; x.disabled = sorters[editing].disabled; sorters[editing] = x; }
+  else sorters.push(x);
+  closeWizard();
+  sortersChanged();
+}
+function wireSorters() {
+  $("sorter-add").onclick = () => openWizard(-1);
+  $("wz-type").onchange = showWizardType;
+  $("wz-cancel").onclick = closeWizard;
+  $("wz-apply").onclick = applyWizard;
+  $("wizard").addEventListener("mousedown", e => { if (e.target === $("wizard")) closeWizard(); });
+  loadSorters();
+  renderSorters();
+}
+
 function refilter() {
   syncResets();
   const f = filters();
   view = [];
-  for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) view.push(r);
-  $("count").textContent = view.length + " of " + S.rows.length + " scanned frames shown · " +
-                           S.memes.length + " marked";
+  rowShow = new Array(S.rows.length).fill(-1);
+  rowHits = new Array(S.rows.length).fill(0);
+  let shown = 0;
+  const hits = new Map();                         // row -> its matching frames, for the sorters
+  for (let r = 0; r < S.rows.length; r++) {       // the middle frame: a row's first and last frames can be fades
+    const hit = [];
+    for (let fr = S.rows[r]; fr <= S.row_last[r]; fr++) if (matches(fr, f)) hit.push(fr);
+    if (hit.length) { rowShow[r] = hit[(hit.length - 1) >> 1]; rowHits[r] = hit.length; view.push(r); shown += hit.length; hits.set(r, hit); }
+  }
+  sortView(hits);
+  $("count").textContent = view.length + " of " + S.rows.length + " rows · " + shown + " of " + S.frame_count +
+                           " frames match · " + S.memes.length + " marked";
   $("spacer").style.height = view.length * ROW_H + "px";
   renderStrip();
   renderHistogram();
+}
+
+// What a row shows of its frames: the counts over the row's frames that match the filters.
+function rowStats(r, f) {
+  const lo = S.rows[r], hi = S.row_last[r];
+  let flagged = 0, memes = 0, nots = 0, n = 0;
+  for (let fr = lo; fr <= hi; fr++) {
+    if (!matches(fr, f)) continue;
+    n++; flagged += S.verdict[fr]; memes += frameMeme[fr]; nots += frameNot[fr];
+  }
+  return {n, flagged, memes, nots};
 }
 
 function renderStrip() {
   const strip = $("strip"), spacer = $("spacer");
   const first = Math.max(0, Math.floor(strip.scrollTop / ROW_H) - 3);
   const last = Math.min(view.length, Math.ceil((strip.scrollTop + strip.clientHeight) / ROW_H) + 3);
-  const selRow = hasSel ? rowOf(sel) : -1;
+  const selRow = hasSel ? rowOf(sel) : -1, f = filters();
   const frag = document.createDocumentFragment();
   for (let i = first; i < last; i++) {
-    const r = view[i], idx = S.rows[r];
+    const r = view[i], idx = rowShow[r], lo = S.rows[r], hi = S.row_last[r];
+    const st = rowStats(r, f), total = hi - lo + 1;
+    let inMulti = false;
+    for (let fr = lo; fr <= hi && !inMulti; fr++) inMulti = multi.has(fr);
     const el = document.createElement("div");
-    el.className = "row-item" + (r === selRow ? " sel" : "") + (multi.has(idx) ? " multi" : "");
+    el.className = "row-item" + (r === selRow ? " sel" : "") + (inMulti ? " multi" : "");
     el.style.top = i * ROW_H + "px";
-    const scores = S.criteria.map(c => c.name.slice(0, 6) + " " + S.scores[c.name][r]).join(" · ");
+    const part = k => k === st.n || st.n === 0 ? "" : k + "/" + st.n + " ";
     el.innerHTML = '<img loading="lazy" src="/thumb/' + idx + '.jpg?v=' + S.version + '">' +
-      '<div class="meta"><div><span class="ts">' + fmt(S.pts[idx]) + '</span> <span class="dim">#' + idx + '</span> ' +
-      (rowMarked[r] ? '<span class="star">★ meme</span> ' : '') +
-      (rowNot[r] ? '<span class="no">✗ not meme</span> ' : '') +
-      (S.verdict[r] ? '<span class="flag">⚑ flagged</span>' : '') + '</div>' +
-      '<div class="dim">' + scores + '</div></div>';
+      '<div class="meta"><div><span class="ts">' + fmt(S.pts[lo]) + (hi > lo ? "–" + fmt(S.pts[hi]) : "") + '</span> <span class="dim">#' + lo +
+      (hi > lo ? "–" + hi + " · " + (st.n === total ? total : st.n + " of " + total) + " frames" : "") + '</span> ' +
+      (st.memes ? '<span class="star">★ ' + part(st.memes) + 'meme</span> ' : '') +
+      (st.nots ? '<span class="no">✗ ' + part(st.nots) + 'not meme</span> ' : '') +
+      (st.flagged ? '<span class="flag">⚑ ' + part(st.flagged) + 'flagged</span>' : '') + '</div></div>';
     el.onclick = e => clickRow(r, i, e);
     frag.appendChild(el);
   }
@@ -332,27 +564,39 @@ function scrollToSelection() {
     strip.scrollTop = Math.max(0, i * ROW_H - strip.clientHeight / 2);
 }
 
-// A: select every row the strip shows (all of them, or those left by the filters).
+// The frames of the strip rows `rows` that match the filters.
+function framesOfRows(rows) {
+  const f = filters(), out = [];
+  for (const r of rows) for (let fr = S.rows[r]; fr <= S.row_last[r]; fr++) if (matches(fr, f)) out.push(fr);
+  return out;
+}
+
+// A: select every frame the strip shows (all of them, or those left by the filters).
 function selectAll() {
   if (!view.length) return;
-  const keep = hasSel && view.includes(rowOf(sel)) ? sel : S.rows[view[0]];
-  multi = new Set(view.map(r => S.rows[r]));
-  anchorFrame = S.rows[view[0]];
+  const keep = hasSel && view.includes(rowOf(sel)) ? sel : rowShow[view[0]];
+  multi = new Set(framesOfRows(view));
+  anchorFrame = rowShow[view[0]];
   select(keep, false, true);
 }
 
 function clickRow(r, i, e) {
-  if (e.shiftKey) {                                   // range over the rows currently shown
+  if (e.shiftKey) {                                   // every matching frame of the rows from the anchor's to this one
     const a = Math.max(0, view.indexOf(rowOf(anchorFrame)));
     const [lo, hi] = a <= i ? [a, i] : [i, a];
-    multi = new Set(view.slice(lo, hi + 1).map(x => S.rows[x]));
-    select(S.rows[r], false, true);
-  } else if (e.metaKey || e.ctrlKey) {
-    toggleInMulti(S.rows[r]);
-    select(S.rows[r], false, true);
-  } else {
-    anchorFrame = S.rows[r];
-    select(S.rows[r], false);
+    multi = new Set(framesOfRows(view.slice(lo, hi + 1)));
+    select(rowShow[r], false, true);
+  } else if (e.metaKey || e.ctrlKey) {                // add or remove the row's frames
+    const frames = framesOfRows([r]);
+    multi = new Set(multi.size ? multi : hasSel ? [sel] : []);
+    const all = frames.every(fr => multi.has(fr));
+    for (const fr of frames) all ? multi.delete(fr) : multi.add(fr);
+    anchorFrame = rowShow[r];
+    select(rowShow[r], false, true);
+  } else {                                            // all the row's matching frames; `sel` is its middle one
+    multi = new Set(framesOfRows([r]));
+    anchorFrame = rowShow[r];
+    select(rowShow[r], false, true);
   }
 }
 
@@ -438,6 +682,13 @@ function renderInfo() {
   renderHistogram();
 }
 
+// Whether a frame lies within the exclusion window of any mark.
+function nearMark(f) {
+  const ts = S.pts[f];
+  return S.memes.some(m => { const e = extent(m); return S.pts[e.lo] - S.window <= ts && ts <= S.pts[e.hi] + S.window; }) ||
+         S.not_memes.some(m => Math.abs(S.pts[m.frame] - ts) <= S.window);
+}
+
 function renderInfoPanel() {
   $("big").hidden = !hasSel;
   $("none").hidden = hasSel;
@@ -453,7 +704,6 @@ function renderInfoPanel() {
     renderChips();
     return;
   }
-  const r = rowOf(sel), onRow = S.rows[r] === sel;
   const marked = memeFrames.has(sel);
   const notMarked = notFrames.has(sel);
   $("view").classList.toggle("marked", marked);
@@ -465,15 +715,30 @@ function renderInfoPanel() {
   $("toggle-not").textContent = many
     ? (Array.from(multi).every(f => flagged(f, "not_meme")) ? "Unmark " : "Mark ") + multi.size + " selected as not a meme (X)"
     : (notMarked ? "Unmark not-a-meme" : "Mark as not a meme") + " (X)";
-  let html = "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td></tr>" +
-    "<tr><td class='dim'>frame</td><td>#" + sel + (onRow ? "" : " <span class='dim'>(between scanned frames; scored row #" + S.rows[r] + ")</span>") + "</td></tr>" +
-    "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : notMarked ? "<span class='no'>✗ not a meme</span>" : (rowMarked[r] || rowNot[r] ? "near a mark" : "unlabeled")) + "</td></tr>" +
-    "<tr><td class='dim'>classifier</td><td>" + (S.verdict[r] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td></tr>";
+  // With several frames selected, a second column describes the selection: how many of its frames share
+  // the current frame's label, and the range of each score over it.
+  const picked = many ? Array.from(multi) : [];
+  const col2 = text => many ? "<td>" + text + "</td>" : "";
+  const share = test => { const n = picked.filter(test).length; return "<span class='dim'>" + n + "/" + picked.length + "</span>"; };
+  const curLabel = marked ? "meme" : notMarked ? "not_meme" : "none";
+  const sameLabel = f => (memeFrames.has(f) ? "meme" : notFrames.has(f) ? "not_meme" : "none") === curLabel;
+  let html = many ? "<tr><td></td><td class='dim'>current frame</td><td class='dim'>selection (" + picked.length + ")</td></tr>" : "";
+  html += "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td>" + col2("") + "</tr>" +
+    "<tr><td class='dim'>frame</td><td>#" + sel + "</td>" + col2("") + "</tr>" +
+    "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : notMarked ? "<span class='no'>✗ not a meme</span>" : (nearMark(sel) ? "near a mark" : "unlabeled")) + "</td>" + col2(share(sameLabel)) + "</tr>" +
+    "<tr><td class='dim'>classifier</td><td>" + (S.verdict[sel] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td>" + col2(share(f => S.verdict[f] === S.verdict[sel])) + "</tr>";
   const meme = S.memes.find(m => { const e = extent(m); return (m.start_frame != null || m.end_frame != null) && e.lo <= sel && sel <= e.hi; });
-  if (meme) html += "<tr><td class='dim'>meme range</td><td>" + rangeText(meme) + "</td></tr>";
-  for (const c of S.criteria)
-    html += "<tr><td class='dim'>" + c.name + "</td><td>" + S.scores[c.name][r] +
-            (c.thresholds.length ? " <span class='dim'>(classifier: " + c.thresholds.map(t => t.op + " " + t.value).join(", ") + ")</span>" : "") + "</td></tr>";
+  if (meme) html += "<tr><td class='dim'>meme range</td><td>" + rangeText(meme) + "</td>" + col2("") + "</tr>";
+  for (const c of S.criteria) {
+    const sc = S.scores[c.name];
+    let range = "";
+    if (many) {
+      const lo = picked.reduce((a, f) => Math.min(a, sc[f]), Infinity), hi = picked.reduce((a, f) => Math.max(a, sc[f]), -Infinity);
+      range = lo === hi ? String(lo) : lo + " – " + hi;
+    }
+    html += "<tr><td class='dim'>" + c.name + "</td><td>" + sc[sel] +
+            (c.thresholds.length ? " <span class='dim'>(classifier: " + c.thresholds.map(t => t.op + " " + t.value).join(", ") + ")</span>" : "") + "</td>" + col2(range) + "</tr>";
+  }
   $("facts").innerHTML = html;
   renderChips();
 }
@@ -533,17 +798,14 @@ async function toggleLabel(label) {
 }
 const toggleMark = () => toggleLabel("meme");
 
-// Whether a selected frame carries the label. A scan row also counts a mark that sits between it and
-// the next row (the strip shows such a mark on that row).
+// Whether a selected frame carries the label.
 function flagged(f, label) {
-  const has = label === "meme" ? memeFrames.has(f) : notFrames.has(f);
-  return has || (S.rows[rowOf(f)] === f && (label === "meme" ? rowMarked : rowNot)[rowOf(f)]);
+  return label === "meme" ? memeFrames.has(f) : notFrames.has(f);
 }
 
-// Whether the selection covers a mark: one of its frames, or the row it is shown on.
+// Whether the selection covers a mark: one of its frames.
 function labelTouched(m, label) {
   const e = label === "meme" ? extent(m) : {lo: m.frame, hi: m.frame};
-  if (multi.has(S.rows[rowOf(m.frame)])) return true;
   for (const f of multi) if (e.lo <= f && f <= e.hi) return true;
   return false;
 }
@@ -598,14 +860,15 @@ function jumpMark(dir) {
 
 function jumpUnlabeled() {
   const near = ts => S.memes.some(m => { const e = extent(m); return S.pts[e.lo] - S.window <= ts && ts <= S.pts[e.hi] + S.window; });
-  for (let r = rowOf(sel) + 1; r < S.rows.length; r++)
-    if (!near(S.pts[S.rows[r]])) return select(S.rows[r]);
+  for (let f = sel + 1; f < S.frame_count; f++)
+    if (!near(S.pts[f])) return select(f);
 }
 
 function jumpInView(dir) {
-  const cur = rowOf(sel);
-  const r = dir > 0 ? view.find(v => v > cur) : [...view].reverse().find(v => v < cur);
-  if (r !== undefined) select(S.rows[r]);
+  const cur = rowOf(sel), at = view.indexOf(cur);
+  const r = at >= 0 ? view[at + dir]                   // the strip's order, sorted or not
+    : dir > 0 ? view.find(v => v > cur) : [...view].reverse().find(v => v < cur);
+  if (r !== undefined) select(rowShow[r]);
 }
 
 function parseTime(text) {
@@ -621,6 +884,7 @@ function gotoTime(t) {
 }
 
 document.addEventListener("keydown", e => {
+  if (!$("wizard").hidden) { if (e.key === "Escape") closeWizard(); return; }   // the wizard owns the keyboard
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") {
     if (e.target.id === "goto" && e.key === "Enter") {
       const t = parseTime(e.target.value);
@@ -700,13 +964,13 @@ let drag = null;
 const LABEL_COLOURS = {none: "#5b6070", not_meme: "#7fb2ff", meme: "#ffc933"};   // stacking order, bottom to top
 const STACK = ["none", "not_meme", "meme"];
 
-// The metrics that can be charted: {group, name, values (one per scanned row), thresholds [{op, value}] the classifier compares it with}. New kinds
+// The metrics that can be charted: {group, name, values (one per frame), thresholds [{op, value}] the classifier compares it with}. New kinds
 // of metric join this list.
 function metrics() {
   return S.criteria.map(c => ({group: "Classifier criteria", name: c.name, values: S.scores[c.name], thresholds: c.thresholds, description: c.description}));
 }
 
-// Counts per bin and human label for `rows`, over the fixed range [lo, hi].
+// Counts per bin and human label for the frames `rows`, over the fixed range [lo, hi].
 function histogramData(values, rows, labelOf, lo, hi, bins) {
   const counts = Array.from({length: bins}, () => ({none: 0, not_meme: 0, meme: 0, total: 0}));
   const span = hi - lo || 1;
@@ -731,24 +995,22 @@ function summary(vals) {
 // the range can still be seen and changed on the chart.
 function histogramScope(metric) {
   if (multi.size > 1) {
-    const rows = [...new Set(Array.from(multi, rowOf))];             // scores exist for the scanned rows
-    return {rows, base: null, outside: null, text: multi.size + " selected frames"};
+    return {rows: Array.from(multi), base: null, outside: null, text: multi.size + " selected frames"};
   }
   if (hasSel) {
-    const r = rowOf(sel);
-    return {rows: [r], base: null, outside: null, text: "frame #" + sel + (S.rows[r] === sel ? "" : " (scored row #" + S.rows[r] + ")")};
+    return {rows: [sel], base: null, outside: null, text: "frame #" + sel};
   }
   const f = filters();
   const own = f.ranges[metric.name];
   delete f.ranges[metric.name];
   const base = [];
-  for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) base.push(r);
+  for (let fr = 0; fr < S.frame_count; fr++) if (matches(fr, f)) base.push(fr);
   const inverted = !!f.invert[metric.name];
   const rows = own ? base.filter(r => (metric.values[r] >= own[0] && metric.values[r] <= own[1]) !== inverted) : base;
   const inside = new Set(rows);
   const outside = own ? base.filter(r => !inside.has(r)) : null;                   // dimmed on the chart
-  const text = rows.length === S.rows.length ? "all " + S.rows.length + " scanned frames"
-    : rows.length + " of " + S.rows.length + " scanned frames (the strip's filters)";
+  const text = rows.length === S.frame_count ? "all " + S.frame_count + " frames"
+    : rows.length + " of " + S.frame_count + " frames (the strip's filters)";
   return {rows, base: own ? base : null, outside, text};
 }
 
@@ -950,6 +1212,7 @@ function layoutMain() {
   $("hist").classList.toggle("on", histOn);
   $("hist-controls").hidden = !histOn;
   $("modes").hidden = histOn;
+  $("zoomctl").hidden = !(gallery || tiles);
   $("pstrip").hidden = !gallery;
   $("tiles").hidden = !tiles;
   $("tab-frame").classList.toggle("on", !histOn);
@@ -961,7 +1224,29 @@ function layoutMain() {
 }
 
 // ---- gallery and tiles: one thumbnail per native frame -----------------------------------------
-const PF_W = 112, TILE_H = 104;
+const PF_W0 = 112, TILE_H0 = 104, ZOOM_MIN = 0.5, ZOOM_MAX = 2.5;
+let tileZoom = 1;            // gallery / tile size factor
+try { const z = parseFloat(localStorage.getItem("labeler.tileZoom")); if (z >= ZOOM_MIN && z <= ZOOM_MAX) tileZoom = z; } catch (e) { /* no storage */ }
+let PF_W = PF_W0 * tileZoom, TILE_H = TILE_H0 * tileZoom;
+document.documentElement.style.setProperty("--z", tileZoom);
+
+// Resize the gallery / tiles by `factor`, keeping the frame in the middle of the view where it was.
+function zoomTiles(factor) {
+  const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, tileZoom * factor));
+  if (z === tileZoom) return;
+  let anchor = 0;
+  if (frameMode === "gallery") { const b = $("pstrip"); anchor = (b.scrollLeft + b.clientWidth / 2) / PF_W; }
+  else { const b = $("tiles"); anchor = (b.scrollTop + b.clientHeight / 2) / TILE_H * tileCols(); }
+  tileZoom = z; PF_W = PF_W0 * z; TILE_H = TILE_H0 * z;
+  document.documentElement.style.setProperty("--z", z);
+  try { localStorage.setItem("labeler.tileZoom", z); } catch (e) { /* not remembered */ }
+  if (frameMode === "gallery") {
+    const b = $("pstrip"); renderFrames(); b.scrollLeft = Math.max(0, anchor * PF_W - b.clientWidth / 2);
+  } else {
+    const b = $("tiles"); renderFrames(); b.scrollTop = Math.max(0, anchor / tileCols() * TILE_H - b.clientHeight / 2);
+  }
+  renderFrames();
+}
 let skipCenter = false;      // a click on a thumbnail selects without moving the view under the pointer
 
 function tileCols() { return Math.max(1, Math.floor($("tiles").clientWidth / PF_W)); }
@@ -1017,11 +1302,36 @@ function renderFrames() {
   }
 }
 
+// The side panel's tabs: the filter view and the sorters. The strip below them is
+// not part of any tab and stays on.
+function wireSideTabs() {
+  const show = id => {
+    for (const b of document.querySelectorAll("#side-tabs button")) {
+      b.classList.toggle("on", b.dataset.pane === id);
+      $(b.dataset.pane).hidden = b.dataset.pane !== id;
+    }
+    try { localStorage.setItem("labeler.sideTab", id); } catch (e) { /* not remembered */ }
+    if (S && S.row_of) renderStrip();                            // the pane's height changed, so did the strip's
+  };
+  for (const b of document.querySelectorAll("#side-tabs button")) b.onclick = () => show(b.dataset.pane);
+  let saved = null;
+  try { saved = localStorage.getItem("labeler.sideTab"); } catch (e) { /* no storage */ }
+  if (saved && $(saved) && $(saved).classList.contains("side-pane")) show(saved);
+}
+
 function wireFrames() {
   const strip = $("pstrip");
   strip.addEventListener("scroll", renderFrames);
   $("tiles").addEventListener("scroll", renderFrames);
+  const wheelZoom = e => {                        // Ctrl/Cmd + scroll, or a trackpad pinch, resizes the tiles
+    if (!e.ctrlKey && !e.metaKey) return false;
+    e.preventDefault(); zoomTiles(Math.exp(-e.deltaY * 0.01)); return true;
+  };
+  $("tiles").addEventListener("wheel", wheelZoom, {passive: false});
+  $("zoom-in").onclick = () => zoomTiles(1.25);
+  $("zoom-out").onclick = () => zoomTiles(0.8);
   strip.addEventListener("wheel", e => {         // a mouse wheel scrolls sideways too
+    if (wheelZoom(e)) return;
     if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { strip.scrollLeft += e.deltaY; e.preventDefault(); }
   }, {passive: false});
   for (const b of document.querySelectorAll("#modes button"))
@@ -1054,6 +1364,8 @@ function buildHistogramControls() {
   for (const id of ["bins", "log"]) $(id).onchange = renderHistogram;
   $("metric").onchange = () => { histZoom = null; renderHistogram(); };   // another metric, another scale
   wireZoom();
+  wireSideTabs();
+  wireSorters();
   const svg = $("hist-svg");
   svg.addEventListener("mousedown", e => {
     if (!histGeom || e.button !== 0) return;
@@ -1271,6 +1583,8 @@ $("src").addEventListener("keydown", e => { if (e.key === "Enter") lookup($("src
   wireFrames();
   layoutMain();
   refreshProfiles().catch(e => profileMessage(String(e), true));
+  S.row_of = new Int32Array(S.frame_count);        // frame -> the strip row it belongs to
+  S.rows.forEach((first, r) => S.row_of.fill(r, first, S.row_last[r] + 1));
   applyLabels(S);
   refilter();
   select(S.memes.length ? S.memes[0].frame : 0);

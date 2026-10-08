@@ -32,27 +32,34 @@ class Threshold:
 class CriterionReport:
     name: str
     direction: int  # +1: memes score higher (rule `>`), -1: lower (rule `<`)
-    positives: int
-    negatives: int
+    positives: int  # memes (windows; with frame-by-frame judging, positive frames)
+    negatives: int  # non-meme frames
     threshold: float  # in the criterion's own units
     op: str
-    fn: int
-    fp: int
-    precision: float
+    fn: int  # memes with no frame detected
+    fp: int  # non-meme frames detected
+    fp_rate: float
     recall: float
     safe_low: float  # own units; the cut can be anywhere in (safe_low, safe_high) with the same errors
     safe_high: float
-    margin: float  # min(positive) - max(negative), oriented: > 0 separable, < 0 overlap
+    margin: float  # weakest meme's best frame - strongest non-meme frame, oriented: > 0 separable, < 0 overlap
     robust_margin: float  # same with the 1st / 99th percentiles
     normalized_margin: float  # margin / interquartile range of all scores
     auc: float
     dprime: float
     cost: float
+    weakest: int  # index (into the frames given) of the best frame of the weakest meme
+    strongest: int  # index of the highest-scoring non-meme frame
 
 
-def orientation(values: np.ndarray, positive: np.ndarray) -> int:
-    """+1 when positives tend to score higher than negatives, else -1."""
-    return 1 if auc(values, positive) >= 0.5 else -1
+def peaks(oriented: np.ndarray, positive: np.ndarray, windows: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Each meme's best oriented score and the index of the frame that has it."""
+    rows = np.flatnonzero(positive)
+    _, inverse = np.unique(windows[rows], return_inverse=True)
+    best = np.full(inverse.max() + 1, -np.inf)
+    np.maximum.at(best, inverse, oriented[rows])
+    at = np.array([rows[np.flatnonzero(inverse == k)[oriented[rows][inverse == k].argmax()]] for k in range(len(best))])
+    return best, at
 
 
 def auc(values: np.ndarray, positive: np.ndarray) -> float:
@@ -93,28 +100,46 @@ def best_threshold(oriented: np.ndarray, positive: np.ndarray, fn_weight: float 
                      int(fn[pick]), int(fp[pick]), float(cost[pick]))
 
 
-def evaluate_criterion(
-    name: str, values: np.ndarray, positive: np.ndarray, fn_weight: float = DEFAULT_FN_WEIGHT
+def _evaluate_direction(
+    name: str, values: np.ndarray, positive: np.ndarray, windows: np.ndarray, direction: int, fn_weight: float
 ) -> CriterionReport:
-    """Every measure of one criterion over labeled frames (`positive` is a boolean per frame)."""
-    direction = orientation(values, positive)
     oriented = values * direction
-    cut = best_threshold(oriented, positive, fn_weight)
-    pos, neg = oriented[positive], oriented[~positive]
+    pos, at = peaks(oriented, positive, windows)
+    neg_at = np.flatnonzero(~positive)
+    neg = oriented[neg_at]
+    flags = np.concatenate([np.ones(len(pos), bool), np.zeros(len(neg), bool)])
+    judged = np.concatenate([pos, neg])
+    cut = best_threshold(judged, flags, fn_weight)
     quartiles = np.percentile(oriented, [25, 75])
     spread = float(quartiles[1] - quartiles[0]) or float(oriented.std()) or 1.0
-    margin = float(pos.min() - neg.max())
-    robust = float(np.percentile(pos, 1) - np.percentile(neg, 99))
-    pooled = np.sqrt((pos.var() + neg.var()) / 2) or 1.0
-    called = len(pos) - cut.fn + cut.fp
     own = lambda x: float(x * direction)  # noqa: E731 - back to the criterion's units
     safe = sorted((own(cut.low), own(cut.high)))
+    pooled = np.sqrt((pos.var() + neg.var()) / 2) or 1.0
+    margin = float(pos.min() - neg.max())
     return CriterionReport(
         name=name, direction=direction, positives=len(pos), negatives=len(neg),
         threshold=own(cut.value), op=">" if direction > 0 else "<", fn=cut.fn, fp=cut.fp,
-        precision=(len(pos) - cut.fn) / called if called else float("nan"),
-        recall=(len(pos) - cut.fn) / len(pos),
+        fp_rate=cut.fp / len(neg), recall=(len(pos) - cut.fn) / len(pos),
         safe_low=safe[0], safe_high=safe[1],
-        margin=margin, robust_margin=robust, normalized_margin=margin / spread,
-        auc=auc(oriented, positive), dprime=float((pos.mean() - neg.mean()) / pooled), cost=cut.cost,
+        margin=margin, robust_margin=float(np.percentile(pos, 1) - np.percentile(neg, 99)),
+        normalized_margin=margin / spread, auc=auc(judged, flags),
+        dprime=float((pos.mean() - neg.mean()) / pooled), cost=cut.cost,
+        weakest=int(at[pos.argmin()]), strongest=int(neg_at[neg.argmax()]),
     )
+
+
+def evaluate_criterion(
+    name: str, values: np.ndarray, positive: np.ndarray, windows: np.ndarray | None = None,
+    fn_weight: float = DEFAULT_FN_WEIGHT,
+) -> CriterionReport:
+    """Every measure of one criterion over labeled frames (`positive` is a boolean per frame).
+
+    A meme counts as found when any of its frames (those sharing a `windows` number) is called a
+    meme, so it is represented by its best frame: the meme-versus-rest comparison is between each
+    meme's best frame and every non-meme frame. Without `windows` each positive frame is a meme.
+    Both directions are tried and the one with the lower cost (then the wider margin) is kept.
+    """
+    if windows is None:
+        windows = np.where(positive, np.arange(len(positive)), -1)
+    tries = [_evaluate_direction(name, values, positive, windows, d, fn_weight) for d in (1, -1)]
+    return min(tries, key=lambda r: (r.cost, -r.margin))

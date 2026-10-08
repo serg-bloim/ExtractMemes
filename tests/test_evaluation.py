@@ -5,8 +5,8 @@ pytest.importorskip("yaml")
 
 from extract_memes.rule_classifier import AllOf, AnyOf, Condition
 from tools.evaluation.data import Samples, pool
-from tools.evaluation.metrics import auc, best_threshold, evaluate_criterion, orientation
-from tools.evaluation.search import evaluate_rule, rule_mask, search
+from tools.evaluation.metrics import auc, best_threshold, evaluate_criterion
+from tools.evaluation.search import evaluate_rule, missed_memes, rule_mask, search
 from tools.evaluation.truth import IGNORED, NEGATIVE, POSITIVE, ground_truth
 from tools.labeling.dataset import Dataset, Meme, NotMeme, VideoInfo
 
@@ -25,13 +25,13 @@ def label_of(labels, frame):
 
 def test_a_ranged_meme_makes_its_window_positive_and_the_rest_negative():
     meme = Meme(2.0, 50, start_ts=1.6, start_frame=40, end_ts=2.4, end_frame=60)
-    labels = ground_truth(dataset([meme]), ROWS, PTS)
+    labels, windows = ground_truth(dataset([meme]), ROWS, PTS)
     assert [label_of(labels, f) for f in (32, 40, 48, 56, 64)] == [NEGATIVE, POSITIVE, POSITIVE, POSITIVE, NEGATIVE]
     assert (labels == IGNORED).sum() == 0
 
 
 def test_a_single_frame_mark_is_positive_with_an_ignore_zone_around_it():
-    labels = ground_truth(dataset([Meme(4.0, 100)]), ROWS, PTS, ignore_window=1.0)
+    labels, windows = ground_truth(dataset([Meme(4.0, 100)]), ROWS, PTS, ignore_window=1.0)
     assert label_of(labels, 104) == IGNORED or label_of(labels, 96) == IGNORED
     assert POSITIVE in labels
     assert label_of(labels, 200) == NEGATIVE
@@ -40,24 +40,23 @@ def test_a_single_frame_mark_is_positive_with_an_ignore_zone_around_it():
 
 def test_a_window_without_a_scanned_frame_still_gives_a_positive():
     meme = Meme(1.0, 25, start_ts=0.96, start_frame=24, end_ts=1.04, end_frame=26)
-    labels = ground_truth(dataset([meme]), ROWS, PTS)
+    labels, windows = ground_truth(dataset([meme]), ROWS, PTS)
     assert (labels == POSITIVE).sum() == 1
 
 
 def test_explicit_not_meme_wins_over_a_window_and_a_neighbours_ignore_zone_never_hides_positives():
     ranged = Meme(2.0, 48, start_ts=1.6, start_frame=40, end_ts=2.4, end_frame=60)
     single = Meme(3.0, 72)
-    labels = ground_truth(dataset([ranged, single], [NotMeme(1.92, 48)]), ROWS, PTS)
+    labels, windows = ground_truth(dataset([ranged, single], [NotMeme(1.92, 48)]), ROWS, PTS)
     assert label_of(labels, 48) == NEGATIVE
     assert label_of(labels, 40) == POSITIVE and label_of(labels, 56) == POSITIVE
 
 
-def test_auc_orientation_and_ties():
+def test_auc_and_ties():
     values = np.array([1.0, 2.0, 3.0, 4.0])
     positive = np.array([False, False, True, True])
     assert auc(values, positive) == 1.0
     assert auc(-values, positive) == 0.0
-    assert orientation(-values, positive) == -1
     assert auc(np.ones(4), positive) == 0.5
 
 
@@ -100,10 +99,10 @@ def two_criteria_samples(rng=np.random.default_rng(0)) -> Samples:
     n = 400
     a = np.concatenate([rng.normal(10, 1, n), rng.normal(10, 1, n // 4), rng.normal(0, 1, n)])
     b = np.concatenate([rng.normal(0, 1, n), rng.normal(10, 1, n // 4), rng.normal(0, 1, n)])
-    labels = np.concatenate([np.full(n, POSITIVE), np.full(n // 4, NEGATIVE), np.full(n, NEGATIVE)])
     labels = np.concatenate([np.full(n, POSITIVE), np.full(n // 4 + n, NEGATIVE)]).astype(np.int8)
     total = len(labels)
-    return Samples({"a": a, "b": b, "noise": rng.normal(0, 1, total)}, labels, np.full(total, "v"),
+    window = np.where(labels == POSITIVE, np.arange(total) // 4, -1).astype(np.int32)  # memes of 4 frames
+    return Samples({"a": a, "b": b, "noise": rng.normal(0, 1, total)}, labels, window, np.full(total, "v"),
                    np.arange(total), np.arange(total) / 3)
 
 
@@ -144,3 +143,54 @@ def test_pool_concatenates_videos():
     one = two_criteria_samples()
     both = pool([one, one])
     assert len(both.labels) == 2 * len(one.labels) and set(both.scores) == set(one.scores)
+
+
+def test_windows_are_numbered_per_meme_and_shared_by_its_frames():
+    ranged = Meme(2.0, 48, start_ts=1.6, start_frame=40, end_ts=2.4, end_frame=60)
+    single = Meme(5.0, 128)
+    labels, windows = ground_truth(dataset([ranged, single]), ROWS, PTS)
+    assert {label_of(windows, f) for f in (40, 48, 56)} == {0}
+    assert label_of(windows, 128) == 1 and label_of(windows, 200) == -1
+    assert (windows >= 0).tolist() == (labels == POSITIVE).tolist()
+
+
+def test_a_meme_counts_as_found_when_any_of_its_frames_is_detected():
+    values = np.array([1, 1, 1, 9, 2, 8, 2, 2, 3], dtype=float)
+    positive = np.array([False, False, False, True, True, True, True, False, False])
+    windows = np.array([-1, -1, -1, 0, 0, 1, 1, -1, -1])
+    by_window = evaluate_criterion("c", values, positive, windows)
+    by_frame = evaluate_criterion("c", values, positive)
+    assert (by_window.fn, by_window.fp) == (0, 0) and by_window.positives == 2
+    assert by_window.margin == 5 and by_window.weakest == 5 and values[by_window.strongest] == 3
+    assert by_frame.margin < 0 and by_frame.fn + by_frame.fp > 0
+
+
+def test_rule_cost_and_missed_memes_use_any_frame_of_the_meme():
+    samples = two_criteria_samples()
+    first = int(np.flatnonzero(samples.window == 0)[0])
+    mask = np.zeros(len(samples.labels), dtype=bool)
+    mask[first + 2] = True  # one frame of meme 0 only
+    score, _ = evaluate_rule(Condition("a", ">", 1e9), samples)
+    assert score.fn == int(samples.window.max()) + 1
+    assert first not in missed_memes(samples, mask)
+    assert len(missed_memes(samples, mask)) == int(samples.window.max())
+    assert len(missed_memes(samples.as_frames(), mask)) == (samples.labels == POSITIVE).sum() - 1
+
+
+def test_window_judging_finds_cheaper_rules_than_frame_judging():
+    samples = two_criteria_samples()
+    window_rule = search(samples, max_conditions=1, max_terms=1)[0]
+    frame_rule = search(samples.as_frames(), max_conditions=1, max_terms=1)[0]
+    assert window_rule.score.cost <= frame_rule.score.cost
+
+
+def test_window_extremes_are_each_memes_highest_and_lowest_score():
+    from tools.evaluation.report import distributions, window_extremes
+
+    samples = two_criteria_samples()
+    high, low = window_extremes(samples.scores["a"], samples)
+    assert len(high) == len(low) == int(samples.window.max()) + 1
+    first = samples.scores["a"][samples.window == 0]
+    assert (high[0], low[0]) == (first.max(), first.min()) and (low <= high).all()
+    text = distributions(samples)
+    assert "meme highs" in text and "meme lows" in text and "non-meme frames" in text

@@ -21,6 +21,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dataset", action="append", metavar="VIDEO_ID", help="only this dataset (repeatable; default: all)")
     parser.add_argument("--fn-weight", type=float, default=DEFAULT_FN_WEIGHT,
                         help="cost of a missed meme relative to a false positive (default: %(default)s)")
+    parser.add_argument("--metric", choices=("window", "frame"), default="window",
+                        help="window: a meme is found if any of its frames is detected; frame: every meme frame must be "
+                             "detected (default: %(default)s)")
+    parser.add_argument("--distributions", action="store_true",
+                        help="per criterion: spread of each meme's highest and lowest score, and of the non-meme frames")
     parser.add_argument("--rank", choices=sorted(report.RANK_KEYS), default="cost", help="order of the criteria table")
     parser.add_argument("--max-size", type=int, default=3, help="most conditions in one term (default: %(default)s)")
     parser.add_argument("--max-terms", type=int, default=3, help="most terms OR-ed together (default: %(default)s)")
@@ -35,13 +40,21 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     samples = load_all(args.dataset, refresh=not args.no_refresh, proxy=args.proxy)
+    windowed = samples
+    if args.metric == "frame":
+        samples = samples.as_frames()
     labeled = samples.labeled()
     positive = labeled.labels == POSITIVE
     print(report.counts_line(samples), "\n")
 
-    reports = [evaluate_criterion(name, values, positive, args.fn_weight) for name, values in labeled.scores.items()]
-    print(f"Each criterion alone (cost = {args.fn_weight:g} x FN + FP; margin > 0 means separable)")
+    reports = [evaluate_criterion(name, values, positive, labeled.window, args.fn_weight) for name, values in labeled.scores.items()]
+    unit = "memes with no frame detected" if args.metric == "window" else "meme frames not detected"
+    print(f"Each criterion alone ({args.metric} metric; FN = {unit}; cost = {args.fn_weight:g} x FN + FP; "
+          "margin > 0 means separable)")
     print(report.criteria_table(reports, args.rank), "\n")
+    print(report.separation_table(reports, labeled), "\n")
+    if args.distributions:
+        print(report.distributions(windowed), "\n")
     if args.errors:
         for r in reports:
             _, mask = evaluate_rule(Condition(r.name, r.op, r.threshold), samples, args.fn_weight)

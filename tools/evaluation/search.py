@@ -22,9 +22,24 @@ BEAM_WIDTH = 12
 
 @dataclass(frozen=True)
 class Score:
-    fn: int
-    fp: int
+    fn: int  # memes with no frame detected
+    fp: int  # non-meme frames detected
     cost: float
+
+
+class Windows:
+    """The positive frames grouped by meme, to ask which memes a decision mask detects."""
+
+    def __init__(self, positive: np.ndarray, windows: np.ndarray) -> None:
+        rows = np.flatnonzero(positive)
+        self.rows = rows[np.argsort(windows[rows], kind="stable")]
+        grouped = windows[self.rows]
+        self.starts = np.flatnonzero(np.diff(grouped, prepend=grouped[0] - 1)) if len(rows) else np.array([], int)
+        self.count = len(self.starts)
+
+    def detected(self, mask: np.ndarray) -> np.ndarray:
+        """Per meme (last axis): whether any of its frames is True in `mask` (1-D or rows of masks)."""
+        return np.add.reduceat(mask[..., self.rows].astype(np.int32), self.starts, axis=-1) > 0
 
 
 @dataclass(frozen=True)
@@ -45,8 +60,8 @@ def rule_mask(rule: Rule, scores: dict[str, np.ndarray]) -> np.ndarray:
     return np.logical_and.reduce(parts) if isinstance(rule, AllOf) else np.logical_or.reduce(parts)
 
 
-def score_mask(mask: np.ndarray, positive: np.ndarray, fn_weight: float) -> Score:
-    fn = int((positive & ~mask).sum())
+def score_mask(mask: np.ndarray, positive: np.ndarray, groups: Windows, fn_weight: float) -> Score:
+    fn = int(groups.count - groups.detected(mask).sum())
     fp = int((~positive & mask).sum())
     return Score(fn, fp, fn_weight * fn + fp)
 
@@ -54,8 +69,15 @@ def score_mask(mask: np.ndarray, positive: np.ndarray, fn_weight: float) -> Scor
 def evaluate_rule(rule: Rule, samples: Samples, fn_weight: float = DEFAULT_FN_WEIGHT) -> tuple[Score, np.ndarray]:
     """The rule's errors on the labeled frames of `samples`, and its decision for every frame."""
     mask = rule_mask(rule, samples.scores)
-    labeled = samples.labels >= 0
-    return score_mask(mask[labeled], samples.labels[labeled] == POSITIVE, fn_weight), mask
+    labeled = samples.labeled()
+    positive = labeled.labels == POSITIVE
+    return score_mask(mask[samples.labels >= 0], positive, Windows(positive, labeled.window), fn_weight), mask
+
+
+def missed_memes(samples: Samples, mask: np.ndarray) -> list[int]:
+    """Index of the first frame of every meme (in `samples`) that `mask` detects nowhere."""
+    groups = Windows(samples.labels == POSITIVE, samples.window)
+    return [int(groups.rows[start]) for start, hit in zip(groups.starts, groups.detected(mask)) if not hit]
 
 
 @dataclass
@@ -92,10 +114,9 @@ def _candidates(scores: dict[str, np.ndarray], positive: np.ndarray) -> _Candida
     return _Candidates(names, np.array(directions), np.array(cuts), np.array(rows))
 
 
-def _beam_term(cand: _Candidates, positive: np.ndarray, base: np.ndarray, max_conditions: int,
-               fn_weight: float, beam: int = BEAM_WIDTH) -> tuple[tuple[int, ...], np.ndarray] | None:
+def _beam_term(cand: _Candidates, positive: np.ndarray, groups: Windows, base: np.ndarray,
+               max_conditions: int, fn_weight: float, beam: int = BEAM_WIDTH) -> tuple[tuple[int, ...], np.ndarray] | None:
     """The conjunction (candidate indexes) that most lowers the cost of `base | term`, or None."""
-    n_pos = int(positive.sum())
     matrix = cand.matrix
     states = [((), np.ones(matrix.shape[1], dtype=bool))]
     best, best_cost = None, np.inf
@@ -103,9 +124,9 @@ def _beam_term(cand: _Candidates, positive: np.ndarray, base: np.ndarray, max_co
         scored = []
         for chosen, term in states:
             union = matrix & term | base
-            tp = (union & positive).sum(axis=1)
+            fn = groups.count - groups.detected(union).sum(axis=1)
             fp = (union & ~positive).sum(axis=1)
-            cost = fn_weight * (n_pos - tp) + fp
+            cost = fn_weight * fn + fp
             used = {(cand.names[i], int(cand.directions[i])) for i in chosen}
             for i in np.argsort(cost, kind="stable")[: beam + len(chosen) + 2]:
                 if cand.label(i) not in used:
@@ -129,33 +150,49 @@ def _condition(name: str, direction: int, cut: float) -> Condition:
     return Condition(name, ">" if direction > 0 else "<", cut)
 
 
+def _holds(scores, name: str, direction: int, cut: float) -> np.ndarray:
+    return scores[name] > cut if direction > 0 else scores[name] < cut
+
+
 def _refine(terms: list[list[tuple[str, int, float]]], samples: Samples, positive: np.ndarray,
-            fn_weight: float, passes: int = 2) -> tuple[list[list[tuple[str, int, float]]], dict]:
-    """Move each threshold to the middle of the widest gap that doesn't raise the rule's cost."""
-    scores = samples.scores
-    gaps: dict = {}
+            groups: Windows, fn_weight: float, passes: int = 2) -> tuple[list[list[tuple[str, int, float]]], dict]:
+    """Move each threshold to the middle of the widest gap that doesn't raise the rule's cost.
+
+    With the other conditions fixed, a condition only matters on the frames the others let through
+    and no other term already detects. A meme not detected elsewhere is found when its best such frame
+    passes, so the cut is chosen between those best frames and the non-meme frames among them.
+    """
+    scores, gaps = samples.scores, {}
+    window_of = np.full(len(positive), -1)
+    window_of[groups.rows] = np.repeat(np.arange(groups.count), np.diff(np.append(groups.starts, len(groups.rows))))
     for _ in range(passes):
         for ti, term in enumerate(terms):
             for ci, (name, direction, cut) in enumerate(term):
                 others = np.ones(len(positive), dtype=bool)
                 for cj, (n2, d2, c2) in enumerate(term):
                     if cj != ci:
-                        others &= scores[n2] > c2 if d2 > 0 else scores[n2] < c2
+                        others &= _holds(scores, n2, d2, c2)
                 elsewhere = np.zeros(len(positive), dtype=bool)
                 for tj, other in enumerate(terms):
                     if tj != ti:
-                        elsewhere |= np.logical_and.reduce(
-                            [scores[n2] > c2 if d2 > 0 else scores[n2] < c2 for n2, d2, c2 in other])
-                decided = others & ~elsewhere
-                if not decided.any() or positive[decided].all() or not positive[decided].any():
-                    gaps[(name, ">" if direction > 0 else "<")] = (float("nan"), float("nan"))
+                        elsewhere |= np.logical_and.reduce([_holds(scores, n2, d2, c2) for n2, d2, c2 in other])
+                key = (name, ">" if direction > 0 else "<")
+                open_memes = ~groups.detected(elsewhere)
+                oriented = scores[name] * direction
+                reach = np.full(groups.count, -np.inf)
+                usable = positive & others
+                np.maximum.at(reach, window_of[usable], oriented[usable])
+                reach_open = reach[open_memes & np.isfinite(reach)]
+                negatives = oriented[~positive & others & ~elsewhere]
+                if not len(reach_open) or not len(negatives):
+                    gaps[key] = (float("nan"), float("nan"))
                     continue
-                oriented = scores[name][decided] * direction
-                found = best_threshold(oriented, positive[decided], fn_weight)
-                own_cut = found.value * direction
+                found = best_threshold(
+                    np.concatenate([reach_open, negatives]),
+                    np.concatenate([np.ones(len(reach_open), bool), np.zeros(len(negatives), bool)]), fn_weight)
                 spread = np.subtract(*np.percentile(scores[name], [75, 25])) or 1.0
-                terms[ti][ci] = (name, direction, own_cut)
-                gaps[(name, ">" if direction > 0 else "<")] = (found.gap, found.gap / spread)
+                terms[ti][ci] = (name, direction, found.value * direction)
+                gaps[key] = (found.gap, found.gap / spread)
     return terms, gaps
 
 
@@ -180,25 +217,26 @@ def search(samples: Samples, max_conditions: int = 3, max_terms: int = 3,
     """
     labeled = samples.labeled()
     positive = labeled.labels == POSITIVE
+    groups = Windows(positive, labeled.window)
     cand = _candidates(labeled.scores, positive)
     results = []
     for cap in range(1, max_conditions + 1):
         base = np.zeros(len(positive), dtype=bool)
         chosen_terms: list[list[tuple[str, int, float]]] = []
-        cost = fn_weight * positive.sum() + 0.0  # an empty rule misses every meme
+        cost = fn_weight * groups.count + 0.0  # an empty rule misses every meme
         for _ in range(max_terms):
-            found = _beam_term(cand, positive, base, cap, fn_weight)
+            found = _beam_term(cand, positive, groups, base, cap, fn_weight)
             if found is None:
                 break
             indexes, term_mask = found
-            new_cost = score_mask(base | term_mask, positive, fn_weight).cost
+            new_cost = score_mask(base | term_mask, positive, groups, fn_weight).cost
             if new_cost >= cost:
                 break
             cost, base = new_cost, base | term_mask
             chosen_terms.append([(cand.names[i], int(cand.directions[i]), float(cand.cuts[i])) for i in indexes])
         if not chosen_terms:
             continue
-        refined, gaps = _refine(chosen_terms, labeled, positive, fn_weight)
+        refined, gaps = _refine(chosen_terms, labeled, positive, groups, fn_weight)
         rule = _build(refined)
         score, _ = evaluate_rule(rule, labeled, fn_weight)
         if all(repr(rule) != repr(earlier.rule) for earlier in results):

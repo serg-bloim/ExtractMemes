@@ -52,6 +52,17 @@ the width of the empty corridor around the decision threshold). Related, standar
       which is built/refreshed with the existing cache machinery, so the evaluator never scores a
       frame differently from the pipeline, and a changed criterion is re-scored automatically (its
       fingerprint).
+- [x] AC11: **Window metric** (default, `--metric window`): a meme is found when at least one of its
+      frames is detected; a false negative is a meme with no detected frame, a false positive is still a
+      non-meme frame. A criterion is judged by each meme's best frame against every non-meme frame, so
+      its margin, AUC, d′ and threshold gap are between those. `--metric frame` keeps the earlier
+      every-frame-of-the-meme judging. Rule search, refinement of thresholds and the error lists use
+      the same metric. The report adds a separation table naming, per criterion, the weakest meme and
+      the strongest non-meme (video, time) that limit the gap.
+- [x] AC12: `--distributions` prints, per criterion and in the criterion's own units, each meme's
+      highest and lowest score over its frames (one pair per meme) and the scores of the non-meme
+      frames: min, percentiles (1, 5, 25, 50, 75, 95, 99), max and a histogram on shared bins, so the
+      three spreads can be compared. A meme marked with one frame has equal high and low.
 - [x] AC3: For each criterion the report gives: counts of positives/negatives used; the direction
       (does a meme score higher or lower) found from the data; the best single threshold (lowest
       weighted cost `fn_weight * FN + FP`, ties broken toward the widest margin; `fn_weight` defaults
@@ -132,3 +143,15 @@ Resolved by the user (2026-10-07):
   `--fn-weight` (default 10). `--rule` evaluates a rule given as text with only `Condition`/`AllOf`/`AnyOf`
   in scope. `tests/test_evaluation.py`: 14 tests. On the two labeled videos the best single criterion
   is `band > 187.5` (FN 1, FP 24); `AllOf(band > 176.6, hue_consistency < 0.6021)` has FN 0, FP 5.
+- 2026-10-07: The user asked for a different success metric (each meme window needs at least one
+  detected frame) and to see how wide the separation gaps are. Added AC11 (window metric as the
+  default, frame metric kept as an option) and the separation table; positives now carry a meme number
+  (`ground_truth` returns labels and windows, `Samples.window`), FN counts memes, the per-criterion
+  precision column became FP rate. On the two videos `band > 187.5` alone now misses no meme (FP 24);
+  its gap is -45 (weakest meme peak 188.5 vs a non-meme at 234.1, FtU4MuksCzE 2569.92s), so no
+  threshold is clean. `AnyOf(AllOf(band > 178.6, hue_consistency < 0.6226), band > 215.4)`: FN 0, FP 5,
+  threshold gaps 31.8 (band) and 0.29 (hue_consistency).
+- 2026-10-07: The user asked, per criterion, for the distribution of the memes' highs, the memes'
+  lows and the non-memes' scores. Added AC12 and `--distributions`. Non-memes have no windows, so
+  their spread is that of all non-meme frames (its extremes are their high and low). On the two videos
+  `band`: meme highs 188.5-236.5 (p5 215.5), meme lows 184.3-236.5, non-meme frames 0-234.1 (p99 177.4).

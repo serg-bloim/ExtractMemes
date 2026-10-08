@@ -6,6 +6,7 @@ import numpy as np
 # The thresholds were calibrated on 256x144 scan frames, so every frame is scored at that size.
 SCAN_WIDTH, SCAN_HEIGHT = 256, 144
 MARGIN_WIDTH = SCAN_WIDTH // 5
+EDGE_WIDTH = round(SCAN_WIDTH * 0.05)  # the outermost 5% of the width on each side
 
 
 def scan_size(frame: np.ndarray) -> np.ndarray:
@@ -19,3 +20,9 @@ def margins(frame: np.ndarray) -> np.ndarray:
     """The strips left and right of where a card would sit, side by side (BGR, scan size)."""
     frame = scan_size(frame)
     return np.hstack([frame[:, :MARGIN_WIDTH], frame[:, -MARGIN_WIDTH:]])
+
+
+def edges(frame: np.ndarray) -> np.ndarray:
+    """The outermost strips on the left and right (5% of the width each), side by side (BGR, scan size)."""
+    frame = scan_size(frame)
+    return np.hstack([frame[:, :EDGE_WIDTH], frame[:, -EDGE_WIDTH:]])

@@ -19,7 +19,7 @@ with themselves is cheap, and Claude can judge those few images.
 
 The work is split in parts. **Part 1 (this spec's implemented scope): a scene database** holding
 per-scene score statistics for every analyzed video and criterion, and Claude's verdict per scene,
-behind a small API so nothing edits the file by hand. **Part 2 (later, not yet specified in detail):**
+behind a small API so nothing edits the file by hand. **Part 2:**
 the selection of borderline scenes and the Claude verification runs (phase 1 misses, phase 2 false
 positives), which read and write the database only through that API.
 
@@ -103,13 +103,31 @@ missed memes and false positives without labeling the videos by hand.
       file rejection, `batch()` rollback, scene stats from synthetic scores, and idempotent populate
       with a fake index.
 
-### Part 2 — Verification (later; to be detailed before implementation)
+### Part 2 — Verification
 
-- [ ] AC9: Phase 1 selects scenes with `share_flagged == 0` whose `max` is close below the threshold
-      and has Claude judge whether they are missed memes; phase 2 selects mixed scenes
-      (`0 < share_flagged < 1`) and barely-flagged ones and has Claude judge whether they are false
-      positives. Results go in through `set_claude_status`. A summary reports confirmed misses and
-      false positives.
+- [x] AC9: `python -m tools.scene_analysis verify [--criterion edge_histogram] [--top 100] [--recheck]
+      [--batch-size 10] [--dry-run] [--model M] [--effort E] [--db FILE]` picks scenes from the database through
+      `SceneStore.select_scenes`, has Claude judge two frames of each, and records the result through
+      `set_claude_status`. Selection: every scene that has stats for the criterion with a condition
+      (non-null `threshold`) is ranked by its **distance from the threshold** — 0 if `min..max`
+      straddles it, else the smaller of `|min - threshold|` and `|max - threshold|` — nearest first;
+      the first `--top` scenes are taken (default 100). Scenes that already have a `claude` status are
+      skipped before ranking unless `--recheck`.
+- [x] AC10: The two frames of a scene are the ones with the lowest and the highest criterion score
+      (per-frame scores from the labeler cache; the video must already be downloaded, e.g. by
+      `populate`). Scenes go to Claude in batches of `--batch-size` (default 10): one `claude -p` call carries all
+      the batch's scenes, two images each (the meme-classifier rubric, one answer per image plus a short reason
+      per scene, numbered by scene). The scene verdict is `meme` if both frames are memes, `not_meme` if neither
+      is, `unsure` if they differ. `check` is `miss` for a scene with `share_flagged == 0` and
+      `false_positive` otherwise.
+- [x] AC11: Errors are reported, not hidden: a scene whose video is missing, whose scores are missing, or
+      whose Claude call fails (all scenes of that batch) or gives no valid answer for it is listed and skipped (nothing is written for
+      it); the rest continues. The whole run is one database session (`store.batch()`: one read, one write when it ends, the file locked meanwhile); Ctrl-C ends the run normally so the verdicts so far are saved. The command prints a summary
+      (checked, per verdict, errors) and exits non-zero if there was any error. `--dry-run` lists the selected
+      scenes and calls nothing.
+- [x] AC12: Offline tests (fake judge, fake frames, temp database) cover: ranking by distance (straddling = 0),
+      skipping checked scenes and `--recheck`, `--top`, min/max frame choice, verdict mapping, `check` choice,
+      batching, answer parsing, and errors not stopping the run, one read and one write per run, Ctrl-C saving what was judged.
 
 ## Out of Scope
 
@@ -117,7 +135,6 @@ missed memes and false positives without labeling the videos by hand.
 - Extracting or saving the images of verified scenes (the labeler can open them).
 - Multi-criterion rules; one criterion's stats per populate run.
 - Writing verdicts back into `data/datasets/`.
-- Part 2 (AC9) is not implemented yet.
 
 ## Technical Notes
 
@@ -130,11 +147,8 @@ missed memes and false positives without labeling the videos by hand.
 
 ## Open Questions
 
-- [ ] Q2: Default "close to the threshold" margin for Part 2: 20% of the threshold or absolute?
-- [ ] Q3: Part 2: one frame per scene to Claude, or best + middle?
-- [ ] Q4: Part 2: include fully flagged scenes with high `std` as "mixed"?
 
-Resolved: Q1 — a single YAML file for all videos and criteria, accessed only through an API.
+Resolved: Q2–Q4 — no margin: scenes are ranked by distance from the threshold and the nearest `--top` are taken; the frames sent are the min- and max-score ones; mixed scenes have distance 0. Q1 — a single YAML file for all videos and criteria, accessed only through an API.
 Q5 — CLI (assumed; not a labeler page).
 
 ## Changelog
@@ -156,3 +170,7 @@ Q5 — CLI (assumed; not a labeler page).
 - 2026-10-08: In a terminal, populate lists the video's formats (downloaded ones highlighted, else the labeler's default) and asks which to use (list number, format id, or Enter for the default); `--no-prompt` and non-terminal runs take the default; a video with a dataset stays pinned to its format. Listing checked live against lx011zFYIGU; nothing downloaded.
 - 2026-10-08: The format prompt is now an arrow-key menu (up/down, PgUp/PgDn, Home/End, Enter, q/Esc cancels), starting on the default (downloaded format if any, else the labeler's), scrolling within the terminal height; typed answers remain when stdin isn't a terminal. Verified in a real pseudo-terminal.
 - 2026-10-08: Operations return `Response(status, message, data)` with HTTP-style codes (200/201/204/400/404/409/500) instead of raising; `set_criterion_stats` is 201/200/204, so a rerun on unchanged data reports every scene as unchanged and doesn't rewrite the file. Populate's summary now also counts unchanged scenes.
+- 2026-10-08: Part 2 detailed from the request (AC9–AC12): `verify` ranks scenes by distance of their criterion scores from the production threshold, sends each top scene's min- and max-score frames to Claude and stores the verdict.
+- 2026-10-08: Implemented Part 2 (AC9–AC12): `tools/scene_analysis/verify.py` and the `verify` subcommand, tests in `tests/test_scene_verify.py`. Smoke-tested with one real scene (rCR1ws3fq88) on a copy of the database; ties in the ranking keep database order.
+- 2026-10-08: `verify` batches scenes per Claude call (`--batch-size`, default 10 scenes = 20 images); a failed call fails its batch, a scene missing from the answer fails alone.
+- 2026-10-08: `verify` runs in one `store.batch()` session (one read, one write at the end) instead of rewriting the database per verdict; Ctrl-C still saves the verdicts so far.

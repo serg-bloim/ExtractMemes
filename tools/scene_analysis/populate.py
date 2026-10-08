@@ -1,5 +1,6 @@
 """Score a video's scenes for one criterion and write them to the scene database through `SceneStore`."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import numpy as np
 
 from extract_memes.rule_classifier import Condition
 
-from .store import SceneExistsError, SceneStore, SceneStoreError
+from .store import SceneStore, Status
 
 _OPS = {">": np.greater, ">=": np.greater_equal, "<": np.less, "<=": np.less_equal}
 
@@ -36,7 +37,8 @@ def scene_stats(scores: np.ndarray, condition: tuple[str, float] | None) -> dict
 @dataclass
 class Result:
     inserted: int = 0
-    updated: int = 0
+    updated: int = 0  # scenes already stored whose stats changed or gained a criterion
+    unchanged: int = 0  # scenes already stored with exactly these stats
     errors: list[str] = field(default_factory=list)
 
 
@@ -45,9 +47,10 @@ def populate(store: SceneStore, video_id: str, format_id: str, pts: np.ndarray, 
              conditions: dict[str, tuple[str, float] | None]) -> Result:
     """Write every scene (rows `rows..row_last`) with the stats of every criterion in `scores`.
 
-    `conditions` gives each criterion's `(op, threshold)` or None. A scene already in the database keeps
-    everything but these criteria's stats, which are replaced. Problems (a criterion with non-finite scores
-    in a scene, a refused write) are collected in `Result.errors` and the rest is still written.
+    `conditions` gives each criterion's `(op, threshold)` or None. A scene the store reports as existing (409)
+    keeps everything but these criteria's stats, which are set one by one. Problems (a criterion with
+    non-finite scores in a scene, a response of 400 or more) are collected in `Result.errors` and the rest
+    is still written.
     """
     result = Result()
     with store.batch():
@@ -59,28 +62,32 @@ def populate(store: SceneStore, video_id: str, format_id: str, pts: np.ndarray, 
                     result.errors.append(f"scene {number} (frames {first}-{last}): {name} has non-finite scores")
                     continue
                 stats[name] = scene_stats(frame_scores, conditions.get(name))
-            try:
-                store.insert_scene(video_id, format_id, first, last, float(pts[first]), float(pts[last]),
-                                   last - first + 1, stats)
+            inserted = store.insert_scene(video_id, format_id, first, last, float(pts[first]), float(pts[last]),
+                                          last - first + 1, stats)
+            if inserted.status == Status.CREATED:
                 result.inserted += 1
-            except SceneExistsError:
-                try:
-                    for name, one in stats.items():
-                        store.set_criterion_stats(video_id, format_id, first, name, one)
-                    result.updated += 1
-                except SceneStoreError as exc:
-                    result.errors.append(f"scene {number}: {exc}")
-            except SceneStoreError as exc:
-                result.errors.append(f"scene {number}: {exc}")
+                continue
+            if inserted.status != Status.CONFLICT:
+                result.errors.append(f"scene {number}: {inserted.status} {inserted.message}")
+                continue
+            codes = [store.set_criterion_stats(video_id, format_id, first, name, one) for name, one in stats.items()]
+            failed = [c for c in codes if not c.ok]
+            if failed:
+                result.errors.append(f"scene {number}: {failed[0].status} {failed[0].message}")
+            elif any(c.status != Status.NO_CONTENT for c in codes):
+                result.updated += 1
+            else:
+                result.unchanged += 1
     return result
 
 
-def open_video(source: str, format_id: str | None, proxy: str | None, progress=None) -> tuple[Path, str, str]:
+def open_video(source: str, format_id: str | None, proxy: str | None, progress=None,
+               choose: Callable[[str, list[dict]], str] | None = None) -> tuple[Path, str, str]:
     """`(video file, video id, format id)`, choosing the format as the labeler does.
 
     A video with a dataset is pinned to the dataset's exact format. Otherwise `format_id` if given, else
     the labeler page's preselected format (`preferred_format`: at least 25 fps, then the smallest
-    resolution, then not AV1).
+    resolution, then not AV1). With `choose(video_id, formats)` the format is asked for instead.
     """
     from tools.labeling import dataset as ds
 
@@ -91,7 +98,8 @@ def open_video(source: str, format_id: str | None, proxy: str | None, progress=N
         return ds.ensure_video(dataset, proxy=proxy, progress=progress), video_id, dataset.video.format_id
     url = ds.canonical_url(video_id)
     if format_id is None:
-        format_id = ds.preferred_format(ds.fetch_video_info(url, proxy)["formats"])
+        formats = ds.fetch_video_info(url, proxy)["formats"]
+        format_id = choose(video_id, formats) if choose else ds.preferred_format(formats)
         if format_id is None:
             raise ds.DatasetError(f"{url} offers no video formats")
     path, video = ds.download_format(url, format_id, proxy=proxy, progress=progress)

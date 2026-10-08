@@ -52,21 +52,28 @@ missed memes and false positives without labeling the videos by hand.
       `std`, `share_flagged`; the first, second and last null without a condition) and `claude` (null
       until checked). Scenes of one format never overlap.
 - [x] AC2: All access goes through the Python API `tools/scene_analysis/store.py` (`SceneStore`);
-      no other code reads or writes the file. The API offers at least:
-      `insert_scene(video_id, format_id, first_frame, last_frame, ...)` (raises `SceneExistsError` if a scene already starts at that frame, `SceneStoreError` if it overlaps one, leaving the file untouched),
-      `set_criterion_stats(video_id, format_id, first_frame, criterion, stats)` (adds or replaces one
-      criterion's stats), `get_scene(video_id, format_id, first_frame)` (scenes are returned flat, with `video_id` and `format_id` added),
-      `find_scene(video_id, format_id, frame_index)` (by frame locator; `SceneNotFoundError` if none),
-      `select_scenes(predicate)` (all scenes matching a function), and
-      `set_claude_status(video_id, format_id, frame_index, verdict, reason, check)` addressed by
-      frame locator (`verdict`: `meme` | `not_meme` | `unsure`; `check`: `miss` | `false_positive`;
-      it stamps `checked_at`; replaces a previous status).
+      no other code reads or writes the file. **Every operation returns a `Response(status, message,
+      data)` with an HTTP-style status** instead of raising: 200 done (something changed, or a read),
+      201 created, 204 valid but nothing changed (no write happens), 400 invalid argument, 404 no such
+      scene, 409 conflict, 500 the file is unreadable or off-schema. `Response.ok` is true for 2xx.
+      The operations:
+      - `insert_scene(video_id, format_id, first_frame, last_frame, start_ts, end_ts, frame_count, stats)`:
+        201; 409 if a scene already starts at `first_frame` or the new one overlaps another; 400.
+      - `set_criterion_stats(video_id, format_id, first_frame, criterion, stats)`: 201 criterion new on the
+        scene, 200 replaced, 204 already exactly these stats, 404, 400.
+      - `get_scene(video_id, format_id, first_frame)` and `find_scene(video_id, format_id, frame_index)`
+        (by frame locator): 200 with the scene as `data` (flat, with `video_id` and `format_id` added), 404.
+      - `select_scenes(predicate)`: 200 with the matching scenes as `data`.
+      - `set_claude_status(video_id, format_id, frame_index, verdict, reason, check)` by frame locator
+        (`verdict`: `meme` | `not_meme` | `unsure`; `check`: `miss` | `false_positive`): 201 first status,
+        200 replaced by a different one, 204 same verdict/reason/check (`checked_at` kept), 404, 400.
 - [x] AC3: Corruption safety: every write is atomic (written to a temp file in the same directory,
       flushed to disk, then renamed over the file), the previous version is kept as
       `scene_analysis.yaml.bak`, concurrent writers are serialized with a lock file, and a file that
-      does not parse or does not match the schema makes the API raise `SceneStoreError` without
-      writing anything. `with store.batch():` applies many operations with one read and one write
-      and writes nothing if the block raises.
+      does not parse or does not match the schema makes every operation return 500 without writing
+      anything. `with store.batch():` applies many operations with one read and one write and writes
+      nothing if the block raises (it raises `SceneStoreError` itself if the file can't be read; I/O errors
+      such as a full disk propagate).
 - [x] AC4: Values are stored as plain YAML numbers/strings (numpy types converted), and a stored
       scene round-trips unchanged.
 
@@ -78,15 +85,16 @@ missed memes and false positives without labeling the videos by hand.
       downloads it if needed, scores **every frame with every criterion** through the labeler cache (so
       scores match the pipeline and a changed criterion is re-scored), groups frames into scenes with the
       labeler's rows, and writes all scenes with all criteria's stats **only through the API**.
-- [x] AC6: Populating inserts each scene with `insert_scene`; when it already exists
-      (`SceneExistsError`) every criterion's stats are replaced with `set_criterion_stats` and the
-      scene's `claude` status is kept. Rerunning is idempotent, and a criterion added later is added to
-      the existing scenes. The whole video is applied in one `batch()`.
+- [x] AC6: Populating inserts each scene with `insert_scene`; when that returns 409
+      (the scene exists) every criterion's stats are set with `set_criterion_stats` and the scene's `claude`
+      status is kept. Rerunning is idempotent (a rerun of unchanged data is all 204s and writes nothing),
+      and a criterion added later is added to the existing scenes. The summary counts scenes inserted,
+      updated and unchanged. The whole video is applied in one `batch()`.
 - [x] AC7: `op`, `threshold` and `share_flagged` come from the production rule's condition on the
       criterion (today only `band > 180`); a criterion the production rule doesn't use has them all
       null and only `min/max/mean/std` filled. `std` is the population std (0 for a one-frame scene).
 - [x] AC7a: Errors are reported, not hidden: a criterion with non-finite scores in a scene is left out
-      of that scene and listed, a refused write is listed, and a failure to fetch or index the video is
+      of that scene and listed, a response of 400 or more is listed, and a failure to fetch or index the video is
       printed; the rest is still written. The command prints a count and each error, and exits non-zero
       if there was any.
 - [x] AC8: Offline tests cover: insert/duplicate error, stats replace, lookup by frame locator
@@ -144,3 +152,7 @@ Q5 — CLI (assumed; not a labeler page).
 - 2026-10-08: Changed the file layout from a flat scene list to a tree (video → formats → scenes, version 2); scenes are keyed by their first frame instead of a scene index. Old-layout files are refused (no real database existed yet). Smoke-tested on 1qbqO8p1vLs with a scratch database.
 - 2026-10-08: Renamed the scene's `frame` field to `first_frame` (file and API).
 - 2026-10-08: `stats` is the last property of a scene (after `claude`).
+- 2026-10-08: Added the root runner `populate_scenes.sh <video-id>... [--format-id] [--proxy] [--db]` (one or more videos; non-zero exit if any had errors).
+- 2026-10-08: In a terminal, populate lists the video's formats (downloaded ones highlighted, else the labeler's default) and asks which to use (list number, format id, or Enter for the default); `--no-prompt` and non-terminal runs take the default; a video with a dataset stays pinned to its format. Listing checked live against lx011zFYIGU; nothing downloaded.
+- 2026-10-08: The format prompt is now an arrow-key menu (up/down, PgUp/PgDn, Home/End, Enter, q/Esc cancels), starting on the default (downloaded format if any, else the labeler's), scrolling within the terminal height; typed answers remain when stdin isn't a terminal. Verified in a real pseudo-terminal.
+- 2026-10-08: Operations return `Response(status, message, data)` with HTTP-style codes (200/201/204/400/404/409/500) instead of raising; `set_criterion_stats` is 201/200/204, so a rerun on unchanged data reports every scene as unchanged and doesn't rewrite the file. Populate's summary now also counts unchanged scenes.

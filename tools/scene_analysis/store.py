@@ -12,6 +12,9 @@ import os
 import shutil
 import tempfile
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from enum import IntEnum
+from typing import Any
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,16 +33,37 @@ _CLAUDE_FIELDS = ("verdict", "reason", "check", "checked_at")
 Scene = dict
 
 
+class Status(IntEnum):
+    """HTTP-style status codes returned by every operation."""
+
+    OK = 200  # done; something changed (or the data was read)
+    CREATED = 201  # a new scene, criterion or status was added
+    NO_CONTENT = 204  # valid, but nothing changed
+    BAD_REQUEST = 400  # an argument is invalid
+    NOT_FOUND = 404  # no such scene
+    CONFLICT = 409  # a scene already starts at that frame, or the new one overlaps another
+    SERVER_ERROR = 500  # the database file is unreadable or doesn't match the schema
+
+
+@dataclass
+class Response:
+    """What an operation returns: a `status`, a `message` for anything but success, and `data` for reads."""
+
+    status: Status
+    message: str = ""
+    data: Any = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status < 300
+
+
 class SceneStoreError(RuntimeError):
-    """The file is unreadable or does not match the schema, or an argument is invalid."""
+    """The database file is unreadable or does not match the schema (reported as 500)."""
 
 
-class SceneExistsError(SceneStoreError):
-    """A scene already starts at this first frame of this video and format."""
-
-
-class SceneNotFoundError(SceneStoreError):
-    """No stored scene matches the key or frame locator."""
+class InvalidInputError(SceneStoreError):
+    """An argument is invalid (reported as 400)."""
 
 
 def _plain(value):
@@ -57,39 +81,39 @@ def _check_stats(criterion: str, stats: dict) -> dict:
     """Validate one criterion's stats. `op`, `threshold` and `share_flagged` are all null for a criterion with no condition."""
     stats = _plain(stats)
     if set(stats) != set(_STATS_FIELDS):
-        raise SceneStoreError(f"stats of {criterion!r} must have exactly {', '.join(_STATS_FIELDS)}; got {sorted(stats)}")
+        raise InvalidInputError(f"stats of {criterion!r} must have exactly {', '.join(_STATS_FIELDS)}; got {sorted(stats)}")
     conditional = ("op", "threshold", "share_flagged")
     if all(stats[name] is None for name in conditional):
         required = [n for n in _NUMERIC_STATS if n not in conditional]
     else:
         required = list(_NUMERIC_STATS)
         if not isinstance(stats["op"], str):
-            raise SceneStoreError(f"stats of {criterion!r}: op must be a string")
+            raise InvalidInputError(f"stats of {criterion!r}: op must be a string")
     for name in required:
         if isinstance(stats[name], bool) or not isinstance(stats[name], (int, float)) or stats[name] != stats[name]:
-            raise SceneStoreError(f"stats of {criterion!r}: {name} must be a number, not {stats[name]!r}")
+            raise InvalidInputError(f"stats of {criterion!r}: {name} must be a number, not {stats[name]!r}")
     return stats
 
 
 def _check_scene(scene: object, where: str = "scene") -> Scene:
     if not isinstance(scene, dict):
-        raise SceneStoreError(f"{where} is not a mapping")
+        raise InvalidInputError(f"{where} is not a mapping")
     for name, kind in _SCENE_FIELDS.items():
         value = scene.get(name)
         if isinstance(value, bool) or not isinstance(value, kind):
-            raise SceneStoreError(f"{where}: {name} is missing or invalid ({value!r})")
+            raise InvalidInputError(f"{where}: {name} is missing or invalid ({value!r})")
     if scene["first_frame"] > scene["last_frame"]:
-        raise SceneStoreError(f"{where}: first_frame is after last_frame")
+        raise InvalidInputError(f"{where}: first_frame is after last_frame")
     if not isinstance(scene.get("stats"), dict):
-        raise SceneStoreError(f"{where}: stats must be a mapping")
+        raise InvalidInputError(f"{where}: stats must be a mapping")
     for criterion, stats in scene["stats"].items():
         _check_stats(criterion, stats)
     claude = scene.get("claude")
     if claude is not None:
         if not isinstance(claude, dict) or set(claude) != set(_CLAUDE_FIELDS) or claude["verdict"] not in VERDICTS:
-            raise SceneStoreError(f"{where}: claude must be null or hold {', '.join(_CLAUDE_FIELDS)}")
+            raise InvalidInputError(f"{where}: claude must be null or hold {', '.join(_CLAUDE_FIELDS)}")
     elif "claude" not in scene:
-        raise SceneStoreError(f"{where}: claude is missing")
+        raise InvalidInputError(f"{where}: claude is missing")
     return scene
 
 
@@ -164,7 +188,10 @@ class SceneStore:
                 last = -1
                 for scene in fmt["scenes"]:
                     where = f"{self.path} {video['video_id']}/{fmt['format_id']} scene {scene.get('first_frame') if isinstance(scene, dict) else '?'}"
-                    _check_scene(scene, where)
+                    try:
+                        _check_scene(scene, where)
+                    except InvalidInputError as exc:
+                        raise SceneStoreError(str(exc)) from exc
                     if scene["first_frame"] <= last:
                         raise SceneStoreError(f"{where}: scenes must be ascending and not overlap")
                     last = scene["last_frame"]
@@ -208,71 +235,123 @@ class SceneStore:
         return next((s for s in scenes or [] if s["first_frame"] == first_frame), None)
 
     # --- Operations -------------------------------------------------------------------------------
+    # Every operation returns a `Response`; none raises for a bad argument, a missing or duplicate
+    # scene, or an unreadable file (only `batch()` raises when the file can't be read, and I/O errors
+    # such as a full disk propagate).
+
+    def _guarded(self, work: Callable[[], Response]) -> Response:
+        try:
+            return work()
+        except InvalidInputError as exc:
+            return Response(Status.BAD_REQUEST, str(exc))
+        except SceneStoreError as exc:
+            return Response(Status.SERVER_ERROR, str(exc))
 
     def insert_scene(self, video_id: str, format_id: str, first_frame: int, last_frame: int, start_ts: float,
-                     end_ts: float, frame_count: int, stats: dict[str, dict] | None = None) -> None:
-        """Add the scene `first_frame..last_frame`; raises `SceneExistsError` if a scene already starts at `first_frame`
-        and `SceneStoreError` if it overlaps another one (nothing changes)."""
-        scene = _check_scene(_plain({
-            "first_frame": first_frame, "last_frame": last_frame, "start_ts": start_ts, "end_ts": end_ts,
-            "frame_count": frame_count, "claude": None, "stats": stats or {},
-        }), "new scene")
-        with self._transaction() as videos:
-            existing = self._scenes_of(videos, video_id, format_id)
-            if self._starting_at(existing, first_frame):
-                raise SceneExistsError(f"scene {video_id}/{format_id}/frame {first_frame} already exists")
-            clash = next((s for s in existing or [] if s["first_frame"] <= last_frame and first_frame <= s["last_frame"]), None)
-            if clash:
-                raise SceneStoreError(f"frames {first_frame}-{last_frame} overlap the scene {clash['first_frame']}-{clash['last_frame']}")
-            scenes = self._scenes_of(videos, video_id, format_id, create=True)
-            scenes.append(scene)
-            scenes.sort(key=lambda s: s["first_frame"])
-            self._dirty = True
+                     end_ts: float, frame_count: int, stats: dict[str, dict] | None = None) -> Response:
+        """Add the scene `first_frame..last_frame`: 201; 409 if a scene starts at `first_frame` or the new one
+        overlaps another (nothing changes); 400 for invalid values."""
 
-    def set_criterion_stats(self, video_id: str, format_id: str, first_frame: int, criterion: str, stats: dict) -> None:
-        """Add or replace one criterion's stats on the scene starting at `first_frame`; raises `SceneNotFoundError`."""
-        stats = _check_stats(criterion, stats)
-        with self._transaction() as videos:
-            scene = self._starting_at(self._scenes_of(videos, video_id, format_id), first_frame)
-            if scene is None:
-                raise SceneNotFoundError(f"no scene {video_id}/{format_id}/frame {first_frame}")
-            scene["stats"][criterion] = stats
-            self._dirty = True
+        def work() -> Response:
+            scene = _check_scene(_plain({
+                "first_frame": first_frame, "last_frame": last_frame, "start_ts": start_ts, "end_ts": end_ts,
+                "frame_count": frame_count, "claude": None, "stats": stats or {},
+            }), "new scene")
+            with self._transaction() as videos:
+                existing = self._scenes_of(videos, video_id, format_id)
+                if self._starting_at(existing, first_frame):
+                    return Response(Status.CONFLICT, f"scene {video_id}/{format_id}/frame {first_frame} already exists")
+                clash = next((s for s in existing or [] if s["first_frame"] <= last_frame and first_frame <= s["last_frame"]), None)
+                if clash:
+                    return Response(Status.CONFLICT, f"frames {first_frame}-{last_frame} overlap the scene "
+                                                     f"{clash['first_frame']}-{clash['last_frame']}")
+                scenes = self._scenes_of(videos, video_id, format_id, create=True)
+                scenes.append(scene)
+                scenes.sort(key=lambda s: s["first_frame"])
+                self._dirty = True
+                return Response(Status.CREATED)
 
-    def get_scene(self, video_id: str, format_id: str, first_frame: int) -> Scene:
-        """The scene that starts at `first_frame`."""
-        with self._transaction() as videos:
-            scene = self._starting_at(self._scenes_of(videos, video_id, format_id), first_frame)
-            if scene is None:
-                raise SceneNotFoundError(f"no scene {video_id}/{format_id}/frame {first_frame}")
-            return _flat(video_id, format_id, scene)
+        return self._guarded(work)
 
-    def find_scene(self, video_id: str, format_id: str, frame_index: int) -> Scene:
-        """The scene containing the frame `(video_id, format_id, frame_index)`."""
-        with self._transaction() as videos:
-            return _flat(video_id, format_id, self._by_frame(videos, video_id, format_id, frame_index))
+    def set_criterion_stats(self, video_id: str, format_id: str, first_frame: int, criterion: str,
+                            stats: dict) -> Response:
+        """Set one criterion's stats on the scene starting at `first_frame`: 201 if the criterion is new on it,
+        200 if its stats were replaced, 204 if they were already exactly these; 404 no such scene; 400 invalid."""
 
-    def _by_frame(self, videos: list[dict], video_id: str, format_id: str, frame_index: int) -> Scene:
-        for scene in self._scenes_of(videos, video_id, format_id) or []:
-            if scene["first_frame"] <= frame_index <= scene["last_frame"]:
-                return scene
-        raise SceneNotFoundError(f"no scene holds frame {frame_index} of {video_id}/{format_id}")
+        def work() -> Response:
+            checked = _check_stats(criterion, stats)
+            with self._transaction() as videos:
+                scene = self._starting_at(self._scenes_of(videos, video_id, format_id), first_frame)
+                if scene is None:
+                    return Response(Status.NOT_FOUND, f"no scene {video_id}/{format_id}/frame {first_frame}")
+                before = scene["stats"].get(criterion)
+                if before == checked:
+                    return Response(Status.NO_CONTENT)
+                scene["stats"][criterion] = checked
+                self._dirty = True
+                return Response(Status.CREATED if before is None else Status.OK)
 
-    def select_scenes(self, predicate: Callable[[Scene], bool] = lambda scene: True) -> list[Scene]:
-        """Copies of every scene for which `predicate(scene)` is true, in file order."""
-        with self._transaction() as videos:
-            flat = (_flat(v["video_id"], f["format_id"], s) for v in videos for f in v["formats"] for s in f["scenes"])
-            return [s for s in flat if predicate(s)]
+        return self._guarded(work)
+
+    def get_scene(self, video_id: str, format_id: str, first_frame: int) -> Response:
+        """200 with the scene that starts at `first_frame` as `data`; 404 if none does."""
+
+        def work() -> Response:
+            with self._transaction() as videos:
+                scene = self._starting_at(self._scenes_of(videos, video_id, format_id), first_frame)
+                if scene is None:
+                    return Response(Status.NOT_FOUND, f"no scene {video_id}/{format_id}/frame {first_frame}")
+                return Response(Status.OK, data=_flat(video_id, format_id, scene))
+
+        return self._guarded(work)
+
+    def find_scene(self, video_id: str, format_id: str, frame_index: int) -> Response:
+        """200 with the scene containing the frame `(video_id, format_id, frame_index)` as `data`; 404 if none."""
+
+        def work() -> Response:
+            with self._transaction() as videos:
+                scene = self._by_frame(videos, video_id, format_id, frame_index)
+                if scene is None:
+                    return Response(Status.NOT_FOUND, f"no scene holds frame {frame_index} of {video_id}/{format_id}")
+                return Response(Status.OK, data=_flat(video_id, format_id, scene))
+
+        return self._guarded(work)
+
+    def _by_frame(self, videos: list[dict], video_id: str, format_id: str, frame_index: int) -> Scene | None:
+        return next((s for s in self._scenes_of(videos, video_id, format_id) or []
+                     if s["first_frame"] <= frame_index <= s["last_frame"]), None)
+
+    def select_scenes(self, predicate: Callable[[Scene], bool] = lambda scene: True) -> Response:
+        """200 with a list of copies of every scene for which `predicate(scene)` is true, in file order, as `data`."""
+
+        def work() -> Response:
+            with self._transaction() as videos:
+                flat = (_flat(v["video_id"], f["format_id"], s) for v in videos for f in v["formats"] for s in f["scenes"])
+                return Response(Status.OK, data=[s for s in flat if predicate(s)])
+
+        return self._guarded(work)
 
     def set_claude_status(self, video_id: str, format_id: str, frame_index: int, verdict: str, reason: str = "",
-                          check: str = "miss") -> None:
-        """Record Claude's verdict on the scene holding this frame, replacing an earlier one."""
-        if verdict not in VERDICTS:
-            raise SceneStoreError(f"verdict must be one of {', '.join(VERDICTS)}, not {verdict!r}")
-        if check not in CHECKS:
-            raise SceneStoreError(f"check must be one of {', '.join(CHECKS)}, not {check!r}")
-        with self._transaction() as videos:
-            scene = self._by_frame(videos, video_id, format_id, frame_index)
-            scene["claude"] = {"verdict": verdict, "reason": str(reason), "check": check,
-                               "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-            self._dirty = True
+                          check: str = "miss") -> Response:
+        """Record Claude's verdict on the scene holding this frame: 201 if it had none, 200 if it replaced a
+        different one, 204 if verdict, reason and check are unchanged (`checked_at` is then kept);
+        404 no such scene; 400 invalid."""
+
+        def work() -> Response:
+            if verdict not in VERDICTS:
+                raise InvalidInputError(f"verdict must be one of {', '.join(VERDICTS)}, not {verdict!r}")
+            if check not in CHECKS:
+                raise InvalidInputError(f"check must be one of {', '.join(CHECKS)}, not {check!r}")
+            with self._transaction() as videos:
+                scene = self._by_frame(videos, video_id, format_id, frame_index)
+                if scene is None:
+                    return Response(Status.NOT_FOUND, f"no scene holds frame {frame_index} of {video_id}/{format_id}")
+                before = scene["claude"]
+                if before and (before["verdict"], before["reason"], before["check"]) == (verdict, str(reason), check):
+                    return Response(Status.NO_CONTENT)
+                scene["claude"] = {"verdict": verdict, "reason": str(reason), "check": check,
+                                   "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+                self._dirty = True
+                return Response(Status.CREATED if before is None else Status.OK)
+
+        return self._guarded(work)

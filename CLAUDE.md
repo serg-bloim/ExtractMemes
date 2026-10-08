@@ -74,6 +74,7 @@ ExtractMemes/
 │   ├── playground.py             ← Manual IDE entry points (not collected by pytest)
 │   └── scan_playground.py        ← Manual scan-only runs (no extraction)
 ├── run_real_video.py             ← Manual runner: real URL, real or fake classifier
+├── populate_scenes.sh            ← Runner: `./populate_scenes.sh <video-id>...` fills the scene database (see scene-score-analysis spec)
 ├── tools/                        ← Host-environment utilities, outside the package
 │   ├── lan_proxy_relay.py        ← Loopback→LAN TCP relay; lets a Homebrew interpreter reach a
 │                                   LAN proxy on macOS (see ADR 017). Runs under /usr/bin/python3.

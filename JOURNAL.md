@@ -164,3 +164,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-08: Removed the per-criterion score ranges from the labeler strip rows — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-08: Gallery and tiles modes of the labeler can be zoomed (tile size) with −/+ or Ctrl/Cmd+scroll — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
 - 2026-10-08: Labeler zoom buttons now show magnifier icons instead of − / + — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).
+- 2026-10-08: Labeler left panel now has tabs: the filter view and an empty test tab — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

@@ -481,3 +481,8 @@ Resolved by the user (2026-10-07):
 - 2026-10-08: The user asked for zoom in the gallery and tiles modes. Added zoom-out / zoom-in (magnifier icon) buttons (shown in
   those modes) and Ctrl/Cmd + scroll (trackpad pinch) that resize the cells, 0.5×–2.5×, keeping the
   middle frame in place; the size is remembered in the browser.
+- 2026-10-08: The user asked to wrap the filter view (profiles, filters, count, strip) in a tab of the
+  left panel so other tabs can take its place. Added a tab bar ("Filter", and an empty "Test" tab for
+  trying it out); the chosen tab is remembered in the browser.
+  The match count and the row strip sit below the tabs, outside any tab, so they stay on whichever
+  tab is open.

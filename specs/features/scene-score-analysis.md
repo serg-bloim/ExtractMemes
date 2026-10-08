@@ -35,7 +35,7 @@ missed memes and false positives without labeling the videos by hand.
 - **Scene**: a labeler *row* — a run of consecutive similar frames (`tools/labeling/index.py`,
   `similarity.py`). Frames are the video's own decoded frames, as in the labeler cache.
 - **Frame locator**: `(video_id, format_id, frame_index)`. It identifies the scene whose
-  `first_frame..last_frame` contains the frame. A scene's own key is `(video_id, format_id, scene_index)`.
+  `first_frame..last_frame` contains the frame. A scene's own key is `(video_id, format_id, first frame)`.
 - **Criterion stats**: for one criterion and its condition (`op`, `threshold`, default the production
   rule's, `band > 180`), the scene's score `min`, `max`, `mean`, `std` and `share_flagged` (fraction of
   frames for which the condition holds).
@@ -44,15 +44,18 @@ missed memes and false positives without labeling the videos by hand.
 
 ### Part 1a — Scene database
 
-- [x] AC1: One YAML file, `data/datasets/scene_analysis/scene_analysis.yaml` (gitignored with `data/datasets/`), holds all videos and criteria.
-      Each scene entry has: `video_id`, `format_id`, `scene_index`, `first_frame`, `last_frame`,
-      `start_ts`, `end_ts`, `frame_count`, `stats` (a map criterion name → `op`, `threshold`, `min`,
-      `max`, `mean`, `std`, `share_flagged`) and `claude` (null until checked).
+- [x] AC1: One YAML file, `data/datasets/scene_analysis/scene_analysis.yaml` (gitignored with
+      `data/datasets/`), holds all videos and criteria as a tree: `version: 2`, then `videos` (each
+      `video_id` and `formats`), each format (`format_id` and `scenes`), each scene in ascending frame
+      order with `first_frame` (its key within the format), `last_frame`, `start_ts`,
+      `end_ts`, `frame_count`, `stats` (a map criterion name → `op`, `threshold`, `min`, `max`, `mean`,
+      `std`, `share_flagged`; the first, second and last null without a condition) and `claude` (null
+      until checked). Scenes of one format never overlap.
 - [x] AC2: All access goes through the Python API `tools/scene_analysis/store.py` (`SceneStore`);
       no other code reads or writes the file. The API offers at least:
-      `insert_scene(...)` (raises `SceneExistsError` if the key exists, leaving the file untouched),
-      `set_criterion_stats(video_id, format_id, scene_index, criterion, stats)` (adds or replaces one
-      criterion's stats), `get_scene(video_id, format_id, scene_index)`,
+      `insert_scene(video_id, format_id, first_frame, last_frame, ...)` (raises `SceneExistsError` if a scene already starts at that frame, `SceneStoreError` if it overlaps one, leaving the file untouched),
+      `set_criterion_stats(video_id, format_id, first_frame, criterion, stats)` (adds or replaces one
+      criterion's stats), `get_scene(video_id, format_id, first_frame)` (scenes are returned flat, with `video_id` and `format_id` added),
       `find_scene(video_id, format_id, frame_index)` (by frame locator; `SceneNotFoundError` if none),
       `select_scenes(predicate)` (all scenes matching a function), and
       `set_claude_status(video_id, format_id, frame_index, verdict, reason, check)` addressed by
@@ -69,18 +72,23 @@ missed memes and false positives without labeling the videos by hand.
 
 ### Part 1b — Population
 
-- [x] AC5: `python -m tools.scene_analysis populate <url-or-id> [--criterion band] [--op OP --threshold T]
-      [--format-id ID] [--proxy URL]` fetches the video (the dataset's exact format if the video has a
-      dataset, else `--format-id`, else the worst format), scores every frame through the labeler
-      cache (so scores match the pipeline and a changed criterion is re-scored), groups frames into
-      scenes with the labeler's rows, and writes them to the database **only through the API**.
+- [x] AC5: `python -m tools.scene_analysis populate <video-id-or-url> [--format-id ID] [--proxy URL] [--db FILE]`
+      takes the video as the labeler does: a video with a dataset is pinned to the dataset's format;
+      otherwise `--format-id`, else the format the labeler page preselects (`preferred_format`). It
+      downloads it if needed, scores **every frame with every criterion** through the labeler cache (so
+      scores match the pipeline and a changed criterion is re-scored), groups frames into scenes with the
+      labeler's rows, and writes all scenes with all criteria's stats **only through the API**.
 - [x] AC6: Populating inserts each scene with `insert_scene`; when it already exists
-      (`SceneExistsError`) the criterion's stats are replaced with `set_criterion_stats` and the
-      scene's `claude` status is kept. Rerunning is therefore idempotent, and populating a second
-      criterion adds to the same scenes. The whole video is applied in one `batch()`.
-- [x] AC7: `--op/--threshold` default to the production classifier's condition on the criterion; a
-      criterion the production rule doesn't use requires both. `score_std` is the population std
-      (0 for a one-frame scene).
+      (`SceneExistsError`) every criterion's stats are replaced with `set_criterion_stats` and the
+      scene's `claude` status is kept. Rerunning is idempotent, and a criterion added later is added to
+      the existing scenes. The whole video is applied in one `batch()`.
+- [x] AC7: `op`, `threshold` and `share_flagged` come from the production rule's condition on the
+      criterion (today only `band > 180`); a criterion the production rule doesn't use has them all
+      null and only `min/max/mean/std` filled. `std` is the population std (0 for a one-frame scene).
+- [x] AC7a: Errors are reported, not hidden: a criterion with non-finite scores in a scene is left out
+      of that scene and listed, a refused write is listed, and a failure to fetch or index the video is
+      printed; the rest is still written. The command prints a count and each error, and exits non-zero
+      if there was any.
 - [x] AC8: Offline tests cover: insert/duplicate error, stats replace, lookup by frame locator
       (including first/last frame of a scene and a frame outside every scene), Claude status set and
       replace, atomic write leaving the old file intact when a write fails, the `.bak` copy, corrupt
@@ -132,3 +140,7 @@ Q5 — CLI (assumed; not a labeler page).
 - 2026-10-08: Implemented Part 1 (AC1–AC8): `tools/scene_analysis/` (`store.SceneStore`, `populate`, CLI), tests in
   `tests/test_scene_analysis.py`. Smoke-tested on 1qbqO8p1vLs (644 scenes; rerun updates, inserts nothing).
 - 2026-10-08: Moved the scene database to data/datasets/scene_analysis/ (gitignored with datasets); confirmed the Claude verdict is per scene, independent of the criterion — spec Q resolved.
+- 2026-10-08: Populate now scores every criterion in one run (no --criterion/--op/--threshold), picks the format as the labeler does (dataset's, else preferred_format), allows null condition fields for criteria without a production threshold, and reports errors with a non-zero exit. Smoke-tested on 1qbqO8p1vLs with a scratch database.
+- 2026-10-08: Changed the file layout from a flat scene list to a tree (video → formats → scenes, version 2); scenes are keyed by their first frame instead of a scene index. Old-layout files are refused (no real database existed yet). Smoke-tested on 1qbqO8p1vLs with a scratch database.
+- 2026-10-08: Renamed the scene's `frame` field to `first_frame` (file and API).
+- 2026-10-08: `stats` is the last property of a scene (after `claude`).

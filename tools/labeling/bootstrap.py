@@ -13,7 +13,6 @@ from .workspace import Workspace
 
 def open_labeler(
     source: str,
-    fps: float = 3.0,
     format_id: str | None = None,
     proxy: str | None = None,
     progress: Callable[[str, float | None], None] | None = None,
@@ -34,7 +33,7 @@ def open_labeler(
         print(f"No dataset yet; {dataset_file} is created on the first mark (format {video.format_id})")
 
     cache_dir = CACHE_ROOT / f"{dataset.video.id}_{dataset.video.format_id}"
-    index = build(video_path, cache_dir, fps=fps, progress=progress)
+    index = build(video_path, cache_dir, progress=progress)
     return LabelerApp(dataset, dataset_file, index, video_path)
 
 
@@ -54,7 +53,7 @@ def _last_video() -> str | None:
 
 
 def make_workspace(
-    source: str | None = None, fps: float = 3.0, format_id: str | None = None, proxy: str | None = None
+    source: str | None = None, format_id: str | None = None, proxy: str | None = None
 ) -> Workspace:
     """A workspace that opens videos with these options.
 
@@ -70,7 +69,7 @@ def make_workspace(
                     f"{existing} is labeled in format {dataset_module.load(existing).video.format_id}; "
                     f"it can't be opened in format {chosen_format}"
                 )
-        labeler = open_labeler(src, fps=fps, format_id=chosen_format or format_id, proxy=proxy, progress=progress)
+        labeler = open_labeler(src, format_id=chosen_format or format_id, proxy=proxy, progress=progress)
         _remember(labeler.dataset.video.id)
         return labeler
 

@@ -1,7 +1,7 @@
 """A cache of per-frame facts about one video, built in one sequential pass, and random frame access.
 
 The labeler needs, for the video it labels: every frame's own timestamp, a thumbnail and a score per
-criterion for each scanned frame, and the production classifier's verdict for it. These are cached
+criterion for every frame, and the production classifier's verdict for it. These are cached
 under `.runtime/labeler/` (never in the repo). A pass over the video is only made for what is
 missing, so adding a criterion computes just that criterion.
 """
@@ -23,8 +23,6 @@ from extract_memes.criteria import Criterion
 from extract_memes.heuristic_classifier import HeuristicClassifier
 from extract_memes.rule_classifier import RuleClassifier
 
-from .dataset import scan_step
-
 CACHE_ROOT = Path(".runtime/labeler")
 THUMB_SIZE = (192, 108)
 _VERDICT = "__verdict__"
@@ -35,16 +33,14 @@ class Index:
     """Everything the page needs about the scanned frames."""
 
     pts: np.ndarray  # timestamp (seconds) of every decoded frame, by frame index
-    rows: np.ndarray  # frame index of each scanned frame, ascending
+    rows: np.ndarray  # frame index of each row: every frame, so rows[i] == i
     criteria: list[Criterion]  # every criterion in extract_memes.criteria, as scored
     scores: dict[str, np.ndarray]  # criterion name -> score per row
     thresholds: dict[str, list[dict]]  # criterion name -> the classifier's conditions on it [{op, value}]
     verdict: np.ndarray  # the production classifier's decision per row
     native_fps: float
-    fps: float
-    step: int
     thumb_dir: Path
-    version: str = ""  # identifies this video file and scan step, so cached images can't be mixed up
+    version: str = ""  # identifies this video file, so cached images can't be mixed up
 
 
 def _read_meta(path: Path) -> dict:
@@ -57,7 +53,6 @@ def _read_meta(path: Path) -> dict:
 def build(
     video_path: Path,
     cache_dir: Path,
-    fps: float = 3.0,
     criteria: list[Criterion] | None = None,
     progress: Callable[[str, float | None], None] | None = None,
     classifier: FrameClassifier | None = None,
@@ -73,10 +68,8 @@ def build(
     cache_dir.mkdir(parents=True, exist_ok=True)
     thumb_dir = cache_dir / "thumbs"
     thumb_dir.mkdir(exist_ok=True)
-    step = scan_step(video_path, fps)
-
     stat = video_path.stat()
-    identity = {"size": stat.st_size, "mtime": int(stat.st_mtime), "step": step}
+    identity = {"size": stat.st_size, "mtime": int(stat.st_mtime), "every_frame": True}
     meta_path = cache_dir / "meta.json"
     meta = _read_meta(meta_path)
     if {k: meta.get(k) for k in identity} != identity:
@@ -93,21 +86,21 @@ def build(
                     or not (cache_dir / f"{name}.npy").is_file()}
     pts_path = cache_dir / "pts.npy"
     need_pts = not pts_path.is_file()
-    n_expected = int(np.ceil(len(np.load(pts_path)) / step)) if not need_pts else None
+    n_expected = len(np.load(pts_path)) if not need_pts else None
     need_thumbs = need_pts or any(
-        not (thumb_dir / f"{i * step}.jpg").is_file() for i in range(n_expected or 0)
+        not (thumb_dir / f"{i}.jpg").is_file() for i in range(n_expected or 0)
     )
 
     if need_pts or need_thumbs or stale_scores:
-        _run_pass(video_path, cache_dir, step, criteria, stale_scores, need_pts, need_thumbs, thumb_dir, progress, classifier)
+        _run_pass(video_path, cache_dir, criteria, stale_scores, need_pts, need_thumbs, thumb_dir, progress, classifier)
         for name in stale_scores:
             hashes[name] = wanted[name]
         meta_path.write_text(json.dumps(meta))
 
     pts = np.load(pts_path)
-    rows = np.arange(0, len(pts), step)
+    rows = np.arange(len(pts))
     cap = cv2.VideoCapture(str(video_path))
-    native_fps = cap.get(cv2.CAP_PROP_FPS) or fps
+    native_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     cap.release()
     return Index(
         pts=pts,
@@ -117,10 +110,8 @@ def build(
         thresholds=_thresholds(classifier),
         verdict=np.load(cache_dir / f"{_VERDICT}.npy"),
         native_fps=native_fps,
-        fps=fps,
-        step=step,
         thumb_dir=thumb_dir,
-        version=f"{identity['size']}-{identity['mtime']}-{identity['step']}",
+        version=f"{identity['size']}-{identity['mtime']}-all",
     )
 
 
@@ -142,7 +133,7 @@ def _thresholds(classifier: FrameClassifier) -> dict[str, list[dict]]:
     return found
 
 
-def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumbs, thumb_dir, progress=None,
+def _run_pass(video_path, cache_dir, criteria, stale, need_pts, need_thumbs, thumb_dir, progress=None,
               classifier=None) -> None:
     """One sequential decode that fills in whatever is missing."""
     cap = cv2.VideoCapture(str(video_path))
@@ -161,7 +152,7 @@ def _run_pass(video_path, cache_dir, step, criteria, stale, need_pts, need_thumb
             while cap.grab():
                 if need_pts:
                     pts.append(cap.get(cv2.CAP_PROP_POS_MSEC) / 1000)
-                if needs_frame and index % step == 0:
+                if needs_frame:
                     ok, frame = cap.retrieve()
                     if ok:
                         thumb = thumb_dir / f"{index}.jpg"

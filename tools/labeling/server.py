@@ -43,8 +43,6 @@ class LabelerApp:
             # Part of every thumbnail and frame URL: they are cached by the browser, and the same
             # `/thumb/4256.jpg` is a different picture in another video.
             "version": f"{video.id}-{video.format_id}-{index.version}",
-            "fps": index.fps,
-            "step": index.step,
             "native_fps": index.native_fps,
             "frame_count": len(index.pts),
             "window": dataset_module.EXCLUSION_WINDOW_SECONDS,

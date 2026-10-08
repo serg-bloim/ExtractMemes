@@ -21,6 +21,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dataset", action="append", metavar="VIDEO_ID", help="only this dataset (repeatable; default: all)")
     parser.add_argument("--fn-weight", type=float, default=DEFAULT_FN_WEIGHT,
                         help="cost of a missed meme relative to a false positive (default: %(default)s)")
+    parser.add_argument("--scan-fps", type=float, default=3.0,
+                        help="judge the frames a scan at this rate would classify (default: %(default)s, the pipeline's)")
+    parser.add_argument("--all-frames", action="store_true", help="judge every frame instead of a scan's sample")
     parser.add_argument("--metric", choices=("window", "frame"), default="window",
                         help="window: a meme is found if any of its frames is detected; frame: every meme frame must be "
                              "detected (default: %(default)s)")
@@ -39,7 +42,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--proxy", help="proxy for yt-dlp, if a video must be downloaded")
     args = parser.parse_args(argv)
 
-    samples = load_all(args.dataset, refresh=not args.no_refresh, proxy=args.proxy)
+    samples = load_all(args.dataset, refresh=not args.no_refresh, proxy=args.proxy,
+                       scan_fps=1000.0 if args.all_frames else args.scan_fps)
     windowed = samples
     if args.metric == "frame":
         samples = samples.as_frames()

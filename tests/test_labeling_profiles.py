@@ -102,7 +102,7 @@ def web(tmp_path):
     dataset = Dataset(video=VideoInfo("https://www.youtube.com/watch?v=abcdefghijk", "abcdefghijk", "160",
                                       "avc1", "mp4", width, height, fps, count))
     labeler = LabelerApp(dataset, tmp_path / "datasets" / "abcdefghijk.yaml",
-                         build(video, tmp_path / "cache", fps=5.0), video)
+                         build(video, tmp_path / "cache"), video)
     directory = tmp_path / "profiles"
     server = make_server("127.0.0.1", 0, create_flask_app(labeler, profiles_dir=directory), threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()

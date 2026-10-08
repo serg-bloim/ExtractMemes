@@ -46,13 +46,18 @@ def _fresh(cache_dir: Path, names: list[str]) -> bool:
     except (OSError, ValueError):
         return False
     criteria = criteria_package.all_criteria()
-    return (cache_dir / "pts.npy").is_file() and all(
+    return meta.get("every_frame") is True and (cache_dir / "pts.npy").is_file() and all(
         meta.get("hashes", {}).get(n) == criteria[n].fingerprint() and (cache_dir / f"{n}.npy").is_file()
         for n in names
     )
 
 
-def load_truth(dataset: ds.Dataset, proxy: str | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def scan_rows(dataset: ds.Dataset, frame_count: int, scan_fps: float = SCAN_FPS) -> np.ndarray:
+    """The frames a scan at `scan_fps` looks at (the rule `sample_frames` uses); a rate above the video's is every frame."""
+    return np.arange(0, frame_count, max(1, round(dataset.video.fps / scan_fps)))
+
+
+def load_truth(dataset: ds.Dataset, proxy: str | None = None, scan_fps: float = SCAN_FPS) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """`(frame indices, labels, windows)` of the scanned frames, without scoring any criterion.
 
     Needs only the timestamps of the video's frames, so it works before a criterion's reference
@@ -60,29 +65,30 @@ def load_truth(dataset: ds.Dataset, proxy: str | None = None) -> tuple[np.ndarra
     """
     cache_dir = CACHE_ROOT / f"{dataset.video.id}_{dataset.video.format_id}"
     if not (cache_dir / "pts.npy").is_file() or not (cache_dir / "meta.json").is_file():
-        build(ds.ensure_video(dataset, proxy=proxy), cache_dir, fps=SCAN_FPS, criteria=[])
+        build(ds.ensure_video(dataset, proxy=proxy), cache_dir, criteria=[])
     pts = np.load(cache_dir / "pts.npy")
-    step = json.loads((cache_dir / "meta.json").read_text())["step"]
-    rows = np.arange(0, len(pts), step)
+    rows = scan_rows(dataset, len(pts), scan_fps)
     labels, windows = ground_truth(dataset, rows, pts)
     return rows, labels, windows
 
 
-def load_video(dataset: ds.Dataset, refresh: bool = True, proxy: str | None = None) -> Samples:
-    """One video's samples, from the labeler cache (rebuilt when stale, unless `refresh` is False)."""
+def load_video(dataset: ds.Dataset, refresh: bool = True, proxy: str | None = None, scan_fps: float = SCAN_FPS) -> Samples:
+    """One video's samples at `scan_fps`, from the labeler cache (rebuilt when stale, unless `refresh` is False).
+
+    The cache holds every frame; the samples are the frames a scan at that rate would classify.
+    """
     criteria = criteria_package.all_criteria()
     cache_dir = CACHE_ROOT / f"{dataset.video.id}_{dataset.video.format_id}"
     if not _fresh(cache_dir, list(criteria)):
         if not refresh:
             raise RuntimeError(f"The score cache of {dataset.video.id} is missing or stale: {cache_dir}")
         video_path = ds.ensure_video(dataset, proxy=proxy)
-        build(video_path, cache_dir, fps=SCAN_FPS)
+        build(video_path, cache_dir)
     pts = np.load(cache_dir / "pts.npy")
-    step = json.loads((cache_dir / "meta.json").read_text())["step"]
-    rows = np.arange(0, len(pts), step)
+    rows = scan_rows(dataset, len(pts), scan_fps)
     labels, windows = ground_truth(dataset, rows, pts)
     return Samples(
-        scores={n: np.load(cache_dir / f"{n}.npy").astype(float) for n in criteria},
+        scores={n: np.load(cache_dir / f"{n}.npy")[rows].astype(float) for n in criteria},
         labels=labels,
         window=windows,
         video=np.full(len(rows), dataset.video.id),
@@ -103,10 +109,11 @@ def pool(parts: list[Samples]) -> Samples:
     )
 
 
-def load_all(video_ids: list[str] | None = None, refresh: bool = True, proxy: str | None = None) -> Samples:
+def load_all(video_ids: list[str] | None = None, refresh: bool = True, proxy: str | None = None,
+             scan_fps: float = SCAN_FPS) -> Samples:
     """Every dataset in `data/datasets/` (or just `video_ids`), pooled."""
     entries = [d["id"] for d in ds.list_datasets()]
     paths = [ds.dataset_path(i) for i in (video_ids or entries)]
     if not paths:
         raise RuntimeError("No datasets found")
-    return pool([load_video(ds.load(p), refresh, proxy) for p in paths])
+    return pool([load_video(ds.load(p), refresh, proxy, scan_fps) for p in paths])

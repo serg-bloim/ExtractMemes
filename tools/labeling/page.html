@@ -233,8 +233,8 @@ async function api(path, body, method, payload) {
   return data;
 }
 
-// The strip row a native frame belongs to: the last scanned frame at or before it.
-const rowOf = frame => Math.min(S.rows.length - 1, Math.floor(frame / S.step));
+// The strip row of a frame: every frame is a row, so this is the frame index (kept inside the video).
+const rowOf = frame => Math.min(S.rows.length - 1, Math.max(0, frame));
 
 function applyLabels(labels) {
   S.memes = labels.memes;
@@ -293,7 +293,7 @@ function refilter() {
   const f = filters();
   view = [];
   for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) view.push(r);
-  $("count").textContent = view.length + " of " + S.rows.length + " scanned frames shown · " +
+  $("count").textContent = view.length + " of " + S.rows.length + " frames shown · " +
                            S.memes.length + " marked";
   $("spacer").style.height = view.length * ROW_H + "px";
   renderStrip();
@@ -453,7 +453,7 @@ function renderInfoPanel() {
     renderChips();
     return;
   }
-  const r = rowOf(sel), onRow = S.rows[r] === sel;
+  const r = rowOf(sel);
   const marked = memeFrames.has(sel);
   const notMarked = notFrames.has(sel);
   $("view").classList.toggle("marked", marked);
@@ -466,7 +466,7 @@ function renderInfoPanel() {
     ? (Array.from(multi).every(f => flagged(f, "not_meme")) ? "Unmark " : "Mark ") + multi.size + " selected as not a meme (X)"
     : (notMarked ? "Unmark not-a-meme" : "Mark as not a meme") + " (X)";
   let html = "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td></tr>" +
-    "<tr><td class='dim'>frame</td><td>#" + sel + (onRow ? "" : " <span class='dim'>(between scanned frames; scored row #" + S.rows[r] + ")</span>") + "</td></tr>" +
+    "<tr><td class='dim'>frame</td><td>#" + sel + "</td></tr>" +
     "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : notMarked ? "<span class='no'>✗ not a meme</span>" : (rowMarked[r] || rowNot[r] ? "near a mark" : "unlabeled")) + "</td></tr>" +
     "<tr><td class='dim'>classifier</td><td>" + (S.verdict[r] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td></tr>";
   const meme = S.memes.find(m => { const e = extent(m); return (m.start_frame != null || m.end_frame != null) && e.lo <= sel && sel <= e.hi; });
@@ -533,17 +533,14 @@ async function toggleLabel(label) {
 }
 const toggleMark = () => toggleLabel("meme");
 
-// Whether a selected frame carries the label. A scan row also counts a mark that sits between it and
-// the next row (the strip shows such a mark on that row).
+// Whether a selected frame carries the label.
 function flagged(f, label) {
-  const has = label === "meme" ? memeFrames.has(f) : notFrames.has(f);
-  return has || (S.rows[rowOf(f)] === f && (label === "meme" ? rowMarked : rowNot)[rowOf(f)]);
+  return label === "meme" ? memeFrames.has(f) : notFrames.has(f);
 }
 
-// Whether the selection covers a mark: one of its frames, or the row it is shown on.
+// Whether the selection covers a mark: one of its frames.
 function labelTouched(m, label) {
   const e = label === "meme" ? extent(m) : {lo: m.frame, hi: m.frame};
-  if (multi.has(S.rows[rowOf(m.frame)])) return true;
   for (const f of multi) if (e.lo <= f && f <= e.hi) return true;
   return false;
 }
@@ -700,7 +697,7 @@ let drag = null;
 const LABEL_COLOURS = {none: "#5b6070", not_meme: "#7fb2ff", meme: "#ffc933"};   // stacking order, bottom to top
 const STACK = ["none", "not_meme", "meme"];
 
-// The metrics that can be charted: {group, name, values (one per scanned row), thresholds [{op, value}] the classifier compares it with}. New kinds
+// The metrics that can be charted: {group, name, values (one per frame), thresholds [{op, value}] the classifier compares it with}. New kinds
 // of metric join this list.
 function metrics() {
   return S.criteria.map(c => ({group: "Classifier criteria", name: c.name, values: S.scores[c.name], thresholds: c.thresholds, description: c.description}));
@@ -731,12 +728,12 @@ function summary(vals) {
 // the range can still be seen and changed on the chart.
 function histogramScope(metric) {
   if (multi.size > 1) {
-    const rows = [...new Set(Array.from(multi, rowOf))];             // scores exist for the scanned rows
+    const rows = [...new Set(Array.from(multi, rowOf))];
     return {rows, base: null, outside: null, text: multi.size + " selected frames"};
   }
   if (hasSel) {
     const r = rowOf(sel);
-    return {rows: [r], base: null, outside: null, text: "frame #" + sel + (S.rows[r] === sel ? "" : " (scored row #" + S.rows[r] + ")")};
+    return {rows: [r], base: null, outside: null, text: "frame #" + sel};
   }
   const f = filters();
   const own = f.ranges[metric.name];
@@ -747,8 +744,8 @@ function histogramScope(metric) {
   const rows = own ? base.filter(r => (metric.values[r] >= own[0] && metric.values[r] <= own[1]) !== inverted) : base;
   const inside = new Set(rows);
   const outside = own ? base.filter(r => !inside.has(r)) : null;                   // dimmed on the chart
-  const text = rows.length === S.rows.length ? "all " + S.rows.length + " scanned frames"
-    : rows.length + " of " + S.rows.length + " scanned frames (the strip's filters)";
+  const text = rows.length === S.rows.length ? "all " + S.rows.length + " frames"
+    : rows.length + " of " + S.rows.length + " frames (the strip's filters)";
   return {rows, base: own ? base : null, outside, text};
 }
 

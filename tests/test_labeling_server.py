@@ -34,7 +34,7 @@ def labeler(tmp_path, video):
     dataset = Dataset(video=VideoInfo("https://www.youtube.com/watch?v=abcdefghijk", "abcdefghijk", "160",
                                       "avc1", "mp4", width, height, fps, count))
     dataset_file = tmp_path / "datasets" / "abcdefghijk.yaml"
-    index = build(video, tmp_path / "cache", fps=5.0)
+    index = build(video, tmp_path / "cache")
     app = LabelerApp(dataset, dataset_file, index, video)
     server = make_server("127.0.0.1", 0, create_flask_app(app), threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -55,21 +55,20 @@ def post(base, path, body):
     return json.load(urllib.request.urlopen(request))
 
 
-def test_index_has_a_row_per_scanned_frame_with_scores_and_verdict(tmp_path, video):
-    index = build(video, tmp_path / "cache", fps=5.0)
+def test_index_has_a_row_per_frame_with_scores_and_verdict(tmp_path, video):
+    index = build(video, tmp_path / "cache")
 
-    assert index.step == 5
-    assert index.rows.tolist() == list(range(0, 75, 5))
+    assert index.rows.tolist() == list(range(75))
     assert len(index.pts) == 75 and index.pts[5] == pytest.approx(5 / FPS, abs=0.001)
     assert set(index.scores) == set(all_criteria())
-    assert all(len(v) == 15 for v in index.scores.values()) and len(index.verdict) == 15
-    assert len(list(index.thumb_dir.glob("*.jpg"))) == 15
+    assert all(len(v) == 75 for v in index.scores.values()) and len(index.verdict) == 75
+    assert len(list(index.thumb_dir.glob("*.jpg"))) == 75
 
 
 def test_a_second_build_reads_the_cache_and_a_new_criterion_scores_only_itself(tmp_path, video, monkeypatch):
-    build(video, tmp_path / "cache", fps=5.0)
+    build(video, tmp_path / "cache")
     monkeypatch.setattr(index_module, "_run_pass", lambda *a, **k: pytest.fail("cache was not used"))
-    build(video, tmp_path / "cache", fps=5.0)
+    build(video, tmp_path / "cache")
     monkeypatch.undo()
 
     def brightness(frame):
@@ -78,16 +77,16 @@ def test_a_second_build_reads_the_cache_and_a_new_criterion_scores_only_itself(t
     passes = []
     original = index_module._run_pass
     monkeypatch.setattr(index_module, "_run_pass",
-                        lambda *a: passes.append(sorted(c.name for c in a[3] if c.name in a[4])) or original(*a))
+                        lambda *a: passes.append(sorted(c.name for c in a[2] if c.name in a[3])) or original(*a))
 
-    index = build(video, tmp_path / "cache", fps=5.0, criteria=[*all_criteria().values(), Criterion("brightness", brightness)])
+    index = build(video, tmp_path / "cache", criteria=[*all_criteria().values(), Criterion("brightness", brightness)])
 
     assert passes == [["brightness"]]
-    assert len(index.scores["brightness"]) == 15
+    assert len(index.scores["brightness"]) == 75
 
 
 def test_frame_reader_returns_the_right_frame_for_any_access_order(tmp_path, video):
-    index = build(video, tmp_path / "cache", fps=5.0)
+    index = build(video, tmp_path / "cache")
     truth = {i: f for i, _, f in ds.iter_frames(video)}
     reader = FrameReader(video, index.pts)
     try:
@@ -104,20 +103,21 @@ def test_state_endpoint_describes_the_video_and_scores(labeler):
 
     state = json.load(get(base + "/api/state"))
 
-    assert state["frame_count"] == 75 and state["step"] == 5 and state["memes"] == []
-    assert state["rows"] == list(range(0, 75, 5))
+    assert state["frame_count"] == 75 and state["memes"] == []
+    assert "fps" not in state and "step" not in state
+    assert state["rows"] == list(range(75))
     assert [c["name"] for c in state["criteria"]] == list(all_criteria())
-    assert len(state["verdict"]) == 15 and len(state["scores"]["band"]) == 15
+    assert len(state["verdict"]) == 75 and len(state["scores"]["band"]) == 75
 
 
 def test_thumbnail_and_frame_endpoints_serve_jpegs(labeler):
     _, base, _ = labeler
 
     assert get(base + "/thumb/10.jpg").read(2) == b"\xff\xd8"
-    full = get(base + "/frame/11.jpg")  # a frame the scan doesn't sample
+    full = get(base + "/frame/11.jpg")
     assert full.headers["Content-Type"] == "image/jpeg" and full.read(2) == b"\xff\xd8"
     with pytest.raises(urllib.error.HTTPError) as missing:
-        get(base + "/thumb/11.jpg")
+        get(base + "/thumb/999.jpg")
     assert missing.value.code == 404
     with pytest.raises(urllib.error.HTTPError) as past_end:
         get(base + "/frame/999.jpg")
@@ -197,7 +197,7 @@ def test_expand_finds_the_frames_of_the_same_shot(tmp_path):
     writer.release()
     width, height, fps, count = ds.probe(path)
     dataset = Dataset(video=VideoInfo("u", "abcdefghijk", "160", "avc1", "mp4", width, height, fps, count))
-    app = LabelerApp(dataset, tmp_path / "d.yaml", build(path, tmp_path / "cache", fps=5.0), path)
+    app = LabelerApp(dataset, tmp_path / "d.yaml", build(path, tmp_path / "cache"), path)
     server = make_server("127.0.0.1", 0, create_flask_app(app), threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
@@ -324,7 +324,7 @@ def make_labeler(tmp_path, video, video_id="abcdefghijk"):
     width, height, fps, count = ds.probe(video)
     dataset = Dataset(video=VideoInfo(f"https://www.youtube.com/watch?v={video_id}", video_id, "160",
                                       "avc1", "mp4", width, height, fps, count))
-    index = build(video, tmp_path / f"cache_{video_id}", fps=5.0)
+    index = build(video, tmp_path / f"cache_{video_id}")
     return LabelerApp(dataset, tmp_path / "datasets" / f"{video_id}.yaml", index, video)
 
 
@@ -494,16 +494,14 @@ def test_open_passes_the_chosen_format_and_refuses_format_expressions(empty_work
     assert len(calls) == 1
 
 
-def test_the_labelers_scores_and_verdicts_are_what_the_pipeline_scan_computes(tmp_path, video):
-    from extract_memes.frame_extractor import sample_frames
-
-    index = build(video, tmp_path / "cache", fps=5.0)
+def test_the_labelers_scores_and_verdicts_for_every_frame_are_what_the_pipeline_computes(tmp_path, video):
+    index = build(video, tmp_path / "cache")
     classifier = HeuristicClassifier()
 
-    scanned = list(sample_frames(video, fps=5.0))
+    frames = list(ds.iter_frames(video))
 
-    assert [i for i, _, _ in scanned] == index.rows.tolist()
-    for row, (_, timestamp, frame) in enumerate(scanned):
+    assert [i for i, _, _ in frames] == index.rows.tolist()
+    for row, (_, timestamp, frame) in enumerate(frames):
         for name, criterion in all_criteria().items():
             assert index.scores[name][row] == pytest.approx(criterion.score(frame), rel=1e-5, abs=1e-5), name
         assert bool(index.verdict[row]) == classifier.is_meme_frame(frame)
@@ -522,7 +520,7 @@ def test_the_page_gets_the_classifiers_thresholds_for_the_criteria_it_uses(label
 
 def test_frame_reader_decodes_from_the_start_when_a_seek_cannot_reach_an_early_frame(tmp_path, video, monkeypatch):
     """Some H.264 streams land a seek past the first ~100 frames, even a seek to frame 0."""
-    index = build(video, tmp_path / "cache", fps=5.0)
+    index = build(video, tmp_path / "cache")
     truth = {i: f for i, _, f in ds.iter_frames(video)}
     reader = FrameReader(video, index.pts)
 

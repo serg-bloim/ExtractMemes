@@ -3,7 +3,7 @@
 # src/extract_memes/ changes, including a new criterion file added there
 # (refresh the browser tab after a restart; page.html edits need only a refresh).
 #
-#   ./labeler.sh [youtube-url-or-id] [--fps N] [--format-id ID] [--port N] [--proxy URL]
+#   ./labeler.sh [youtube-url-or-id] [--format-id ID] [--port N] [--proxy URL]
 #
 # Without a video, the page opens on a field where you enter one.
 #
@@ -17,7 +17,6 @@ source_arg=""
 port=8765
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --fps)       export LABELER_FPS="${2:?--fps needs a value}"; shift 2 ;;
     --format-id) export LABELER_FORMAT_ID="${2:?--format-id needs a value}"; shift 2 ;;
     --proxy)     export LABELER_PROXY="${2:?--proxy needs a value}"; shift 2 ;;
     --port)      port="${2:?--port needs a value}"; shift 2 ;;

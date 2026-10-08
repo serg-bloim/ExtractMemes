@@ -37,13 +37,12 @@ classifier disagrees with me, and keep the result in the repo.
       video identity on the first mark. Given a URL or id that already has a dataset, it loads that
       exact format (dataset AC5/AC6) and shows the existing marks.
 - [x] AC3: The page has a **vertical strip of thumbnails** on one side. It scrolls through the whole
-      video and shows **every frame the scan classifies**: the same frames `sample_frames` yields
-      at the scan rate (`--fps`, default 3.0 like the pipeline), chosen by the same rule
-      (every `max(1, round(native_fps / fps))`-th decoded frame). So at 3 fps the strip has 3 rows
-      per second, and the rows are exactly the frames a classifier would see. Each thumbnail shows
-      its timestamp and index, thumbnails load lazily as they scroll into view, and marked frames
-      carry a visible indicator. Clicking a thumbnail selects that frame. A mark on a frame that
-      isn't a strip row (set by stepping) is shown on the nearest row before it.
+      video and shows **every decoded frame**: one row per frame, in order, so a row is a frame
+      (`rows[i] == i`). There is no scan rate and no option for one. Each thumbnail shows its
+      timestamp and index, thumbnails load lazily as they scroll into view, and marked frames carry
+      a visible indicator. Clicking a thumbnail selects that frame. (Earlier versions showed only the
+      frames of a 3 fps scan; a row then stood for up to 8 frames, so a frame showed the scores of
+      another frame and a row could hold both meme and non-meme frames.)
 - [x] AC4: A large view shows the selected frame with its timestamp and index. Left/right step one
       frame, shift+left/right one second, and a jump-to-timestamp box moves the selection; holding a
       key repeats. The strip follows the selection, and neighbouring frames are preloaded so
@@ -69,7 +68,7 @@ classifier disagrees with me, and keep the result in the repo.
 - [x] AC12: Each strip row and the large view show **classifier info** for the frame: the verdict of
       the production classifier (`HeuristicClassifier`: flagged or not) and the score of every
       registered criterion (at least `band` and `texture` from `HeuristicClassifier.scores`), next to
-      the human label (marked or not). Scores are computed on the scanned frames only, in the same
+      the human label (marked or not). Scores are computed for every frame, in the same
       sequential pass that builds the thumbnails, and cached under `.runtime/` (AC9), so scrolling
       and filtering don't decode video.
 - [x] AC13: The criteria shown are the ones in `extract_memes.criteria` (see
@@ -104,7 +103,7 @@ classifier disagrees with me, and keep the result in the repo.
       a not-meme or unlabeled, never two: setting one replaces the other. Not-memes are saved to the
       dataset's `not_memes` list on every change, shown on strip rows and in the large view, listed
       beside the marks, and the human-label filter has meme / not meme / unlabeled.
-- [ ] AC17: `./labeler.sh <youtube-url-or-id> [--fps N] [--format-id ID] [--port N] [--proxy URL]`
+- [ ] AC17: `./labeler.sh <youtube-url-or-id> [--format-id ID] [--port N] [--proxy URL]`
       from anywhere starts the server with auto-reload: editing, adding or removing a Python file
       under `tools/labeling/` or `src/extract_memes/` restarts it, and a browser refresh picks up `page.html`. Marks survive a restart.
 - [ ] AC18: **Choosing the video in the page.** An "Open video" button opens a modal where I paste
@@ -234,16 +233,15 @@ classifier disagrees with me, and keep the result in the repo.
   to a cache under `.runtime/`; full frames are then decoded on request by reading forward from a
   nearby position and checking the index, because seeking alone can land on a different frame.
   A long video needs a progress indicator on that first pass.
-- A strip at 3 fps of an hour-long video is ~10,800 rows, so it must be virtualised (only rows near
-  the viewport exist in the DOM). Using `sample_frames`'s step rule means the strip rows match what
-  the pipeline scans, so a classifier evaluated on the dataset is judged on those same frames.
+- A strip of every frame of an hour-long 25 fps video is ~90,000 rows, so it must be virtualised (only
+  rows near the viewport exist in the DOM). The evaluation tool still judges the frames a 3 fps
+  scan would classify, by taking every `step`-th cached row.
 - Frames are served as JPEG at the video's own resolution; thumbnails smaller.
-- Stepping is by native frame even though the strip shows only the scanned frames, because a card
-  lasts only ~10 frames and the scan can skip it entirely (ADR 008, the sampling gap); the labeler
-  must let you mark a card the scan would miss.
+- A card lasts only ~10 frames and a 3 fps scan can skip it entirely (ADR 008, the sampling gap); the
+  labeler shows every frame so you can mark a card the scan would miss.
 
-- Scoring every scanned frame of an hour-long video at 3 fps is ~10,800 frames at about 0.5 ms
-  each (ADR 008), so it adds seconds to the first pass. Scores are kept per criterion so adding
+- Scoring every frame of an hour-long 25 fps video is ~90,000 frames; the first pass takes about a
+  minute and the thumbnails take ~350 MB per video under `.runtime/`. Scores are kept per criterion so adding
   one doesn't redo the others.
 - Filtering can be done in the page over the cached scores (no round trip per change); the server
   only has to serve the score table.
@@ -257,7 +255,7 @@ Resolved by the user (2026-10-07):
 - Q2: Overview? **A scrollable vertical timestrip of frames to select and edit labels** — AC3, AC5.
 - Quality: **a low-quality video is fine** — AC2.
 
-- Q3: Strip density? **Every frame the classifier sees (3 fps by default)** — AC3.
+- Q3: Strip density? ~~Every frame the classifier sees (3 fps by default)~~ **Every frame, always; no scan-rate option** (2026-10-07, after rows spanning several frames showed wrong scores and rigged the filters) — AC3.
 
 ## Changelog
 
@@ -428,3 +426,11 @@ Resolved by the user (2026-10-07):
 - 2026-10-07: The user asked that N/P, with a range selected, search after its end / before its beginning. `jumpMark` now
   starts from the selection's last / first frame and compares each meme's start..end (so a meme you are inside is skipped
   too). Checked in headless Chrome on synthetic in-page memes (single, inside a window, with ranges selected); the dataset file was not written.
+- 2026-10-07: The user asked to score each frame all the time and drop the scan-rate option: with a row
+  standing for up to 8 frames, a frame showed another frame's scores, a row could mix meme and
+  non-meme frames, and the filters and histogram were wrong. AC3, AC12 and Q3 rewritten: rows are
+  frames (`rows[i] == i`), every frame is scored and gets a thumbnail, `--fps`/`LABELER_FPS` and the
+  index's `fps`/`step` are gone, and the page's "between scanned frames" handling is removed. The
+  cache identity no longer includes a step, so existing caches are rebuilt once (~50 s and ~350 MB per
+  video at 25 fps, mostly thumbnails). The evaluation tool still judges at the pipeline's 3 fps by
+  taking every `step`-th cached row (`--scan-fps`, `--all-frames`), so its numbers are unchanged.

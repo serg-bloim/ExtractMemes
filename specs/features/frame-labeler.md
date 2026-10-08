@@ -36,13 +36,18 @@ classifier disagrees with me, and keep the result in the repo.
       "worst" tier; `--format-id` overrides) and creates `data/datasets/<video-id>.yaml` with the
       video identity on the first mark. Given a URL or id that already has a dataset, it loads that
       exact format (dataset AC5/AC6) and shows the existing marks.
-- [x] AC3: The page has a **vertical strip of thumbnails** on one side. It scrolls through the whole
-      video and shows **every decoded frame**: one row per frame, in order, so a row is a frame
-      (`rows[i] == i`). There is no scan rate and no option for one. Each thumbnail shows its
-      timestamp and index, thumbnails load lazily as they scroll into view, and marked frames carry
-      a visible indicator. Clicking a thumbnail selects that frame. (Earlier versions showed only the
-      frames of a 3 fps scan; a row then stood for up to 8 frames, so a frame showed the scores of
-      another frame and a row could hold both meme and non-meme frames.)
+- [x] AC3: The page has a **vertical strip** on one side that scrolls through the whole video in
+      **rows**. A row is a run of consecutive frames that look alike: a frame joins the row of the
+      frame before it when the step between them is at most the cut threshold of `similarity` (the
+      rule the W key uses), else it starts a new row. So a shot or a glitch card is one row (on
+      FtU4MuksCzE: 397 rows for 75,631 frames, and every meme window is exactly one row). Rows only
+      group the timeline; **every frame keeps its own scores, verdict and label**, and selecting,
+      marking, filtering and the histogram work on frames. A row shows a thumbnail of its middle frame
+      among those that match the filters (a shot's first and last frames can be fades), its time and frame range, how many of its frames match, and, per
+      criterion, the range of that criterion over those frames, with counts of marked, not-meme and
+      flagged frames. The strip is virtualised and thumbnails load lazily. Clicking a row selects
+      that frame; Shift/Cmd+click select all matching frames of the rows involved; the
+      strip highlights the row of the selected frame. There is no scan-rate option.
 - [x] AC4: A large view shows the selected frame with its timestamp and index. Left/right step one
       frame, shift+left/right one second, and a jump-to-timestamp box moves the selection; holding a
       key repeats. The strip follows the selection, and neighbouring frames are preloaded so
@@ -69,7 +74,7 @@ classifier disagrees with me, and keep the result in the repo.
       the production classifier (`HeuristicClassifier`: flagged or not) and the score of every
       registered criterion (at least `band` and `texture` from `HeuristicClassifier.scores`), next to
       the human label (marked or not). Scores are computed for every frame, in the same
-      sequential pass that builds the thumbnails, and cached under `.runtime/` (AC9), so scrolling
+      sequential pass that groups the rows and makes their thumbnails, and cached under `.runtime/` (AC9), so scrolling
       and filtering don't decode video.
 - [x] AC13: The criteria shown are the ones in `extract_memes.criteria` (see
       [classifier-criteria](classifier-criteria.md)), all of them, discovered at start: the labeler
@@ -233,15 +238,18 @@ classifier disagrees with me, and keep the result in the repo.
   to a cache under `.runtime/`; full frames are then decoded on request by reading forward from a
   nearby position and checking the index, because seeking alone can land on a different frame.
   A long video needs a progress indicator on that first pass.
-- A strip of every frame of an hour-long 25 fps video is ~90,000 rows, so it must be virtualised (only
-  rows near the viewport exist in the DOM). The evaluation tool still judges the frames a 3 fps
+- Rows come from `steps.npy` (the step between each frame and the one before, from 32x18 grayscale
+  descriptors, cached with a fingerprint of `similarity.py`), cut at the threshold when the index is
+  loaded, so a different threshold needs no new pass. Thumbnails are made for the middle frame of
+  each row after the pass (~400 per video, a few MB) and for any other frame on first request. The
+  strip is virtualised (only rows near the viewport exist in the DOM). The evaluation tool still judges the frames a 3 fps
   scan would classify, by taking every `step`-th cached row.
 - Frames are served as JPEG at the video's own resolution; thumbnails smaller.
 - A card lasts only ~10 frames and a 3 fps scan can skip it entirely (ADR 008, the sampling gap); the
   labeler shows every frame so you can mark a card the scan would miss.
 
 - Scoring every frame of an hour-long 25 fps video is ~90,000 frames; the first pass takes about a
-  minute and the thumbnails take ~350 MB per video under `.runtime/`. Scores are kept per criterion so adding
+  minute. Scores are kept per criterion so adding
   one doesn't redo the others.
 - Filtering can be done in the page over the cached scores (no round trip per change); the server
   only has to serve the score table.
@@ -255,7 +263,7 @@ Resolved by the user (2026-10-07):
 - Q2: Overview? **A scrollable vertical timestrip of frames to select and edit labels** — AC3, AC5.
 - Quality: **a low-quality video is fine** — AC2.
 
-- Q3: Strip density? ~~Every frame the classifier sees (3 fps by default)~~ **Every frame, always; no scan-rate option** (2026-10-07, after rows spanning several frames showed wrong scores and rigged the filters) — AC3.
+- Q3: Strip density? ~~Every frame the classifier sees (3 fps by default)~~ **Every frame is scored, always; the strip groups similar consecutive frames into rows** (2026-10-07, after rows spanning several sampled frames showed wrong scores and rigged the filters) — AC3.
 
 ## Changelog
 
@@ -434,3 +442,20 @@ Resolved by the user (2026-10-07):
   cache identity no longer includes a step, so existing caches are rebuilt once (~50 s and ~350 MB per
   video at 25 fps, mostly thumbnails). The evaluation tool still judges at the pipeline's 3 fps by
   taking every `step`-th cached row (`--scan-fps`, `--all-frames`), so its numbers are unchanged.
+- 2026-10-07: Rows redefined (see AC3): a row is a run of consecutive similar frames (step between
+  neighbours at most `similarity.CUT_THRESHOLD`), the same grouping the W key uses, while every frame
+  keeps its own scores, verdict and label and the filters, histogram and selection work on frames. The
+  index stores `steps.npy` and the rows are cut from it (`index.rows`, `index.row_last`, state
+  `rows`/`row_last`); thumbnails exist only for each row's first frame plus on demand, so the cache
+  shrank from ~350 MB to ~5 MB per video (the pass costs about the same). On the labeled videos:
+  FtU4MuksCzE 397 rows (max 3,495 frames), 5vGNfK5jL4U 468 rows; in FtU4MuksCzE all 81 marked memes
+  are exactly one row each with no unmarked frame in it, and the frames the labeler used to show with
+  another frame's scores (2741, 15776) are in rows of their own shot. Page changes: a row's filter
+  match is any of its frames; "A", Shift and Cmd+click select the matching frames of the rows; the
+  info panel's "near a mark" is computed per frame. The page was not checked in a browser (the Chrome
+  extension wasn't connected); the data and server behaviour were checked through the API and tests.
+- 2026-10-07: A row's thumbnail, and the frame a click selects, is now the middle one of its matching
+  frames instead of the first, because the first and last frames of a shot can be fades. The index
+  writes the thumbnails of the rows' middle frames (`(first + last) // 2`) in a second, light decode
+  after the rows are known; with a filter that leaves part of a row the middle matching frame's
+  thumbnail is made on request.

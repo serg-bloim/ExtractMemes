@@ -208,11 +208,13 @@
 const ROW_H = 68;
 let S;                       // server state
 let sel = 0;                 // selected native frame index
-let view = [];               // strip row numbers (into S.rows) that match the filters
+let view = [];               // strip row numbers (into S.rows) with at least one frame that matches the filters
+let rowShow = [];            // per strip row: the middle one of its frames that match the filters (the frame the row shows and selects)
+let rowHits = [];            // per strip row: how many of its frames match the filters
 let memeFrames = {has: () => false};
 let notFrames = new Set();
-let rowMarked = [];          // per strip row: is there a meme mark mapped to it
-let rowNot = [];             // per strip row: is there a not-a-meme mark mapped to it
+let frameMeme = new Uint8Array(0);   // per frame: is it inside a meme mark
+let frameNot = new Uint8Array(0);    // per frame: is it marked as not a meme
 let loadToken = 0;
 let hasSel = true;           // false after Esc: no frame is selected (`sel` is only where the arrows resume)
 let multi = new Set();       // native frames selected with shift/cmd+click (strip rows, gallery, tiles)
@@ -233,24 +235,24 @@ async function api(path, body, method, payload) {
   return data;
 }
 
-// The strip row of a frame: every frame is a row, so this is the frame index (kept inside the video).
-const rowOf = frame => Math.min(S.rows.length - 1, Math.max(0, frame));
+// The strip row of a frame: a row is a run of consecutive similar frames (S.rows[r]..S.row_last[r]).
+const rowOf = frame => S.row_of[Math.min(S.frame_count - 1, Math.max(0, frame))];
 
 function applyLabels(labels) {
   S.memes = labels.memes;
   S.not_memes = labels.not_memes || [];
   memeFrames = {has: f => S.memes.some(m => extent(m).lo <= f && f <= extent(m).hi)};   // a start..end covers all its frames
   notFrames = new Set(S.not_memes.map(m => m.frame));
-  rowMarked = new Array(S.rows.length).fill(false);
-  rowNot = new Array(S.rows.length).fill(false);
-  for (const m of S.memes) { const e = extent(m); for (let r = rowOf(e.lo); r <= rowOf(e.hi); r++) rowMarked[r] = true; }
-  for (const m of S.not_memes) rowNot[rowOf(m.frame)] = true;
+  frameMeme = new Uint8Array(S.frame_count);
+  frameNot = new Uint8Array(S.frame_count);
+  for (const m of S.memes) { const e = extent(m); frameMeme.fill(1, e.lo, e.hi + 1); }
+  for (const m of S.not_memes) frameNot[m.frame] = 1;
 }
 
 // The frames a meme covers: its start..end, or just its one frame when no edge is set.
 const extent = m => ({lo: m.start_frame ?? m.frame, hi: m.end_frame ?? m.frame});
 
-const humanLabel = r => rowMarked[r] ? "meme" : rowNot[r] ? "not_meme" : "none";
+const humanLabel = frame => frameMeme[frame] ? "meme" : frameNot[frame] ? "not_meme" : "none";
 
 function filters() {
   const f = {human: $("f-human").value, verdict: $("f-verdict").value, ranges: {},
@@ -263,15 +265,15 @@ function filters() {
   return f;
 }
 
-// Whether a row passes the filters; a filter marked "not" passes the rows it would otherwise exclude.
-function matches(row, f) {
+// Whether a frame passes the filters; a filter marked "not" passes the frames it would otherwise exclude.
+function matches(frame, f) {
   if (f.human !== "") {
-    const ok = f.human === "other" ? humanLabel(row) !== "meme" : humanLabel(row) === f.human;
+    const ok = f.human === "other" ? humanLabel(frame) !== "meme" : humanLabel(frame) === f.human;
     if (ok === f.invert.human) return false;
   }
-  if (f.verdict !== "" && (String(S.verdict[row]) === f.verdict) === f.invert.verdict) return false;
+  if (f.verdict !== "" && (String(S.verdict[frame]) === f.verdict) === f.invert.verdict) return false;
   for (const [name, [lo, hi]] of Object.entries(f.ranges)) {
-    const v = S.scores[name][row];
+    const v = S.scores[name][frame];
     if ((v >= lo && v <= hi) === !!f.invert[name]) return false;
   }
   return true;
@@ -292,31 +294,59 @@ function refilter() {
   syncResets();
   const f = filters();
   view = [];
-  for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) view.push(r);
-  $("count").textContent = view.length + " of " + S.rows.length + " frames shown · " +
-                           S.memes.length + " marked";
+  rowShow = new Array(S.rows.length).fill(-1);
+  rowHits = new Array(S.rows.length).fill(0);
+  let shown = 0;
+  for (let r = 0; r < S.rows.length; r++) {       // the middle frame: a row's first and last frames can be fades
+    const hit = [];
+    for (let fr = S.rows[r]; fr <= S.row_last[r]; fr++) if (matches(fr, f)) hit.push(fr);
+    if (hit.length) { rowShow[r] = hit[(hit.length - 1) >> 1]; rowHits[r] = hit.length; view.push(r); shown += hit.length; }
+  }
+  $("count").textContent = view.length + " of " + S.rows.length + " rows · " + shown + " of " + S.frame_count +
+                           " frames match · " + S.memes.length + " marked";
   $("spacer").style.height = view.length * ROW_H + "px";
   renderStrip();
   renderHistogram();
+}
+
+// What a row shows of its frames: the range of each criterion over the row's frames that match the filters.
+function rowStats(r, f) {
+  const lo = S.rows[r], hi = S.row_last[r];
+  let flagged = 0, memes = 0, nots = 0, n = 0;
+  const range = S.criteria.map(() => [Infinity, -Infinity]);
+  for (let fr = lo; fr <= hi; fr++) {
+    if (!matches(fr, f)) continue;
+    n++; flagged += S.verdict[fr]; memes += frameMeme[fr]; nots += frameNot[fr];
+    S.criteria.forEach((c, k) => { const v = S.scores[c.name][fr]; if (v < range[k][0]) range[k][0] = v; if (v > range[k][1]) range[k][1] = v; });
+  }
+  return {n, flagged, memes, nots, range};
 }
 
 function renderStrip() {
   const strip = $("strip"), spacer = $("spacer");
   const first = Math.max(0, Math.floor(strip.scrollTop / ROW_H) - 3);
   const last = Math.min(view.length, Math.ceil((strip.scrollTop + strip.clientHeight) / ROW_H) + 3);
-  const selRow = hasSel ? rowOf(sel) : -1;
+  const selRow = hasSel ? rowOf(sel) : -1, f = filters();
   const frag = document.createDocumentFragment();
   for (let i = first; i < last; i++) {
-    const r = view[i], idx = S.rows[r];
+    const r = view[i], idx = rowShow[r], lo = S.rows[r], hi = S.row_last[r];
+    const st = rowStats(r, f), total = hi - lo + 1;
+    let inMulti = false;
+    for (let fr = lo; fr <= hi && !inMulti; fr++) inMulti = multi.has(fr);
     const el = document.createElement("div");
-    el.className = "row-item" + (r === selRow ? " sel" : "") + (multi.has(idx) ? " multi" : "");
+    el.className = "row-item" + (r === selRow ? " sel" : "") + (inMulti ? " multi" : "");
     el.style.top = i * ROW_H + "px";
-    const scores = S.criteria.map(c => c.name.slice(0, 6) + " " + S.scores[c.name][r]).join(" · ");
+    const part = k => k === st.n || st.n === 0 ? "" : k + "/" + st.n + " ";
+    const scores = S.criteria.map((c, k) => {
+      const [a, b] = st.range[k];
+      return c.name.slice(0, 6) + " " + (a === b ? a : a + "–" + b);
+    }).join(" · ");
     el.innerHTML = '<img loading="lazy" src="/thumb/' + idx + '.jpg?v=' + S.version + '">' +
-      '<div class="meta"><div><span class="ts">' + fmt(S.pts[idx]) + '</span> <span class="dim">#' + idx + '</span> ' +
-      (rowMarked[r] ? '<span class="star">★ meme</span> ' : '') +
-      (rowNot[r] ? '<span class="no">✗ not meme</span> ' : '') +
-      (S.verdict[r] ? '<span class="flag">⚑ flagged</span>' : '') + '</div>' +
+      '<div class="meta"><div><span class="ts">' + fmt(S.pts[lo]) + (hi > lo ? "–" + fmt(S.pts[hi]) : "") + '</span> <span class="dim">#' + lo +
+      (hi > lo ? "–" + hi + " · " + (st.n === total ? total : st.n + " of " + total) + " frames" : "") + '</span> ' +
+      (st.memes ? '<span class="star">★ ' + part(st.memes) + 'meme</span> ' : '') +
+      (st.nots ? '<span class="no">✗ ' + part(st.nots) + 'not meme</span> ' : '') +
+      (st.flagged ? '<span class="flag">⚑ ' + part(st.flagged) + 'flagged</span>' : '') + '</div>' +
       '<div class="dim">' + scores + '</div></div>';
     el.onclick = e => clickRow(r, i, e);
     frag.appendChild(el);
@@ -332,27 +362,38 @@ function scrollToSelection() {
     strip.scrollTop = Math.max(0, i * ROW_H - strip.clientHeight / 2);
 }
 
-// A: select every row the strip shows (all of them, or those left by the filters).
+// The frames of the strip rows `rows` that match the filters.
+function framesOfRows(rows) {
+  const f = filters(), out = [];
+  for (const r of rows) for (let fr = S.rows[r]; fr <= S.row_last[r]; fr++) if (matches(fr, f)) out.push(fr);
+  return out;
+}
+
+// A: select every frame the strip shows (all of them, or those left by the filters).
 function selectAll() {
   if (!view.length) return;
-  const keep = hasSel && view.includes(rowOf(sel)) ? sel : S.rows[view[0]];
-  multi = new Set(view.map(r => S.rows[r]));
-  anchorFrame = S.rows[view[0]];
+  const keep = hasSel && view.includes(rowOf(sel)) ? sel : rowShow[view[0]];
+  multi = new Set(framesOfRows(view));
+  anchorFrame = rowShow[view[0]];
   select(keep, false, true);
 }
 
 function clickRow(r, i, e) {
-  if (e.shiftKey) {                                   // range over the rows currently shown
+  if (e.shiftKey) {                                   // every matching frame of the rows from the anchor's to this one
     const a = Math.max(0, view.indexOf(rowOf(anchorFrame)));
     const [lo, hi] = a <= i ? [a, i] : [i, a];
-    multi = new Set(view.slice(lo, hi + 1).map(x => S.rows[x]));
-    select(S.rows[r], false, true);
-  } else if (e.metaKey || e.ctrlKey) {
-    toggleInMulti(S.rows[r]);
-    select(S.rows[r], false, true);
+    multi = new Set(framesOfRows(view.slice(lo, hi + 1)));
+    select(rowShow[r], false, true);
+  } else if (e.metaKey || e.ctrlKey) {                // add or remove the row's frames
+    const frames = framesOfRows([r]);
+    multi = new Set(multi.size ? multi : hasSel ? [sel] : []);
+    const all = frames.every(fr => multi.has(fr));
+    for (const fr of frames) all ? multi.delete(fr) : multi.add(fr);
+    anchorFrame = rowShow[r];
+    select(rowShow[r], false, true);
   } else {
-    anchorFrame = S.rows[r];
-    select(S.rows[r], false);
+    anchorFrame = rowShow[r];
+    select(rowShow[r], false);
   }
 }
 
@@ -438,6 +479,13 @@ function renderInfo() {
   renderHistogram();
 }
 
+// Whether a frame lies within the exclusion window of any mark.
+function nearMark(f) {
+  const ts = S.pts[f];
+  return S.memes.some(m => { const e = extent(m); return S.pts[e.lo] - S.window <= ts && ts <= S.pts[e.hi] + S.window; }) ||
+         S.not_memes.some(m => Math.abs(S.pts[m.frame] - ts) <= S.window);
+}
+
 function renderInfoPanel() {
   $("big").hidden = !hasSel;
   $("none").hidden = hasSel;
@@ -453,7 +501,6 @@ function renderInfoPanel() {
     renderChips();
     return;
   }
-  const r = rowOf(sel);
   const marked = memeFrames.has(sel);
   const notMarked = notFrames.has(sel);
   $("view").classList.toggle("marked", marked);
@@ -467,12 +514,12 @@ function renderInfoPanel() {
     : (notMarked ? "Unmark not-a-meme" : "Mark as not a meme") + " (X)";
   let html = "<tr><td class='dim'>time</td><td>" + fmt(S.pts[sel]) + "</td></tr>" +
     "<tr><td class='dim'>frame</td><td>#" + sel + "</td></tr>" +
-    "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : notMarked ? "<span class='no'>✗ not a meme</span>" : (rowMarked[r] || rowNot[r] ? "near a mark" : "unlabeled")) + "</td></tr>" +
-    "<tr><td class='dim'>classifier</td><td>" + (S.verdict[r] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td></tr>";
+    "<tr><td class='dim'>human label</td><td>" + (marked ? "<span class='star'>★ meme</span>" : notMarked ? "<span class='no'>✗ not a meme</span>" : (nearMark(sel) ? "near a mark" : "unlabeled")) + "</td></tr>" +
+    "<tr><td class='dim'>classifier</td><td>" + (S.verdict[sel] ? "<span class='flag'>⚑ flagged</span>" : "not flagged") + "</td></tr>";
   const meme = S.memes.find(m => { const e = extent(m); return (m.start_frame != null || m.end_frame != null) && e.lo <= sel && sel <= e.hi; });
   if (meme) html += "<tr><td class='dim'>meme range</td><td>" + rangeText(meme) + "</td></tr>";
   for (const c of S.criteria)
-    html += "<tr><td class='dim'>" + c.name + "</td><td>" + S.scores[c.name][r] +
+    html += "<tr><td class='dim'>" + c.name + "</td><td>" + S.scores[c.name][sel] +
             (c.thresholds.length ? " <span class='dim'>(classifier: " + c.thresholds.map(t => t.op + " " + t.value).join(", ") + ")</span>" : "") + "</td></tr>";
   $("facts").innerHTML = html;
   renderChips();
@@ -595,14 +642,14 @@ function jumpMark(dir) {
 
 function jumpUnlabeled() {
   const near = ts => S.memes.some(m => { const e = extent(m); return S.pts[e.lo] - S.window <= ts && ts <= S.pts[e.hi] + S.window; });
-  for (let r = rowOf(sel) + 1; r < S.rows.length; r++)
-    if (!near(S.pts[S.rows[r]])) return select(S.rows[r]);
+  for (let f = sel + 1; f < S.frame_count; f++)
+    if (!near(S.pts[f])) return select(f);
 }
 
 function jumpInView(dir) {
   const cur = rowOf(sel);
   const r = dir > 0 ? view.find(v => v > cur) : [...view].reverse().find(v => v < cur);
-  if (r !== undefined) select(S.rows[r]);
+  if (r !== undefined) select(rowShow[r]);
 }
 
 function parseTime(text) {
@@ -703,7 +750,7 @@ function metrics() {
   return S.criteria.map(c => ({group: "Classifier criteria", name: c.name, values: S.scores[c.name], thresholds: c.thresholds, description: c.description}));
 }
 
-// Counts per bin and human label for `rows`, over the fixed range [lo, hi].
+// Counts per bin and human label for the frames `rows`, over the fixed range [lo, hi].
 function histogramData(values, rows, labelOf, lo, hi, bins) {
   const counts = Array.from({length: bins}, () => ({none: 0, not_meme: 0, meme: 0, total: 0}));
   const span = hi - lo || 1;
@@ -728,24 +775,22 @@ function summary(vals) {
 // the range can still be seen and changed on the chart.
 function histogramScope(metric) {
   if (multi.size > 1) {
-    const rows = [...new Set(Array.from(multi, rowOf))];
-    return {rows, base: null, outside: null, text: multi.size + " selected frames"};
+    return {rows: Array.from(multi), base: null, outside: null, text: multi.size + " selected frames"};
   }
   if (hasSel) {
-    const r = rowOf(sel);
-    return {rows: [r], base: null, outside: null, text: "frame #" + sel};
+    return {rows: [sel], base: null, outside: null, text: "frame #" + sel};
   }
   const f = filters();
   const own = f.ranges[metric.name];
   delete f.ranges[metric.name];
   const base = [];
-  for (let r = 0; r < S.rows.length; r++) if (matches(r, f)) base.push(r);
+  for (let fr = 0; fr < S.frame_count; fr++) if (matches(fr, f)) base.push(fr);
   const inverted = !!f.invert[metric.name];
   const rows = own ? base.filter(r => (metric.values[r] >= own[0] && metric.values[r] <= own[1]) !== inverted) : base;
   const inside = new Set(rows);
   const outside = own ? base.filter(r => !inside.has(r)) : null;                   // dimmed on the chart
-  const text = rows.length === S.rows.length ? "all " + S.rows.length + " frames"
-    : rows.length + " of " + S.rows.length + " frames (the strip's filters)";
+  const text = rows.length === S.frame_count ? "all " + S.frame_count + " frames"
+    : rows.length + " of " + S.frame_count + " frames (the strip's filters)";
   return {rows, base: own ? base : null, outside, text};
 }
 
@@ -1268,6 +1313,8 @@ $("src").addEventListener("keydown", e => { if (e.key === "Enter") lookup($("src
   wireFrames();
   layoutMain();
   refreshProfiles().catch(e => profileMessage(String(e), true));
+  S.row_of = new Int32Array(S.frame_count);        // frame -> the strip row it belongs to
+  S.rows.forEach((first, r) => S.row_of.fill(r, first, S.row_last[r] + 1));
   applyLabels(S);
   refilter();
   select(S.memes.length ? S.memes[0].frame : 0);

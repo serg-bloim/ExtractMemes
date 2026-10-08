@@ -15,7 +15,7 @@ from . import dataset as dataset_module
 from . import profiles as profiles_module
 from .dataset import Dataset
 from . import similarity
-from .index import FrameReader, Index
+from .index import FrameReader, Index, write_thumb
 from .workspace import BusyError, NoVideoError, Workspace
 
 PAGE = Path(__file__).with_name("page.html")
@@ -47,6 +47,7 @@ class LabelerApp:
             "frame_count": len(index.pts),
             "window": dataset_module.EXCLUSION_WINDOW_SECONDS,
             "rows": index.rows.tolist(),
+            "row_last": index.row_last.tolist(),
             "pts": [round(float(t), 3) for t in index.pts],
             "criteria": [
                 {"name": c.name, "description": c.description, "thresholds": index.thresholds.get(c.name, [])}
@@ -148,8 +149,13 @@ class LabelerApp:
         return self.labels()
 
     def thumb(self, frame: int) -> bytes | None:
+        """The thumbnail of a frame: made with the index for the first frame of a row, else on first request."""
+        if not 0 <= frame < len(self.index.pts):
+            return None
         path = self.index.thumb_dir / f"{frame}.jpg"
-        return path.read_bytes() if path.is_file() else None
+        if not path.is_file():
+            write_thumb(path, self.reader.get(frame))
+        return path.read_bytes()
 
     def frame_jpeg(self, frame: int) -> bytes:
         ok, buffer = cv2.imencode(".jpg", self.reader.get(self._check_frame(frame)),

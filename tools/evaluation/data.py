@@ -46,7 +46,7 @@ def _fresh(cache_dir: Path, names: list[str]) -> bool:
     except (OSError, ValueError):
         return False
     criteria = criteria_package.all_criteria()
-    return meta.get("every_frame") is True and (cache_dir / "pts.npy").is_file() and all(
+    return meta.get("every_frame") is True and meta.get("rows") == "similar-frames" and (cache_dir / "pts.npy").is_file() and all(
         meta.get("hashes", {}).get(n) == criteria[n].fingerprint() and (cache_dir / f"{n}.npy").is_file()
         for n in names
     )

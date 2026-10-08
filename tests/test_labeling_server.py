@@ -55,14 +55,14 @@ def post(base, path, body):
     return json.load(urllib.request.urlopen(request))
 
 
-def test_index_has_a_row_per_frame_with_scores_and_verdict(tmp_path, video):
+def test_index_scores_every_frame_and_groups_similar_frames_into_rows(tmp_path, video):
     index = build(video, tmp_path / "cache")
 
-    assert index.rows.tolist() == list(range(75))
+    assert index.rows.tolist() == [0] and index.row_last.tolist() == [74]  # no cut: one row of all frames
     assert len(index.pts) == 75 and index.pts[5] == pytest.approx(5 / FPS, abs=0.001)
     assert set(index.scores) == set(all_criteria())
     assert all(len(v) == 75 for v in index.scores.values()) and len(index.verdict) == 75
-    assert len(list(index.thumb_dir.glob("*.jpg"))) == 75
+    assert [p.name for p in index.thumb_dir.glob("*.jpg")] == ["37.jpg"]  # a thumbnail for the middle frame of each row
 
 
 def test_a_second_build_reads_the_cache_and_a_new_criterion_scores_only_itself(tmp_path, video, monkeypatch):
@@ -105,7 +105,7 @@ def test_state_endpoint_describes_the_video_and_scores(labeler):
 
     assert state["frame_count"] == 75 and state["memes"] == []
     assert "fps" not in state and "step" not in state
-    assert state["rows"] == list(range(75))
+    assert state["rows"] == [0] and state["row_last"] == [74]
     assert [c["name"] for c in state["criteria"]] == list(all_criteria())
     assert len(state["verdict"]) == 75 and len(state["scores"]["band"]) == 75
 
@@ -113,7 +113,7 @@ def test_state_endpoint_describes_the_video_and_scores(labeler):
 def test_thumbnail_and_frame_endpoints_serve_jpegs(labeler):
     _, base, _ = labeler
 
-    assert get(base + "/thumb/10.jpg").read(2) == b"\xff\xd8"
+    assert get(base + "/thumb/10.jpg").read(2) == b"\xff\xd8"  # not a row's middle frame: made on request
     full = get(base + "/frame/11.jpg")
     assert full.headers["Content-Type"] == "image/jpeg" and full.read(2) == b"\xff\xd8"
     with pytest.raises(urllib.error.HTTPError) as missing:
@@ -500,12 +500,12 @@ def test_the_labelers_scores_and_verdicts_for_every_frame_are_what_the_pipeline_
 
     frames = list(ds.iter_frames(video))
 
-    assert [i for i, _, _ in frames] == index.rows.tolist()
+    assert [i for i, _, _ in frames] == list(range(len(index.pts)))
     for row, (_, timestamp, frame) in enumerate(frames):
         for name, criterion in all_criteria().items():
             assert index.scores[name][row] == pytest.approx(criterion.score(frame), rel=1e-5, abs=1e-5), name
         assert bool(index.verdict[row]) == classifier.is_meme_frame(frame)
-        assert timestamp == pytest.approx(index.pts[index.rows[row]], abs=0.001)
+        assert timestamp == pytest.approx(index.pts[row], abs=0.001)
 
 
 def test_the_page_gets_the_classifiers_thresholds_for_the_criteria_it_uses(labeler):
@@ -553,3 +553,44 @@ def test_image_urls_are_versioned_per_video_so_the_browser_cannot_mix_videos_up(
     assert one.state()["version"].startswith("AAAAAAAAAAA-160-")
     html = (Path(__file__).parent.parent / "tools" / "labeling" / "page.html").read_text()
     assert html.count("?v=") >= 3 and "S.version" in html  # thumbs, the large frame and its preloads
+
+
+def test_a_new_row_starts_where_a_frame_differs_a_lot_from_the_one_before(tmp_path):
+    from tests.labeling_support import make_video_with_cuts
+
+    video = make_video_with_cuts(tmp_path / "cuts.mp4", cuts=(25, 50))
+
+    index = build(video, tmp_path / "cache")
+
+    assert index.rows.tolist() == [0, 25, 50] and index.row_last.tolist() == [24, 49, 74]
+    assert sorted(int(p.stem) for p in index.thumb_dir.glob("*.jpg")) == [12, 37, 62]  # the middle of 0-24, 25-49, 50-74
+    assert all(len(v) == 75 for v in index.scores.values())  # every frame keeps its own scores
+
+
+def test_rows_are_regrouped_without_a_new_pass_but_a_changed_similarity_code_redoes_it(tmp_path, monkeypatch):
+    from tests.labeling_support import make_video_with_cuts
+
+    video = make_video_with_cuts(tmp_path / "cuts.mp4", cuts=(25, 50))
+    build(video, tmp_path / "cache")
+    monkeypatch.setattr(index_module, "_run_pass", lambda *a, **k: pytest.fail("cache was not used"))
+    assert build(video, tmp_path / "cache").rows.tolist() == [0, 25, 50]
+    monkeypatch.undo()
+
+    meta = json.loads((tmp_path / "cache" / "meta.json").read_text())
+    meta["hashes"]["__steps__"] = "changed"
+    (tmp_path / "cache" / "meta.json").write_text(json.dumps(meta))
+    passes = []
+    original = index_module._run_pass
+    monkeypatch.setattr(index_module, "_run_pass", lambda *a: passes.append(1) or original(*a))
+    build(video, tmp_path / "cache")
+
+    assert passes == [1]
+
+
+def test_row_bounds_split_where_a_step_exceeds_the_threshold():
+    steps = np.array([np.inf, 1.0, 2.0, 80.0, 3.0, 41.0, 5.0])
+
+    first, last = index_module.row_bounds(steps)
+
+    assert first.tolist() == [0, 3, 5] and last.tolist() == [2, 4, 6]
+    assert index_module.row_bounds(steps, threshold=100)[0].tolist() == [0]

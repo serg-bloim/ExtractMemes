@@ -35,6 +35,15 @@ python=".venv/bin/python"
 # classifiers) or tools/labeling changes, new files included, which Flask's own reloader doesn't
 # notice (a criterion added as a new file is picked up).
 "$python" -m tools.labeling.network "$port"
-exec "$python" -m watchfiles --filter python \
-  "$python -m flask --app tools.labeling.wsgi:create_app run --no-reload --host 0.0.0.0 --port $port" \
-  src/extract_memes tools/labeling
+
+# Run in a loop: if the server exits or fails, start it again after a short pause.
+# Ctrl+C (or SIGTERM) stops the loop.
+trap 'exit 0' INT TERM
+while true; do
+  status=0
+  "$python" -m watchfiles --filter python \
+    "$python -m flask --app tools.labeling.wsgi:create_app run --no-reload --host 0.0.0.0 --port $port" \
+    src/extract_memes tools/labeling || status=$?
+  echo "labeler: server exited (status $status); restarting in 2s (Ctrl+C to stop)" >&2
+  sleep 2
+done

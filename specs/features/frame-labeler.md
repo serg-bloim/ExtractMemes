@@ -474,3 +474,5 @@ Resolved by the user (2026-10-07):
   change the marks, which the user accepted. Flask's `--debug` was dropped from `labeler.sh`, because
   its interactive debugger must not be reachable from the network (reloading is done by `watchfiles`).
   Checked: `http://192.168.1.208:8767/` answers 200, Host `8.8.8.8` and `evil.example` answer 403.
+- 2026-10-08: `labeler.sh` now runs the server in a loop: if it exits or fails it is restarted after
+  2 s; Ctrl+C or SIGTERM stops the loop.

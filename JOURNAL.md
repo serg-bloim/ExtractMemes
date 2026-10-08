@@ -160,3 +160,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-08: Added the scene score database (one YAML behind a SceneStore API) and a populate command; verification runs come later — [specs/features/scene-score-analysis.md](specs/features/scene-score-analysis.md).
 - 2026-10-08: Populate stores every scene with the stats of all criteria, using the labeler's default format, and reports errors — [specs/features/scene-score-analysis.md](specs/features/scene-score-analysis.md).
 - 2026-10-08: Scene database file is now a tree (video → formats → scenes), scenes keyed by first frame — [specs/features/scene-score-analysis.md](specs/features/scene-score-analysis.md).
+- 2026-10-08: `labeler.sh` restarts the server in a loop when it exits or fails — [specs/features/frame-labeler.md](specs/features/frame-labeler.md).

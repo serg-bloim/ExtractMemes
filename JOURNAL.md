@@ -175,3 +175,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-08: Added `python -m tools.scene_analysis verify`: Claude judges the scenes nearest the production threshold and the verdicts go into the scene database — [scene-score-analysis](specs/features/scene-score-analysis.md)
 - 2026-10-08: Added `python -m tools.scene_analysis browse`, a read-only web browser for the scene database (sort, filter, optional cached frame view) — [scene-score-analysis](specs/features/scene-score-analysis.md)
 - 2026-10-08: The labeler opens a frame from a locator in the query string (`?video=&format=&frame=` or `ts=`) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md)
+- 2026-10-08: Scene browser: left sidebar, min/max/mean filters, and a Frames link that opens the labeler on the scene — [scene-score-analysis](specs/features/scene-score-analysis.md)

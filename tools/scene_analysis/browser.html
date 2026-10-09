@@ -43,6 +43,7 @@
   .ph { background: var(--placeholder); color: var(--muted); font-size: 11px; display: flex; align-items: center; justify-content: center; text-align: center; }
   .v-meme { color: var(--meme); font-weight: 600; } .v-not_meme { color: var(--not); font-weight: 600; } .v-unsure { color: var(--unsure); font-weight: 600; }
   .muted { color: var(--muted); }
+  td a { color: var(--accent); }
   .bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; gap: 12px; flex-wrap: wrap; }
   .side { width: 360px; flex: none; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
   .side > section, aside { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
@@ -118,10 +119,21 @@ function verdict(c) {
            : h("span", { className: "muted", textContent: "–" });
 }
 
+// The labeler (default port 8765) opens the scene's middle frame, the one the thumbnail shows.
+const LABELER_PORT = 8765;
+function labelerLink(r) {
+  const frame = Math.floor((r.first_frame + r.last_frame) / 2);
+  const q = new URLSearchParams({ video: r.video_id, format: r.format_id, frame });
+  const a = h("a", { href: `http://${location.hostname}:${LABELER_PORT}/?${q}`, target: "_blank", rel: "noopener",
+                     textContent: r.first_frame + "–" + r.last_frame, title: "Open in the labeler" });
+  a.onclick = e => e.stopPropagation();   // don't also select the row
+  return a;
+}
+
 const columns = [
   { key: null, label: "Frame", cell: r => picture(r, r.has_thumb), thumb: true },
   { key: "video_id", label: "Video", cell: r => r.video_id + " / " + r.format_id },
-  { key: "first_frame", label: "Frames", cell: r => r.first_frame + "–" + r.last_frame },
+  { key: "first_frame", label: "Frames", cell: labelerLink },
   { key: "start_ts", label: "Time", cell: r => clock(r.start_ts), num: true },
   { key: "frame_count", label: "Count", cell: r => r.frame_count, num: true },
   { key: "min", label: "Min", cell: r => fmt(r.stats?.min), num: true },

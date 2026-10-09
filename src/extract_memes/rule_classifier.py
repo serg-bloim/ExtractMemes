@@ -48,6 +48,9 @@ class Condition(Rule):
     def __repr__(self) -> str:
         return f"Condition({self.criterion!r}, {self.op!r}, {self.value!r})"
 
+    def __str__(self) -> str:
+        return f"{self.criterion} {self.op} {self.value:g}"
+
 
 class _Combination(Rule):
     def __init__(self, *rules: Rule) -> None:
@@ -60,6 +63,10 @@ class _Combination(Rule):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({', '.join(map(repr, self.rules))})"
+
+    def __str__(self) -> str:
+        word = " and " if isinstance(self, AllOf) else " or "
+        return "(" + word.join(map(str, self.rules)) + ")"
 
 
 class AllOf(_Combination):

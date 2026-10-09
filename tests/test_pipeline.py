@@ -317,7 +317,7 @@ def test_no_memes(short_video, tmp_path, capsys, save_low_res):
         )
 
     assert saved == []
-    assert capsys.readouterr().out == "No memes found.\n"
+    assert capsys.readouterr().out.endswith("No memes found.\n")
     assert [call.args[1] for call in download_spy.call_args_list] == ["worst"]
     # high-res/ always exists and low-res/ only when asked for; both stay empty.
     run_dir = tmp_path / ".runtime" / "short"
@@ -728,7 +728,7 @@ def test_no_images_with_no_memes(short_video, tmp_path, capsys):
     )
 
     assert saved == []
-    assert capsys.readouterr().out == "No memes found.\n"
+    assert capsys.readouterr().out.endswith("No memes found.\n")
     assert not (tmp_path / ".runtime").exists()
 
 
@@ -1160,3 +1160,13 @@ def test_decodable_windows_with_no_flagged_frame_are_not_an_error(short_video, t
     saved = run(str(short_video), runtime_dir=tmp_path, classifier=classifier)
 
     assert saved == []
+
+
+def test_prints_rule_and_threshold_first(tmp_path, capsys):
+    from extract_memes.rule_classifier import AllOf, Condition
+    from extract_memes.rule_classifier import RuleClassifier
+
+    classifier = RuleClassifier(AllOf(Condition("edge_histogram", "<", 2.1), Condition("band", ">", 180)))
+    with pytest.raises(Exception):
+        pipeline.run(str(tmp_path / "missing.mp4"), classifier=classifier, runtime_dir=tmp_path, save_timecodes=True, no_images=True)
+    assert capsys.readouterr().out.startswith("Classifier rule: (edge_histogram < 2.1 and band > 180)\n")

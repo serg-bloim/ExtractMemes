@@ -330,3 +330,5 @@ All resolved:
   73.00 s, that 2 fps skips. Tests that depend on the 2 fps sampling pattern now pass `fps=2.0`
   explicitly; the default-run test expects the third card. `sample_frames`'s own default stays 2.0.
 
+- 2026-10-08: A run starts by printing the classifier: `Classifier rule: edge_histogram < 2.1` for a
+  rule classifier (criterion and threshold), or `Classifier: <ClassName>` otherwise.

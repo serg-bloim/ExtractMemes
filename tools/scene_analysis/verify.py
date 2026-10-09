@@ -217,10 +217,11 @@ class FrameSource:
 
 def verify(store: SceneStore, scenes: list[Scene], criterion: str, source,
            judge: Callable[[list[tuple[Path, Path]]], list[Judgement | None]], batch_size: int = 10,
-           progress: Callable[[str], None] = lambda message: None) -> Result:
+           progress: Callable[[str], None] = lambda message: None, save_every: int = 0) -> Result:
     """Judge each scene's lowest- and highest-score frames, `batch_size` scenes per call, and store the verdicts.
 
-    The run is one database session (`store.batch()`): the file is read once and written once at the end.
+    The run is one database session (`store.batch()`): the file is read once, written after every `save_every`
+    batches (0: only when the session ends) and when the session ends.
 
     `source` offers `scores(video, format, criterion)` and `frame(video, format, index)`. A scene that fails
     (no video, no scores, no valid answer, a rejected write) is listed in `Result.errors` and skipped; a failed
@@ -228,19 +229,23 @@ def verify(store: SceneStore, scenes: list[Scene], criterion: str, source,
     """
     if batch_size < 1:
         raise ValueError("batch_size must be at least 1")
+    if save_every < 0:
+        raise ValueError("save_every must be 0 or more")
     result = Result()
     # One database session for the whole run: the file is read once and written once, when the session closes.
     # Ctrl-C ends the run normally, so what was judged so far is still saved.
     with store.batch():
         try:
-            _run(store, scenes, criterion, source, judge, batch_size, progress, result)
+            _run(store, scenes, criterion, source, judge, batch_size, progress, result, save_every)
         except KeyboardInterrupt:
             result.errors.append("interrupted: the verdicts so far are saved")
     return result
 
 
-def _run(store, scenes, criterion, source, judge, batch_size, progress, result) -> None:
-    for start in range(0, len(scenes), batch_size):
+def _run(store, scenes, criterion, source, judge, batch_size, progress, result, save_every) -> None:
+    for number, start in enumerate(range(0, len(scenes), batch_size)):
+        if save_every and number and number % save_every == 0:
+            store.save()  # the batches judged so far; the last ones are saved when the session closes
         with tempfile.TemporaryDirectory() as tmp:
             ready = []  # (scene, low frame, high frame, image pair)
             for scene in scenes[start:start + batch_size]:

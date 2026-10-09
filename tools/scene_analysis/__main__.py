@@ -26,6 +26,8 @@ def main(argv: list[str] | None = None) -> int:
     ver.add_argument("--criterion", default="edge_histogram", help="criterion whose scores are ranked (default: %(default)s)")
     ver.add_argument("--top", type=int, default=100, help="how many scenes to check (default: %(default)s)")
     ver.add_argument("--batch-size", type=int, default=10, help="scenes (two frames each) per Claude call (default: %(default)s)")
+    ver.add_argument("--save-every-n-batches", type=int, default=0, metavar="N",
+                     help="write the database after every N batches; 0: only at the end (default: %(default)s)")
     ver.add_argument("--recheck", action="store_true", help="also take scenes that already have a Claude status")
     ver.add_argument("--dbg", action="store_true", help="print the time spent in each stage (database load / select / frames / Claude / verdicts / database save)")
     ver.add_argument("--dry-run", action="store_true", help="list the selected scenes; don't call Claude")
@@ -71,15 +73,15 @@ def main(argv: list[str] | None = None) -> int:
 def run_verify(args: argparse.Namespace) -> int:
     from tools.labeling.dataset import DOWNLOADS_DIR
 
-    if args.batch_size < 1:
-        print("ERROR: --batch-size must be at least 1", file=sys.stderr)
+    if args.batch_size < 1 or args.save_every_n_batches < 0:
+        print("ERROR: --batch-size must be at least 1 and --save-every-n-batches 0 or more", file=sys.stderr)
         return 1
     started = time.perf_counter()
     store = SceneStore(args.db)
     source = verify_module.FrameSource(DOWNLOADS_DIR, CACHE_ROOT)
     result = None
     try:
-        with store.batch():  # one session: the file is read once, and written once when the run ends
+        with store.batch():  # one session: the file is read once and written every N batches and when the run ends
             selecting = time.perf_counter()
             scenes = verify_module.select(store, args.criterion, args.top, args.recheck)
             select_seconds = time.perf_counter() - selecting
@@ -92,7 +94,8 @@ def run_verify(args: argparse.Namespace) -> int:
                           f"flagged {stats['share_flagged']:.2f}, check {verify_module.check_of(stats)}")
             else:
                 result = verify_module.verify(store, scenes, args.criterion, source,
-                                              verify_module.ClaudeJudge(args.model, args.effort), args.batch_size, progress=print)
+                                              verify_module.ClaudeJudge(args.model, args.effort), args.batch_size, progress=print,
+                                              save_every=args.save_every_n_batches)
     except Exception as exc:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1

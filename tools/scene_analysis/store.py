@@ -163,12 +163,27 @@ class SceneStore:
             self.timings["load"] += perf_counter() - started
             try:
                 yield self._videos
-                if self._dirty:
-                    started = perf_counter()
-                    self._save(self._videos)
-                    self.timings["save"] += perf_counter() - started
+                self._flush()
             finally:
                 self._videos, self._depth, self._dirty = None, 0, False
+
+    def _flush(self) -> bool:
+        """Write the open session's unsaved changes, if any; True if the file was written."""
+        if not self._dirty:
+            return False
+        started = perf_counter()
+        self._save(self._videos)
+        self._dirty = False
+        self.timings["save"] += perf_counter() - started
+        return True
+
+    def save(self) -> Response:
+        """Write the open session's changes to the file now, and carry on: 200 written, 204 nothing to write,
+        400 outside a session. The session still saves what changes after this when it closes (and rolls back to
+        this point, not to the start, if its block raises)."""
+        if not self._depth:
+            return Response(Status.BAD_REQUEST, "save() needs an open batch()")
+        return Response(Status.OK if self._flush() else Status.NO_CONTENT)
 
     def _load(self) -> list[dict]:
         if not self.path.exists():

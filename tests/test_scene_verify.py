@@ -154,13 +154,28 @@ def test_missing_video_is_an_error_and_calls_nothing(store):
     assert result.checked == 0 and len(result.errors) == 5 and not called
 
 
-def test_whole_run_is_one_read_and_one_write(store, monkeypatch):
+def count_writes(store, monkeypatch, restore=True, **options):
     writes = []
+    pristine = store.path.read_bytes()  # every count starts from the same database
     original = SceneStore._save
     monkeypatch.setattr(SceneStore, "_save", lambda self, videos: (writes.append(1), original(self, videos))[1])
     verify(store, select(store, "edge_histogram", 100), "edge_histogram", FakeSource(),
-           lambda pairs: [Judgement(True, True) for _ in pairs], batch_size=2)
-    assert len(writes) == 1
+           lambda pairs: [Judgement(True, True) for _ in pairs], **options)
+    if restore:
+        store.path.write_bytes(pristine)
+    return len(writes)
+
+
+def test_save_every_n_batches(store, monkeypatch):
+    assert count_writes(store, monkeypatch, batch_size=1, save_every=0) == 1  # only when the session closes
+    assert count_writes(store, monkeypatch, batch_size=1, save_every=2) == 3  # after batches 2 and 4, and at the end
+    assert count_writes(store, monkeypatch, batch_size=1, save_every=1) == 5  # after every batch (the last at the end)
+    assert count_writes(store, monkeypatch, batch_size=1) == 1  # default: only when the session closes
+    assert count_writes(store, monkeypatch, batch_size=5) == 1  # a single batch is written once
+
+
+def test_whole_run_is_one_read_and_one_write(store, monkeypatch):
+    assert count_writes(store, monkeypatch, restore=False, batch_size=2, save_every=0) == 1
     assert all(store.get_scene("vid", "160", f).data["claude"] for f in (0, 10, 20, 30, 40))
 
 
@@ -192,3 +207,19 @@ def test_timings_are_collected_per_stage(store):
     for label in ("database load", "select scenes", "frames", "claude (3 calls", "store verdicts", "database save", "total"):
         assert label in report
     assert "database save" in format_timings(store.timings, 0.5, None, 1.0) and "claude" not in format_timings(store.timings, 0.5, None, 1.0)
+
+
+def test_save_flushes_an_open_session_and_the_data_is_on_disk(store):
+    assert store.save().status == 400  # no session
+    with store.batch():
+        assert store.save().status == 204  # nothing changed yet
+        store.set_claude_status("vid", "160", 0, "meme", "x", "miss")
+        assert store.save().status == 200
+        assert SceneStore(store.path).snapshot().data[0]["claude"]["verdict"] == "meme"  # already readable by others
+        store.set_claude_status("vid", "160", 10, "meme", "y", "miss")
+    assert SceneStore(store.path).snapshot().data[1]["claude"]["verdict"] == "meme"
+
+
+def test_negative_save_every_is_refused(store):
+    with pytest.raises(ValueError):
+        verify(store, [], "edge_histogram", FakeSource(), lambda pairs: [], save_every=-1)

@@ -14,6 +14,7 @@ from extract_memes.classifier import ClaudeCliClassifier, FrameClassifier
 from extract_memes.downloader import download, fetch_source_info
 from extract_memes.frame_extractor import frames_from, sample_frames
 from extract_memes.heuristic_classifier import HeuristicClassifier
+from extract_memes.rule_classifier import RuleClassifier
 from extract_memes.telegram_timecode_sender import TelegramTimecodeSender
 from extract_memes.telegram_uploader import TelegramUploader
 from extract_memes.timecode_sender import TimecodeSender
@@ -163,6 +164,10 @@ def run(
             classifier = ClaudeCliClassifier(model=classifier_model, effort=classifier_effort)
         else:
             raise ValueError(f"classifier_type must be 'heuristic' or 'claude', not {classifier_type!r}")
+    if isinstance(classifier, RuleClassifier):
+        print(f"Classifier rule: {classifier.rule}")
+    else:
+        print(f"Classifier: {type(classifier).__name__}")
     if merge_window < 0:
         raise ValueError(f"merge_window must not be negative, not {merge_window!r}")
     if clean_method is not None and clean_method not in batch_cleaner.METHODS:

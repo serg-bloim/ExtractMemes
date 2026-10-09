@@ -18,6 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# Development tooling only (tools/labeling); the Dockerfile and the GitHub workflow install without it.
+labeling = ["PyYAML", "Flask", "watchfiles"]
 
 [project.scripts]
 extract-memes = "extract_memes.__main__:main"
@@ -25,7 +27,13 @@ extract-memes = "extract_memes.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# Reference data of the classifier criteria (see criteria/data/).
+extract_memes = ["criteria/data/*.json"]
+
 [tool.pytest.ini_options]
 # A bare `pytest` only collects tests/; playground/ files still run when given explicitly (IDE run icon).
 testpaths = ["tests"]
+# Lets tests import the development tools under tools/ (they are not part of the installed package).
+pythonpath = ["."]
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]

@@ -6,8 +6,10 @@ verdict goes back in through `SceneStore.set_claude_status`.
 
 import json
 import re
+import contextlib
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,6 +55,32 @@ class Result:
     checked: int = 0
     verdicts: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    timings: dict[str, float] = field(default_factory=lambda: {"frames": 0.0, "claude": 0.0, "verdicts": 0.0})  # seconds per stage
+    calls: int = 0  # Claude calls made
+
+
+@contextlib.contextmanager
+def _timed(result: "Result", stage: str):
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        result.timings[stage] += time.perf_counter() - started
+
+
+def format_timings(db: dict[str, float], select: float, result: "Result | None", total: float) -> str:
+    """The `--dbg` report: seconds per stage. `db` is `SceneStore.timings` (load and save of the file)."""
+    stages = [("database load", db["load"]), ("select scenes", select)]
+    if result is not None:
+        calls = f" ({result.calls} calls, {result.timings['claude'] / result.calls:.1f}s each)" if result.calls else ""
+        stages += [("frames", result.timings["frames"]), ("claude" + calls, result.timings["claude"]),
+                   ("store verdicts", result.timings["verdicts"])]
+    stages.append(("database save", db["save"]))
+    width = max(len(name) for name, _ in stages + [("total", 0)])
+    lines = [f"  {name:<{width}}  {seconds:8.2f}s  {seconds / total:5.1%}" if total else f"  {name:<{width}}  {seconds:8.2f}s"
+             for name, seconds in stages]
+    lines.append(f"  {'total':<{width}}  {total:8.2f}s")
+    return "timings:\n" + "\n".join(lines)
 
 
 def distance_from_threshold(stats: dict) -> float:
@@ -217,14 +245,15 @@ def _run(store, scenes, criterion, source, judge, batch_size, progress, result) 
             ready = []  # (scene, low frame, high frame, image pair)
             for scene in scenes[start:start + batch_size]:
                 try:
-                    video, fmt = scene["video_id"], scene["format_id"]
-                    low, high = extreme_frames(source.scores(video, fmt, criterion), scene["first_frame"], scene["last_frame"])
-                    pair = []
-                    for name, index in (("low", low), ("high", high)):
-                        path = Path(tmp) / f"scene{len(ready) + 1}_{name}_frame_{index}.jpg"
-                        if not cv2.imwrite(str(path), source.frame(video, fmt, index)):
-                            raise RuntimeError(f"could not write {path}")
-                        pair.append(path)
+                    with _timed(result, "frames"):
+                        video, fmt = scene["video_id"], scene["format_id"]
+                        low, high = extreme_frames(source.scores(video, fmt, criterion), scene["first_frame"], scene["last_frame"])
+                        pair = []
+                        for name, index in (("low", low), ("high", high)):
+                            path = Path(tmp) / f"scene{len(ready) + 1}_{name}_frame_{index}.jpg"
+                            if not cv2.imwrite(str(path), source.frame(video, fmt, index)):
+                                raise RuntimeError(f"could not write {path}")
+                            pair.append(path)
                 except Exception as exc:  # one bad scene must not stop the run
                     result.errors.append(f"{_where(scene)}: {type(exc).__name__}: {exc}")
                     continue
@@ -232,7 +261,9 @@ def _run(store, scenes, criterion, source, judge, batch_size, progress, result) 
             if not ready:
                 continue
             try:
-                judgements = judge([pair for *_, pair in ready])
+                result.calls += 1
+                with _timed(result, "claude"):
+                    judgements = judge([pair for *_, pair in ready])
             except Exception as exc:
                 result.errors.extend(f"{_where(scene)}: {type(exc).__name__}: {exc}" for scene, *_ in ready)
                 continue
@@ -242,8 +273,9 @@ def _run(store, scenes, criterion, source, judge, batch_size, progress, result) 
                     continue
                 verdict = verdict_of(judgement)
                 reason = f"frame {low} {'YES' if judgement.low else 'NO'}, frame {high} {'YES' if judgement.high else 'NO'}: {judgement.reason}"
-                response = store.set_claude_status(scene["video_id"], scene["format_id"], scene["first_frame"], verdict, reason,
-                                                   check_of(scene["stats"][criterion]))
+                with _timed(result, "verdicts"):
+                    response = store.set_claude_status(scene["video_id"], scene["format_id"], scene["first_frame"], verdict, reason,
+                                                       check_of(scene["stats"][criterion]))
                 if not response.ok:
                     result.errors.append(f"{_where(scene)}: {response.status} {response.message}")
                     continue

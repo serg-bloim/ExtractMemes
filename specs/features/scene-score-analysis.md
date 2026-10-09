@@ -106,7 +106,7 @@ missed memes and false positives without labeling the videos by hand.
 ### Part 2 — Verification
 
 - [x] AC9: `python -m tools.scene_analysis verify [--criterion edge_histogram] [--top 100] [--recheck]
-      [--batch-size 10] [--dry-run] [--model M] [--effort E] [--db FILE]` picks scenes from the database through
+      [--batch-size 10] [--dbg] [--dry-run] [--model M] [--effort E] [--db FILE]` picks scenes from the database through
       `SceneStore.select_scenes`, has Claude judge two frames of each, and records the result through
       `set_claude_status`. Selection: every scene that has stats for the criterion with a condition
       (non-null `threshold`) is ranked by its **distance from the threshold** — 0 if `min..max`
@@ -124,7 +124,9 @@ missed memes and false positives without labeling the videos by hand.
       whose Claude call fails (all scenes of that batch) or gives no valid answer for it is listed and skipped (nothing is written for
       it); the rest continues. The whole run is one database session (`store.batch()`: one read, one write when it ends, the file locked meanwhile); Ctrl-C ends the run normally so the verdicts so far are saved. The command prints a summary
       (checked, per verdict, errors) and exits non-zero if there was any error. `--dry-run` lists the selected
-      scenes and calls nothing.
+      scenes and calls nothing. `--dbg` prints the seconds (and share of the total) spent in each stage: database
+      load, scene selection, frame retrieval, waiting for Claude (with the call count), storing verdicts in
+      memory and database save.
 - [x] AC12: Offline tests (fake judge, fake frames, temp database) cover: ranking by distance (straddling = 0),
       skipping checked scenes and `--recheck`, `--top`, min/max frame choice, verdict mapping, `check` choice,
       batching, answer parsing, and errors not stopping the run, one read and one write per run, Ctrl-C saving what was judged.
@@ -198,3 +200,4 @@ Q5 — CLI (assumed; not a labeler page).
 - 2026-10-08: `verify` batches scenes per Claude call (`--batch-size`, default 10 scenes = 20 images); a failed call fails its batch, a scene missing from the answer fails alone.
 - 2026-10-08: `verify` runs in one `store.batch()` session (one read, one write at the end) instead of rewriting the database per verdict; Ctrl-C still saves the verdicts so far.
 - 2026-10-08: Added the read-only scene browser (AC13–AC17): `browse` subcommand, `tools/scene_analysis/browser.py` + `browser.html`, and a lock-free `SceneStore.snapshot`. API and page checked against a copy of the real database; the page itself has not been looked at in a browser yet.
+- 2026-10-08: `verify --dbg` prints the time per stage (database load, select, frames, Claude, verdicts, database save); `SceneStore.timings` accumulates the load and save time of its sessions.

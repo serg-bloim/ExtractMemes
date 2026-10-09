@@ -177,3 +177,18 @@ def test_ctrl_c_saves_what_was_judged_so_far(store):
     assert result.checked == 2 and "interrupted" in result.errors[-1]
     assert store.get_scene("vid", "160", 20).data["claude"] is not None
     assert store.get_scene("vid", "160", 10).data["claude"] is None
+
+
+def test_timings_are_collected_per_stage(store):
+    from tools.scene_analysis.verify import format_timings
+
+    with store.batch():
+        result = verify(store, select(store, "edge_histogram", 100), "edge_histogram", FakeSource(),
+                        lambda pairs: [Judgement(True, True) for _ in pairs], batch_size=2)
+    assert result.calls == 3 and set(result.timings) == {"frames", "claude", "verdicts"}
+    assert all(seconds >= 0 for seconds in result.timings.values())
+    assert store.timings["load"] > 0 and store.timings["save"] > 0
+    report = format_timings(store.timings, 0.5, result, 10.0)
+    for label in ("database load", "select scenes", "frames", "claude (3 calls", "store verdicts", "database save", "total"):
+        assert label in report
+    assert "database save" in format_timings(store.timings, 0.5, None, 1.0) and "claude" not in format_timings(store.timings, 0.5, None, 1.0)

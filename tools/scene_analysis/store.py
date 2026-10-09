@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any
 from datetime import datetime, timezone
+from time import perf_counter
 from pathlib import Path
 
 import yaml
@@ -135,6 +136,7 @@ class SceneStore:
         self._videos: list[dict] | None = None  # loaded state while a transaction is open
         self._depth = 0
         self._dirty = False
+        self.timings = {"load": 0.0, "save": 0.0}  # seconds spent reading / writing the file by this store's sessions
 
     # --- Transactions -----------------------------------------------------------------------------
 
@@ -156,11 +158,15 @@ class SceneStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._lock_path, "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
+            started = perf_counter()
             self._videos, self._dirty, self._depth = self._load(), False, 1
+            self.timings["load"] += perf_counter() - started
             try:
                 yield self._videos
                 if self._dirty:
+                    started = perf_counter()
                     self._save(self._videos)
+                    self.timings["save"] += perf_counter() - started
             finally:
                 self._videos, self._depth, self._dirty = None, 0, False
 

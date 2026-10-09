@@ -62,6 +62,24 @@ def _flagged_matches(stats: dict | None, wanted: str) -> bool:
     return {"none": share == 0, "mixed": 0 < share < 1, "all": share == 1}.get(wanted, True)
 
 
+def _bound(params: dict, name: str) -> float | None:
+    try:
+        return float(params[name]) if params.get(name) not in (None, "") else None
+    except ValueError:
+        return None
+
+
+def _in_ranges(stats: dict | None, ranges: dict) -> bool:
+    """Whether the criterion's min/max/mean each lie within their (low, high) bounds; a scene without stats fails any bound."""
+    for key, (low, high) in ranges.items():
+        if low is None and high is None:
+            continue
+        value = None if stats is None else stats[key]
+        if value is None or low is not None and value < low or high is not None and value > high:
+            return False
+    return True
+
+
 def query(scenes: list[Scene], params: dict) -> dict:
     """Filter, sort and page `scenes` by the request parameters (all optional, see `browser.html` for the names)."""
     criteria = sorted({name for s in scenes for name in s["stats"]})
@@ -69,6 +87,8 @@ def query(scenes: list[Scene], params: dict) -> dict:
     video, fmt = params.get("video") or "", params.get("format") or ""
     claude, check = params.get("claude") or "any", params.get("check") or "any"
     flagged, text = params.get("flagged") or "any", (params.get("q") or "").strip().lower()
+
+    ranges = {k: (_bound(params, k + "_from"), _bound(params, k + "_to")) for k in ("min", "max", "mean")}
 
     def keep(scene: Scene) -> bool:
         if video and scene["video_id"] != video or fmt and scene["format_id"] != fmt:
@@ -82,7 +102,7 @@ def query(scenes: list[Scene], params: dict) -> dict:
             return False
         if text and not (verdict and text in verdict["reason"].lower()):
             return False
-        return _flagged_matches(scene["stats"].get(criterion), flagged)
+        return _in_ranges(scene["stats"].get(criterion), ranges) and _flagged_matches(scene["stats"].get(criterion), flagged)
 
     views = [_view(s, criterion) for s in scenes if keep(s)]
     key = params.get("sort") if params.get("sort") in SORT_KEYS else "video_id"

@@ -16,8 +16,13 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
   header { padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
-  h1 { font-size: 16px; margin: 0 0 8px; }
-  .filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: end; }
+  h1 { font-size: 16px; margin: 0; }
+  .filters { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; }
+  .filters > label { flex-direction: row; grid-column: 1; font-size: 13px; }
+  .filters .field { grid-column: 2; display: flex; gap: 6px; min-width: 0; }
+  .filters .field > * { flex: 1; min-width: 0; }
+  .filters .wide { grid-column: 1 / -1; }
+  .filters input[type=number] { font: inherit; padding: 4px 6px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
   label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
   label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
   select, input[type=search] { font: inherit; padding: 4px 6px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
@@ -39,36 +44,45 @@
   .v-meme { color: var(--meme); font-weight: 600; } .v-not_meme { color: var(--not); font-weight: 600; } .v-unsure { color: var(--unsure); font-weight: 600; }
   .muted { color: var(--muted); }
   .bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; gap: 12px; flex-wrap: wrap; }
-  aside { width: 360px; flex: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; position: sticky; top: 110px; }
+  .side { width: 360px; flex: none; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+  .side > section, aside { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
   aside .thumb, aside .ph { width: 100%; height: auto; aspect-ratio: 16 / 9; }
   aside h2 { font-size: 14px; margin: 0 0 8px; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0; }
   dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
   .stats th, .stats td { padding: 3px 6px; font-size: 12px; position: static; cursor: default; }
   .error { padding: 16px; color: var(--not); }
-  @media (max-width: 900px) { main { flex-direction: column; } aside { width: 100%; position: static; } }
+  @media (max-width: 900px) { main { flex-direction: column; } .side { width: 100%; position: static; max-height: none; } }
 </style>
 </head>
 <body>
 <header>
   <h1>Scene browser <span class="muted" id="summary"></span></h1>
-  <div class="filters">
-    <label>Video <select id="video"></select></label>
-    <label>Format <select id="format"></select></label>
-    <label>Criterion <select id="criterion"></select></label>
-    <label>Claude
-      <select id="claude">
-        <option value="any">any</option><option value="none">not checked</option><option value="checked">checked</option>
-        <option value="meme">meme</option><option value="not_meme">not meme</option><option value="unsure">unsure</option>
-      </select></label>
-    <label>Check <select id="check"><option value="any">any</option><option value="miss">miss</option><option value="false_positive">false positive</option></select></label>
-    <label>Flagged
-      <select id="flagged"><option value="any">any</option><option value="none">none flagged</option><option value="mixed">mixed</option><option value="all">all flagged</option></select></label>
-    <label>Reason contains <input type="search" id="q" placeholder="text"></label>
-    <label class="inline"><input type="checkbox" id="thumbs" checked> Frame view</label>
-  </div>
 </header>
 <main>
+  <div class="side">
+  <section>
+  <div class="filters">
+    <label for="video">Video</label><div class="field"><select id="video"></select></div>
+    <label for="format">Format</label><div class="field"><select id="format"></select></div>
+    <label for="criterion">Criterion</label><div class="field"><select id="criterion"></select></div>
+    <label for="claude">Claude</label>
+    <div class="field"><select id="claude">
+        <option value="any">any</option><option value="none">not checked</option><option value="checked">checked</option>
+        <option value="meme">meme</option><option value="not_meme">not meme</option><option value="unsure">unsure</option>
+      </select></div>
+    <label for="check">Check</label><div class="field"><select id="check"><option value="any">any</option><option value="miss">miss</option><option value="false_positive">false positive</option></select></div>
+    <label for="flagged">Flagged</label>
+    <div class="field"><select id="flagged"><option value="any">any</option><option value="none">none flagged</option><option value="mixed">mixed</option><option value="all">all flagged</option></select></div>
+    <label for="min_from">Min</label><div class="field"><input type="number" step="any" id="min_from" placeholder="from"><input type="number" step="any" id="min_to" placeholder="to"></div>
+    <label for="max_from">Max</label><div class="field"><input type="number" step="any" id="max_from" placeholder="from"><input type="number" step="any" id="max_to" placeholder="to"></div>
+    <label for="mean_from">Mean</label><div class="field"><input type="number" step="any" id="mean_from" placeholder="from"><input type="number" step="any" id="mean_to" placeholder="to"></div>
+    <label for="q">Reason contains</label><div class="field"><input type="search" id="q" placeholder="text"></div>
+    <label class="inline wide"><input type="checkbox" id="thumbs" checked> Frame view</label>
+  </div>
+  </section>
+  <aside id="detail" hidden></aside>
+  </div>
   <div class="table-wrap">
     <div class="bar">
       <span id="count" class="muted"></span>
@@ -80,7 +94,6 @@
     <div id="error" class="error" hidden></div>
     <table><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table>
   </div>
-  <aside id="detail" hidden></aside>
 </main>
 <script>
 const $ = id => document.getElementById(id);
@@ -97,7 +110,7 @@ const clock = s => { const m = Math.floor(s / 60); return m + ":" + (s - m * 60)
 const thumbUrl = r => `/thumb/${encodeURIComponent(r.video_id)}/${encodeURIComponent(r.format_id)}/${r.first_frame}/${r.last_frame}.jpg`;
 
 function picture(r, hasThumb) {
-  return hasThumb ? h("img", { className: "thumb", src: thumbUrl(r), loading: "lazy", alt: "" })
+  return hasThumb ? h("img", { className: "thumb", src: thumbUrl(r), decoding: "async", alt: "" })
                   : h("div", { className: "ph", textContent: "no cached frame" });
 }
 function verdict(c) {
@@ -137,7 +150,7 @@ function renderHead() {
 
 function params() {
   const p = new URLSearchParams({ sort: state.sort, dir: state.dir, page: state.page, size: $("size").value });
-  for (const id of ["video", "format", "criterion", "claude", "check", "flagged", "q"]) if ($(id).value) p.set(id, $(id).value);
+  for (const id of ["video", "format", "criterion", "claude", "check", "flagged", "q", "min_from", "min_to", "max_from", "max_to", "mean_from", "mean_to"]) if ($(id).value) p.set(id, $(id).value);
   return p;
 }
 
@@ -148,10 +161,13 @@ function fillSelect(select, values, keepAny) {
   if ([...select.options].some(o => o.value === current)) select.value = current;
 }
 
+let loadSeq = 0;
 async function load() {
   renderHead();
+  const seq = ++loadSeq;
   const response = await fetch("/api/scenes?" + params());
   const data = await response.json();
+  if (seq !== loadSeq) return;  // a newer filter change superseded this response
   $("error").hidden = response.ok;
   if (!response.ok) { $("error").textContent = data.error; return; }
   state.page = data.page;
@@ -218,7 +234,8 @@ function statsTable(stats) {
 
 for (const id of ["video", "format", "criterion", "claude", "check", "flagged", "size"]) $(id).onchange = () => { if (id === "video") $("format").value = ""; state.page = 1; load(); };
 let timer;
-$("q").oninput = () => { clearTimeout(timer); timer = setTimeout(() => { state.page = 1; load(); }, 300); };
+for (const id of ["q", "min_from", "min_to", "max_from", "max_to", "mean_from", "mean_to"])
+  $(id).oninput = () => { clearTimeout(timer); timer = setTimeout(() => { state.page = 1; load(); }, 300); };
 $("thumbs").onchange = load;
 $("prev").onclick = () => { state.page--; load(); };
 $("next").onclick = () => { state.page++; load(); };

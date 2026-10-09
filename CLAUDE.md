@@ -84,7 +84,7 @@ ExtractMemes/
 │   └── evaluation/               ← Dev-only criteria evaluation: per-criterion errors / separation margin and a
 │                                   search for the smallest rule; `python -m tools.evaluation` (see criteria-evaluation spec).
 │   └── scene_analysis/           ← Dev-only scene score database (`data/datasets/scene_analysis/scene_analysis.yaml`, gitignored with datasets/), reached only via
-│                                   `store.SceneStore`; `python -m tools.scene_analysis populate <url-or-id>`, then `... verify` (Claude judges, in batches, the scenes nearest the threshold) (see scene-score-analysis spec).
+│                                   `store.SceneStore`; `python -m tools.scene_analysis populate <url-or-id>`, then `... verify` (Claude judges, in batches, the scenes nearest the threshold), then `... browse` (read-only web view of the database) (see scene-score-analysis spec).
 ├── sample/                       ← Local video fixtures, supplied by hand (gitignored)
 ├── data/
 │   ├── datasets/<video-id>.yaml  ← Labeled videos: exact format + marked memes (frame, ts); no images

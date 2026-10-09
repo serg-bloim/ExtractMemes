@@ -129,6 +129,29 @@ missed memes and false positives without labeling the videos by hand.
       skipping checked scenes and `--recheck`, `--top`, min/max frame choice, verdict mapping, `check` choice,
       batching, answer parsing, and errors not stopping the run, one read and one write per run, Ctrl-C saving what was judged.
 
+### Part 3 — Scene browser
+
+- [x] AC13: `python -m tools.scene_analysis browse [--port 8766] [--host 127.0.0.1] [--db FILE]` serves a
+      read-only web page whose rows are **scenes** (not frames). It never writes the database. Scenes are read with
+      `SceneStore.snapshot(predicate)`, which reads the last saved file without taking the lock, so browsing does not
+      wait for a `verify` session (which holds the lock until it ends and does not show its unsaved verdicts).
+      The data is reloaded when the file changes. Requests addressed to a non-local host name are refused (403),
+      as in the labeler.
+- [x] AC14: Sorting (server side, click a column header again to reverse): video, frames, time, frame count, the
+      chosen criterion's min / max / mean / share flagged / distance from the threshold (as in AC9), Claude verdict,
+      checked time. Scenes with no value for the sort key come last in either direction.
+- [x] AC15: Filtering: video, format, criterion (which one the stat columns and the flagged / distance filters use,
+      default `edge_histogram`), Claude status (any / not checked / checked / meme / not meme / unsure), check
+      (miss / false positive), flagged (none / mixed / all), and text in Claude's reason. Paged (25–200 per page);
+      shows the total and the verdict counts of the filtered set. Selecting a scene shows all its criteria's stats
+      and Claude's verdict and reason.
+- [x] AC16: Frame view (switchable on the page): a scene's picture is the middle frame from the labeler's
+      thumbnail cache (`.runtime/labeler/<video>_<format>/thumbs/<frame>.jpg`). Nothing is decoded or downloaded: a
+      scene whose picture isn't cached shows a "no cached frame" placeholder, and its thumbnail URL answers 404.
+- [x] AC17: Offline tests cover: sorting incl. missing values last, every filter, paging limits, the thumbnail lookup
+      (cached / missing / unsafe ids), the endpoints and the 403 for a foreign host, reload on file change, and
+      `snapshot` not waiting for another session's lock.
+
 ## Out of Scope
 
 - Changing the production rule or threshold automatically; this only produces evidence.
@@ -174,3 +197,4 @@ Q5 — CLI (assumed; not a labeler page).
 - 2026-10-08: Implemented Part 2 (AC9–AC12): `tools/scene_analysis/verify.py` and the `verify` subcommand, tests in `tests/test_scene_verify.py`. Smoke-tested with one real scene (rCR1ws3fq88) on a copy of the database; ties in the ranking keep database order.
 - 2026-10-08: `verify` batches scenes per Claude call (`--batch-size`, default 10 scenes = 20 images); a failed call fails its batch, a scene missing from the answer fails alone.
 - 2026-10-08: `verify` runs in one `store.batch()` session (one read, one write at the end) instead of rewriting the database per verdict; Ctrl-C still saves the verdicts so far.
+- 2026-10-08: Added the read-only scene browser (AC13–AC17): `browse` subcommand, `tools/scene_analysis/browser.py` + `browser.html`, and a lock-free `SceneStore.snapshot`. API and page checked against a copy of the real database; the page itself has not been looked at in a browser yet.

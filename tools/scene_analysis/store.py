@@ -331,6 +331,20 @@ class SceneStore:
 
         return self._guarded(work)
 
+    def snapshot(self, predicate: Callable[[Scene], bool] = lambda scene: True) -> Response:
+        """Like `select_scenes`, but from the last saved file and without the lock, so it never waits for a writer.
+
+        Writes replace the file atomically, so this always sees one complete saved version; the unsaved changes of
+        another process's open session are not in it. Inside this store's own session it reads the session's state.
+        """
+
+        def work() -> Response:
+            videos = self._videos if self._depth else self._load()
+            flat = (_flat(v["video_id"], f["format_id"], s) for v in videos for f in v["formats"] for s in f["scenes"])
+            return Response(Status.OK, data=[s for s in flat if predicate(s)])
+
+        return self._guarded(work)
+
     def set_claude_status(self, video_id: str, format_id: str, frame_index: int, verdict: str, reason: str = "",
                           check: str = "miss") -> Response:
         """Record Claude's verdict on the scene holding this frame: 201 if it had none, 200 if it replaced a

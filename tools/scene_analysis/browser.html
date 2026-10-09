@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scene browser</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #dcdcd6; --accent: #2b59c3;
+    --meme: #1a7f3c; --not: #b3261e; --unsure: #9a6700; --placeholder: #e9e9e4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --panel: #1f1f1d; --text: #e8e8e4; --muted: #9a9a93; --line: #34342f; --accent: #8ab0ff;
+            --meme: #5dd382; --not: #ff8a80; --unsure: #f0c14b; --placeholder: #2a2a27; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  header { padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: end; }
+  label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+  label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
+  select, input[type=search] { font: inherit; padding: 4px 6px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
+  button { font: inherit; padding: 4px 10px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  main { display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
+  .table-wrap { flex: 1; min-width: 0; overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { cursor: pointer; user-select: none; font-size: 12px; color: var(--muted); position: sticky; top: 0; background: var(--panel); }
+  th.sorted { color: var(--text); }
+  th.static { cursor: default; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.row { cursor: pointer; }
+  tr.row:hover { background: var(--bg); }
+  tr.row.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .thumb, .ph { width: 96px; height: 54px; border-radius: 3px; display: block; object-fit: cover; }
+  .ph { background: var(--placeholder); color: var(--muted); font-size: 11px; display: flex; align-items: center; justify-content: center; text-align: center; }
+  .v-meme { color: var(--meme); font-weight: 600; } .v-not_meme { color: var(--not); font-weight: 600; } .v-unsure { color: var(--unsure); font-weight: 600; }
+  .muted { color: var(--muted); }
+  .bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; gap: 12px; flex-wrap: wrap; }
+  aside { width: 360px; flex: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; position: sticky; top: 110px; }
+  aside .thumb, aside .ph { width: 100%; height: auto; aspect-ratio: 16 / 9; }
+  aside h2 { font-size: 14px; margin: 0 0 8px; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0; }
+  dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+  .stats th, .stats td { padding: 3px 6px; font-size: 12px; position: static; cursor: default; }
+  .error { padding: 16px; color: var(--not); }
+  @media (max-width: 900px) { main { flex-direction: column; } aside { width: 100%; position: static; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Scene browser <span class="muted" id="summary"></span></h1>
+  <div class="filters">
+    <label>Video <select id="video"></select></label>
+    <label>Format <select id="format"></select></label>
+    <label>Criterion <select id="criterion"></select></label>
+    <label>Claude
+      <select id="claude">
+        <option value="any">any</option><option value="none">not checked</option><option value="checked">checked</option>
+        <option value="meme">meme</option><option value="not_meme">not meme</option><option value="unsure">unsure</option>
+      </select></label>
+    <label>Check <select id="check"><option value="any">any</option><option value="miss">miss</option><option value="false_positive">false positive</option></select></label>
+    <label>Flagged
+      <select id="flagged"><option value="any">any</option><option value="none">none flagged</option><option value="mixed">mixed</option><option value="all">all flagged</option></select></label>
+    <label>Reason contains <input type="search" id="q" placeholder="text"></label>
+    <label class="inline"><input type="checkbox" id="thumbs" checked> Frame view</label>
+  </div>
+</header>
+<main>
+  <div class="table-wrap">
+    <div class="bar">
+      <span id="count" class="muted"></span>
+      <span>
+        <label class="inline">Per page <select id="size"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label>
+        <button id="prev">‹ Prev</button> <span id="pageinfo"></span> <button id="next">Next ›</button>
+      </span>
+    </div>
+    <div id="error" class="error" hidden></div>
+    <table><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table>
+  </div>
+  <aside id="detail" hidden></aside>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const state = { sort: "video_id", dir: "asc", page: 1, selected: null };
+
+function h(tag, props, ...children) {
+  const el = document.createElement(tag);
+  Object.assign(el, props || {});
+  for (const c of children) if (c != null) el.append(c);
+  return el;
+}
+const fmt = (v, digits = 3) => v == null ? "–" : (Number.isInteger(v) ? String(v) : v.toFixed(digits));
+const clock = s => { const m = Math.floor(s / 60); return m + ":" + (s - m * 60).toFixed(1).padStart(4, "0"); };
+const thumbUrl = r => `/thumb/${encodeURIComponent(r.video_id)}/${encodeURIComponent(r.format_id)}/${r.first_frame}/${r.last_frame}.jpg`;
+
+function picture(r, hasThumb) {
+  return hasThumb ? h("img", { className: "thumb", src: thumbUrl(r), loading: "lazy", alt: "" })
+                  : h("div", { className: "ph", textContent: "no cached frame" });
+}
+function verdict(c) {
+  return c ? h("span", { className: "v-" + c.verdict, textContent: c.verdict.replace("_", " ") + " · " + c.check.replace("_", " ") })
+           : h("span", { className: "muted", textContent: "–" });
+}
+
+const columns = [
+  { key: null, label: "Frame", cell: r => picture(r, r.has_thumb), thumb: true },
+  { key: "video_id", label: "Video", cell: r => r.video_id + " / " + r.format_id },
+  { key: "first_frame", label: "Frames", cell: r => r.first_frame + "–" + r.last_frame },
+  { key: "start_ts", label: "Time", cell: r => clock(r.start_ts), num: true },
+  { key: "frame_count", label: "Count", cell: r => r.frame_count, num: true },
+  { key: "min", label: "Min", cell: r => fmt(r.stats?.min), num: true },
+  { key: "max", label: "Max", cell: r => fmt(r.stats?.max), num: true },
+  { key: "mean", label: "Mean", cell: r => fmt(r.stats?.mean), num: true },
+  { key: "share_flagged", label: "Flagged", cell: r => r.stats?.share_flagged == null ? "–" : Math.round(r.stats.share_flagged * 100) + "%", num: true },
+  { key: "distance", label: "Distance", cell: r => fmt(r.stats?.distance), num: true },
+  { key: "verdict", label: "Claude", cell: r => verdict(r.claude) },
+  { key: "checked_at", label: "Checked", cell: r => r.claude ? r.claude.checked_at.replace("T", " ").replace("+00:00", "") : "–" },
+];
+
+function renderHead() {
+  const head = $("head");
+  head.replaceChildren();
+  for (const c of columns) {
+    if (c.thumb && !$("thumbs").checked) continue;
+    const th = h("th", { textContent: c.label + (state.sort === c.key ? (state.dir === "asc" ? " ▲" : " ▼") : "") });
+    if (c.key == null) th.className = "static";
+    else {
+      if (state.sort === c.key) th.className = "sorted";
+      th.onclick = () => { state.dir = state.sort === c.key && state.dir === "asc" ? "desc" : "asc"; state.sort = c.key; state.page = 1; load(); };
+    }
+    head.append(th);
+  }
+}
+
+function params() {
+  const p = new URLSearchParams({ sort: state.sort, dir: state.dir, page: state.page, size: $("size").value });
+  for (const id of ["video", "format", "criterion", "claude", "check", "flagged", "q"]) if ($(id).value) p.set(id, $(id).value);
+  return p;
+}
+
+function fillSelect(select, values, keepAny) {
+  const current = select.value;
+  select.replaceChildren(...(keepAny ? [h("option", { value: "", textContent: "all" })] : []),
+                         ...values.map(v => h("option", { value: v.value ?? v, textContent: v.label ?? v })));
+  if ([...select.options].some(o => o.value === current)) select.value = current;
+}
+
+async function load() {
+  renderHead();
+  const response = await fetch("/api/scenes?" + params());
+  const data = await response.json();
+  $("error").hidden = response.ok;
+  if (!response.ok) { $("error").textContent = data.error; return; }
+  state.page = data.page;
+  {
+    fillSelect($("video"), data.videos.map(v => v.video_id), true);
+    const chosen = data.videos.find(v => v.video_id === $("video").value);
+    fillSelect($("format"), (chosen ? chosen.formats : [...new Set(data.videos.flatMap(v => v.formats))]), true);
+    fillSelect($("criterion"), data.criteria, false);
+    $("criterion").value = data.criterion;
+  }
+  const s = data.summary;
+  $("summary").textContent = `· ${s.checked} checked (${s.meme} meme, ${s.not_meme} not meme, ${s.unsure} unsure)`;
+  $("count").textContent = `${data.total} scenes`;
+  $("pageinfo").textContent = `${data.page} / ${data.pages}`;
+  $("prev").disabled = data.page <= 1;
+  $("next").disabled = data.page >= data.pages;
+  const body = $("body");
+  body.replaceChildren();
+  for (const r of data.rows) {
+    const tr = h("tr", { className: "row" });
+    for (const c of columns) {
+      if (c.thumb && !$("thumbs").checked) continue;
+      const td = h("td", { className: c.num ? "num" : "" });
+      td.append(c.cell(r));
+      tr.append(td);
+    }
+    const key = [r.video_id, r.format_id, r.first_frame].join("/");
+    if (state.selected === key) tr.classList.add("selected");
+    tr.onclick = () => { state.selected = key; showDetail(r); for (const x of body.children) x.classList.remove("selected"); tr.classList.add("selected"); };
+    body.append(tr);
+  }
+}
+
+async function showDetail(r) {
+  const response = await fetch(`/api/scene?video=${encodeURIComponent(r.video_id)}&format=${encodeURIComponent(r.format_id)}&first=${r.first_frame}`);
+  const aside = $("detail");
+  if (!response.ok) { aside.hidden = true; return; }
+  const s = await response.json();
+  aside.hidden = false;
+  aside.replaceChildren(
+    picture(s, s.has_thumb),
+    h("h2", { textContent: `${s.video_id} / ${s.format_id}` }),
+    h("dl", {}, h("dt", { textContent: "Frames" }), h("dd", { textContent: `${s.first_frame}–${s.last_frame} (${s.frame_count})` }),
+      h("dt", { textContent: "Time" }), h("dd", { textContent: `${clock(s.start_ts)} – ${clock(s.end_ts)}` }),
+      h("dt", { textContent: "Claude" }), h("dd", {}, verdict(s.claude)),
+      h("dt", { textContent: "Reason" }), h("dd", { textContent: s.claude ? s.claude.reason : "–" }),
+      h("dt", { textContent: "Checked" }), h("dd", { textContent: s.claude ? s.claude.checked_at : "–" })),
+    statsTable(s.stats));
+}
+
+function statsTable(stats) {
+  const names = Object.keys(stats);
+  const table = h("table", { className: "stats" }, h("thead", {}, h("tr", {}, ...["Criterion", "Min", "Max", "Mean", "Std", "Flagged", "Rule"].map(t => h("th", { textContent: t })))));
+  const body = h("tbody");
+  for (const n of names) {
+    const v = stats[n];
+    body.append(h("tr", {}, h("td", { textContent: n }), ...[v.min, v.max, v.mean, v.std].map(x => h("td", { className: "num", textContent: fmt(x) })),
+      h("td", { className: "num", textContent: v.share_flagged == null ? "–" : Math.round(v.share_flagged * 100) + "%" }),
+      h("td", { textContent: v.op ? v.op + " " + v.threshold : "–" })));
+  }
+  table.append(body);
+  return table;
+}
+
+for (const id of ["video", "format", "criterion", "claude", "check", "flagged", "size"]) $(id).onchange = () => { if (id === "video") $("format").value = ""; state.page = 1; load(); };
+let timer;
+$("q").oninput = () => { clearTimeout(timer); timer = setTimeout(() => { state.page = 1; load(); }, 300); };
+$("thumbs").onchange = load;
+$("prev").onclick = () => { state.page--; load(); };
+$("next").onclick = () => { state.page++; load(); };
+load();
+</script>
+</body>
+</html>

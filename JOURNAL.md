@@ -173,3 +173,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-08: `band` now reads the outermost 5% on each side instead of the 20% margins; threshold stays 180 — [specs/features/classifier-criteria.md](specs/features/classifier-criteria.md).
 - 2026-10-08: Production classifier now decides on `edge_histogram < 2.1` instead of `band > 180` — [specs/features/heuristic-edge-histogram.md](specs/features/heuristic-edge-histogram.md).
 - 2026-10-08: Added `python -m tools.scene_analysis verify`: Claude judges the scenes nearest the production threshold and the verdicts go into the scene database — [scene-score-analysis](specs/features/scene-score-analysis.md)
+- 2026-10-08: Added `python -m tools.scene_analysis browse`, a read-only web browser for the scene database (sort, filter, optional cached frame view) — [scene-score-analysis](specs/features/scene-score-analysis.md)

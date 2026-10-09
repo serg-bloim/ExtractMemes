@@ -30,8 +30,18 @@ def main(argv: list[str] | None = None) -> int:
     ver.add_argument("--model", default="claude-haiku-4-5-20251001", help="Claude model (default: %(default)s)")
     ver.add_argument("--effort", default="low", help="Claude effort (default: %(default)s)")
     ver.add_argument("--db", type=Path, default=DEFAULT_PATH, help="database file (default: %(default)s)")
+    web = sub.add_parser("browse", help="open a read-only web browser for the scene database")
+    web.add_argument("--port", type=int, default=8766, help="port (default: %(default)s)")
+    web.add_argument("--host", default="127.0.0.1", help="address to listen on (default: %(default)s)")
+    web.add_argument("--db", type=Path, default=DEFAULT_PATH, help="database file (default: %(default)s)")
     args = parser.parse_args(argv)
 
+    if args.command == "browse":
+        from .browser import create_app
+
+        print(f"Scene browser: http://{args.host if args.host != '0.0.0.0' else '127.0.0.1'}:{args.port}/  (Ctrl+C to stop)")
+        create_app(SceneStore(args.db)).run(host=args.host, port=args.port, threaded=True)
+        return 0
     if args.command == "verify":
         return run_verify(args)
     choose = None if args.no_prompt or not sys.stdin.isatty() else formats.choose_with_arrows

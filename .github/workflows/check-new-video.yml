@@ -2,6 +2,12 @@ name: Check for new video
 
 on:
   workflow_dispatch: {}
+  schedule:
+    - cron: "0 */2 * * *"
+
+concurrency:
+  group: check-new-video
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -72,7 +78,9 @@ jobs:
           if [ "$SAVE_FRAMES" = "true" ]; then
             save_args+=(--save-frames)
           fi
-          extract-memes "https://youtu.be/${{ steps.find.outputs.video_id }}" \
+          url="https://youtu.be/${{ steps.find.outputs.video_id }}"
+          echo "Video URL: $url"
+          extract-memes "$url" \
             --classifier heuristic \
             --upload-to telegram \
             --run-name "${{ steps.find.outputs.video_id }}" \

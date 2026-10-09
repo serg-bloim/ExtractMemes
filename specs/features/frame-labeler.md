@@ -213,6 +213,11 @@ classifier disagrees with me, and keep the result in the repo.
       *Expansion:* outward on each side while the next step is at most 40 (0..255), at most 3 s per side, stopping at the
       first step above that (a cut) and at the video's ends; if nothing is added the page says so. Server side
       (`POST /api/expand`, `tools/labeling/similarity.py`).
+- [ ] AC27: **Open a frame from a link.** The page reads a frame locator from its query string:
+      `/?video=<id>&format=<format id>&frame=<index>` (or `&ts=<seconds>` for the nearest frame; `frame` wins
+      when both are given), the fields AC21 copies. If that video is not the open one it is opened first (in
+      `format` when it has no dataset yet), once per link, then the frame is selected. Without a locator, or
+      with one that gives neither `frame` nor `ts`, the page opens as before. An out-of-range frame is clamped.
 - [ ] AC22: Offline tests cover the server's frame, thumbnail and label endpoints against a small
       synthetic video and a temp dataset directory. The page's own JavaScript is verified by hand
       and the result recorded in the Changelog.
@@ -496,3 +501,6 @@ Resolved by the user (2026-10-07):
   selection. A single frame shows the table as before.
 - 2026-10-08: The user asked that clicking a strip row select all its matching frames. The current frame
   (`sel`, the one shown and whose values the details table lists) is the row's middle matching frame.
+- 2026-10-08: The user asked that the labeler accept a frame locator in the query string and open it. Added
+  AC27 (`video`, `format`, `frame` / `ts`). Checked in Chrome on the already-open video: `frame=5000` selected
+  frame 5000 and `ts=290.0` selected frame 7250 (290.0 s); switching to a different video was not run.

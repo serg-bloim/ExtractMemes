@@ -1571,8 +1571,39 @@ $("src-go").onclick = () => lookup($("src").value);
 $("load").onclick = loadSelected;
 $("src").addEventListener("keydown", e => { if (e.key === "Enter") lookup($("src").value); e.stopPropagation(); });
 
+// A frame locator in the query string (`?video=<id>&format=<id>&frame=<index>` or `&ts=<seconds>`, the fields
+// the Copy locator button writes) opens that video, if it isn't the open one, and selects that frame.
+function locatorParams() {
+  const q = new URLSearchParams(location.search);
+  const video = (q.get("video") || "").trim();
+  if (!video) return null;
+  const num = name => q.get(name) === null || q.get(name).trim() === "" ? null : Number(q.get(name));
+  return {video, format: (q.get("format") || "").trim() || null, frame: num("frame"), ts: num("ts")};
+}
+
+function selectLocated(want) {
+  let frame = want.frame;
+  if (frame === null || isNaN(frame)) {
+    if (want.ts === null || isNaN(want.ts)) return false;
+    let lo = 0, hi = S.pts.length - 1;              // the frame whose time is nearest ts
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (S.pts[mid] < want.ts) lo = mid + 1; else hi = mid; }
+    frame = lo > 0 && want.ts - S.pts[lo - 1] < S.pts[lo] - want.ts ? lo - 1 : lo;
+  }
+  select(Math.min(Math.max(Math.round(frame), 0), S.frame_count - 1));
+  return true;
+}
+
 (async () => {
   const st = await api("/api/status");
+  const want = locatorParams();
+  if (want && st.state !== "loading" && st.video !== want.video) {
+    const tried = "locator-open:" + location.search;   // once per link, so a failing open can't loop
+    if (sessionStorage.getItem(tried) === null) {
+      sessionStorage.setItem(tried, "1");
+      try { await api("/api/open", {source: want.video, format_id: want.format}); poll(); }
+      catch (e) { $("err").textContent = String(e); }
+    }
+  }
   renderStatus(st);
   if (st.state === "loading") { showOpener(!!st.video); poll(); }
   if (!st.video) { if (st.state !== "loading") showOpener(false); return; }
@@ -1587,7 +1618,7 @@ $("src").addEventListener("keydown", e => { if (e.key === "Enter") lookup($("src
   S.rows.forEach((first, r) => S.row_of.fill(r, first, S.row_last[r] + 1));
   applyLabels(S);
   refilter();
-  select(S.memes.length ? S.memes[0].frame : 0);
+  if (!(want && st.video === want.video && selectLocated(want))) select(S.memes.length ? S.memes[0].frame : 0);
 })().catch(e => { $("err").textContent = String(e); });
 </script>
 </body>

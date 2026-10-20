@@ -766,16 +766,13 @@ def test_no_uploader_means_nothing_is_uploaded(short_video, tmp_path):
     assert len(saved) > 0  # sanity: the run did produce something to (not) upload
 
 
-def test_a_failed_upload_does_not_abort_the_run(short_video, tmp_path, capsys):
+def test_a_failed_upload_fails_the_run(short_video, tmp_path):
     uploader = FakeUploader(error=RuntimeError("telegram rejected"))
 
-    saved = run(
-        str(short_video), runtime_dir=tmp_path, fps=1.0, classifier=EveryNth(10), uploader=uploader
-    )
+    with pytest.raises(RuntimeError, match="telegram rejected"):
+        run(str(short_video), runtime_dir=tmp_path, fps=1.0, classifier=EveryNth(10), uploader=uploader)
 
-    assert uploader.calls == [(saved, str(short_video))]
-    assert len(saved) > 0
-    assert capsys.readouterr().out.endswith("Upload failed: telegram rejected\n")
+    assert len(uploader.calls) == 1
 
 
 def test_no_images_with_upload_to_telegram_raises_before_creating_anything(short_video, tmp_path):

@@ -177,3 +177,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-08: The labeler opens a frame from a locator in the query string (`?video=&format=&frame=` or `ts=`) — [specs/features/frame-labeler.md](specs/features/frame-labeler.md)
 - 2026-10-08: Scene browser: left sidebar, min/max/mean filters, and a Frames link that opens the labeler on the scene — [scene-score-analysis](specs/features/scene-score-analysis.md)
 - 2026-10-08: The pipeline prints the classifier rule (criterion and threshold) at the start of a run — [extraction-pipeline](specs/features/extraction-pipeline.md)
+- 2026-10-20: An upload failure (including a missing comments thread) now fails the run, so the watch workflow doesn't mark the video processed — [meme-upload](specs/features/meme-upload.md)

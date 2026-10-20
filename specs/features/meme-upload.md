@@ -2,7 +2,7 @@
 title: "Upload Extracted Memes to Telegram"
 status: implemented
 created: 2026-09-18
-updated: 2026-10-04
+updated: 2026-10-20
 author: ""
 depends-on: ["extraction-pipeline", "batch-cleaning"]
 ---
@@ -41,9 +41,8 @@ upload step.
 
 - [x] AC1: `src/extract_memes/uploader.py` defines
       `class Uploader(ABC)` with one abstract method
-      `upload_all(self, image_paths: list[Path], source: str) -> None` (raises only if delivery
-      couldn't be attempted at all; implementations should log and keep going past a single
-      item's failure where possible).
+      `upload_all(self, image_paths: list[Path], source: str) -> None` (raises if any part of the
+      delivery failed — see AC22).
 - [x] AC2: `src/extract_memes/telegram_uploader.py` defines `TelegramUploader(Uploader)`.
       `__init__(self, bot_token: str | None = None, chat_id: str | None = None)` resolves
       `bot_token`/`chat_id` from the arguments first, then the `TELEGRAM_BOT_TOKEN`/
@@ -70,17 +69,11 @@ upload step.
 - [x] AC6: `TelegramUploader.upload_all` (AC2) does the actual delivery: it posts `source` as one
       Telegram message, then posts every image in `image_paths` as a reply to that message, in
       albums (`sendMediaGroup`) of up to 10 images each (Telegram's limit) — so 3 images make one
-      album, 12 images make two (10 then 2). If posting the source message itself fails, the
-      albums are still sent, just without `reply_to_message_id` (delivering the images matters
-      more than the link they'd have replied to). A failed album is caught, printed as
-      `Upload failed for <names>: <error>`, and the remaining albums still send; a failed source
-      message is printed as `Failed to post the source link: <error>`. If any album failed,
-      `upload_all` prints a final `<N> of <M> uploads failed.` line, `N` counted in images. None of
-      this raises out of `upload_all` in the ordinary case.
-- [x] AC6b: An exception that does escape `uploader.upload_all()` (e.g. a totally unreachable
-      network) does **not** abort the run: `pipeline.run` catches it, prints `Upload failed:
-      <error>`, and returns `saved` unaffected — `saved` always reflects what was saved locally,
-      never what was successfully delivered.
+      album, 12 images make two (10 then 2). Failures raise per AC22.
+- [x] AC6b: An exception from `uploader.upload_all()` is **not** caught by `pipeline.run`: it
+      propagates, so the run fails (the CLI exits non-zero). The images are already saved locally
+      by then. (Amended 2026-10-20: this used to be caught, printed as `Upload failed: <error>`,
+      and ignored.)
 - [x] AC7: `no_images=True` combined with `uploader is not None` or `upload_to is not None` raises
       `ValueError` before creating anything, the same way `no_images=True, save_high_res=True`
       already does — there is nothing to upload when no images are produced.
@@ -110,16 +103,13 @@ upload step.
 - [x] AC12: `tests/test_telegram_uploader.py`: `requests.post` is mocked (never hits the network).
       Covers: the source is posted via `sendMessage` before any album; images are chunked into
       `sendMediaGroup` calls of at most 10, each replying to the source message; an empty
-      `image_paths` makes no requests at all; a failed source message still lets the albums send,
-      without a reply; a failed album is logged and the rest still send, with a correct
-      `<N> of <M>` count; every opened image file is closed after its album; missing bot
+      `image_paths` makes no requests at all; failures raise (AC22); every opened image file is closed after its album; missing bot
       token/chat id (no args, no env vars) raises `ValueError` before any request; env var fallback
       works when the argument is omitted.
 - [x] AC13: `tests/test_pipeline.py`: a fake `Uploader` passed as `uploader=` receives exactly one
       `upload_all(saved, source)` call, for both a `clean_method` run and a `clean_method=None,
       save_high_res=True` run. A run with no `uploader` never constructs or calls one. A fake
-      `Uploader` whose `upload_all` raises still lets the run finish, still returns the full
-      `saved` list, and the `Upload failed: <error>` line is captured with `capsys`.
+      `Uploader` whose `upload_all` raises makes `run` raise the same error.
       `no_images=True` with `upload_to="telegram"` raises `ValueError` before any directory is
       created.
 - [x] AC14: `tests/test_cli.py`: `--upload-to telegram` with no credentials anywhere exits 2 via
@@ -146,7 +136,7 @@ Amends AC1, AC5 and AC6 above.
       it as before. Fallbacks, in order, each tried only if the previous failed: a `sendMessage`
       of `<title>\n<source>` (only when a title is known), then a `sendMessage` of the bare
       `source`; each failed attempt prints `Failed to post the source link: <error>`. If all
-      fail, the albums send without a reply (AC6). With `info=None` the behavior is exactly AC6's
+      fail, `upload_all` raises (AC22). With `info=None` the behavior is exactly AC6's
       original: one bare-link `sendMessage`.
 - [x] AC18: Tests: `tests/test_downloader.py` covers AC15; `tests/test_telegram_uploader.py` covers
       the photo post, caption truncation and each fallback; `tests/test_pipeline.py` covers AC16
@@ -163,13 +153,30 @@ Amends AC6 above.
       the target channel and the parent's message id. The albums are then sent to the discussion
       group with `reply_to_message_id` set to the forwarded message, so they appear as comments
       under the post. The bot must be an admin of the discussion group to see the forward.
-- [x] AC20: Fallbacks keep AC6's behavior: no `linked_chat_id` (silently), a failed `getChat` or
-      `getUpdates`, or no matching forward within the wait (a printed line each) all send the
-      albums as replies to the parent in the target chat, as before. No lookup happens if the
-      parent post itself failed.
+- [x] AC20: A chat with no `linked_chat_id` is not an error: the albums reply to the parent in
+      the target chat. A failed `getChat` or `getUpdates`, or no matching forward within the wait,
+      raises (AC22) — the albums are **not** sent as replies in the channel instead (amended
+      2026-10-20; they used to be). No lookup happens if the parent post itself failed.
 - [x] AC21: `tests/test_telegram_uploader.py` covers comments delivery (including chunking), skipping
       stale and unrelated forwards, the timeout fallback, and the no-discussion-group and
       failed-parent cases, all with `requests.post` mocked.
+
+### Iteration: fail the run on any upload failure (2026-10-20)
+
+Amends AC1, AC6, AC6b and AC20 above.
+
+- [x] AC22: `TelegramUploader.upload_all` raises `RuntimeError` on the first failure and sends
+      nothing further: every parent-post attempt failing (`Could not post the source link: …`), a
+      failed `getChat` (`Could not look up the chat's discussion group: …`), a failed `getUpdates`
+      (`Could not read the discussion group's updates: …`), no matching forward within the wait
+      (`The post's comments thread never appeared`), or a failed album (`Upload failed for
+      <names>: …`; later albums are not attempted). The parent-post fallbacks of AC17 still apply
+      before it gives up.
+- [x] AC23: The `check-new-video` workflow therefore fails at the pipeline step, skips "Mark the
+      video as processed", and the video is picked up again by a later run. The data branch is
+      still committed (`if: always()`).
+- [x] AC24: Tests: `tests/test_telegram_uploader.py` covers each raise in AC22 and that no album is
+      sent after it; `tests/test_pipeline.py` covers AC6b.
 
 ## Out of Scope
 
@@ -180,9 +187,10 @@ Amends AC6 above.
   [ADR 014](../../decisions/014-telegram-upload-as-pipeline-stage.md)).
 - **Thumbnail/title on the timecode channel's parent post** (`TelegramTimecodeSender`); only the
   meme upload got it.
-- **Retry/backoff on a failed album.** One attempt per album; a failure is logged, not retried.
+- **Retry/backoff on a failed album.** One attempt per album; a failure fails the run (the whole video is retried by a later workflow run).
 - **Dedup or skip-if-already-uploaded across separate runs of the same video.** Re-running the same
-  `run_name` re-posts everything again (a new source message, new albums); there is no
+  `run_name` re-posts everything again (so a retry after a partial failure duplicates the albums that
+  already went out) (a new source message, new albums); there is no
   upload-state manifest. Would need its own spec if needed later, since it touches the runtime
   directory's output contract.
 - **Real Telegram forum-topic threads** (`createForumTopic`). Tried during live testing and
@@ -200,12 +208,10 @@ Amends AC6 above.
 ## Technical Notes
 
 - **New runtime dependency:** `requests`.
-- **Why "log and continue" instead of the pipeline's usual "any error aborts the run"** (AC8 of
-  extraction-pipeline.md): a failed upload is a delivery problem for an artifact that's already
-  safely on disk, not a sign the run's own output is untrustworthy. See
-  [ADR 014](../../decisions/014-telegram-upload-as-pipeline-stage.md) Decision 4. This makes
-  `Uploader.upload_all` the **only** step in the pipeline whose exceptions don't propagate past it
-  in the ordinary case — worth remembering when reading `run`'s error-handling as a whole.
+- **Why a failed upload fails the run** (since 2026-10-20, replacing the original "log and
+  continue" of [ADR 014](../../decisions/014-telegram-upload-as-pipeline-stage.md) Decision 4): the
+  watch workflow marks a video processed only after the pipeline succeeds, and an undelivered video
+  must be retried rather than silently dropped.
 - **Why a direct HTTP call instead of `python-telegram-bot`:** see
   [ADR 014](../../decisions/014-telegram-upload-as-pipeline-stage.md) Decision 3 / Option B.
 - **Why `upload_all(image_paths, source)` instead of a per-image `upload(image_path)`** (the
@@ -230,9 +236,9 @@ Amends AC6 above.
 
 Resolved by the user (2026-09-18):
 
-- Q1: Should an upload failure abort the run, or log and continue? **Log and continue** (AC6,
-  AC6b) — a departure from the pipeline's usual error propagation, documented in
-  [ADR 014](../../decisions/014-telegram-upload-as-pipeline-stage.md) Decision 4.
+- Q1: Should an upload failure abort the run, or log and continue? Originally **log and continue**
+  ([ADR 014](../../decisions/014-telegram-upload-as-pipeline-stage.md) Decision 4); reversed on
+  2026-10-20 to **abort** (AC6b, AC22).
 - Q2: What happens when `clean_method=None` and `save_high_res=True` produces many frames per
   meme instead of one? **Upload exactly what `saved` already contains** (AC5) — no separate
   thinning or selection logic.
@@ -312,3 +318,10 @@ Resolved by the user (2026-09-18):
   replies to it, falling back to the old reply-in-channel behavior. The user didn't choose between
   falling back and failing loudly, so the fallback was used. The Out of Scope entry for this was
   replaced. Not yet verified against live Telegram; run `playground/telegram_playground_test.py`.
+- 2026-10-20: The user asked what the workflow does when memes can't be uploaded as comments, then
+  said not to fall back to replying in the channel: any error should fail the run so the video is
+  not marked processed and is retried later. Added AC22–AC24 and amended AC1, AC6, AC6b, AC12, AC13,
+  AC20. `upload_all` raises on the first failure; `pipeline.run` no longer catches it. Parent-post
+  fallbacks (thumbnail → title → bare link) are kept. A chat without a discussion group still gets
+  replies in the chat. Tests updated; `pytest -m "not slow"` passes except two `test_cli.py` cases
+  that need the `extract-memes` console script on `PATH`.

@@ -148,8 +148,8 @@ def run(
     With `uploader` set (or `upload_to="telegram"`, which builds a `TelegramUploader` from
     `telegram_bot_token`/`telegram_chat_id`), `uploader.upload_all(saved, source, info)` is called once
     before `run` returns, `info` being the video's title and thumbnail (`None` for a local file or
-    if they couldn't be fetched). A failure there is logged and does not abort the run or affect what's
-    returned — unlike every other step here, whose errors propagate.
+    if they couldn't be fetched). A failure there propagates like any other step's, so the run fails
+    (the images are already saved on disk).
 
     With `timecode_sender` set (or `send_timecodes_to="telegram"`, which builds a
     `TelegramTimecodeSender` from `telegram_bot_token`/`timecode_chat_id`),
@@ -283,12 +283,9 @@ def run(
             print(f"Timecode send failed: {exc}")
     if uploader is not None:
         try:
-            try:
-                info = fetch_source_info(source, proxy=proxy)
-            except Exception as exc:
-                print(f"Could not fetch the video's title and thumbnail: {exc}")
-                info = None
-            uploader.upload_all(saved, source, info)
+            info = fetch_source_info(source, proxy=proxy)
         except Exception as exc:
-            print(f"Upload failed: {exc}")
+            print(f"Could not fetch the video's title and thumbnail: {exc}")
+            info = None
+        uploader.upload_all(saved, source, info)
     return saved

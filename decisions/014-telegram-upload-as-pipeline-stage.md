@@ -1,7 +1,7 @@
 # 014 — Upload Extracted Memes to Telegram as a Pipeline Stage
 
 **Date:** 2026-09-18
-**Status:** Accepted
+**Status:** Accepted (Decision 4 superseded 2026-10-20: an upload failure now fails the run — see [meme-upload](../specs/features/meme-upload.md) AC22)
 
 ---
 

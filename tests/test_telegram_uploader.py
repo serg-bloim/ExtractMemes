@@ -96,41 +96,38 @@ def test_chunks_more_than_the_album_limit_into_several_albums(post, tmp_path):
     assert all(call.kwargs["data"]["reply_to_message_id"] == 111 for call in albums)
 
 
-def test_link_message_failure_still_sends_albums_without_a_reply(post, tmp_path, capsys):
+def test_link_message_failure_raises_and_sends_no_albums(post, tmp_path, capsys):
     def failing_link(url, **kwargs):
         if url.endswith("/sendMessage"):
             return response(ok=False, description="Forbidden: bot was blocked")
         return default_post(url, **kwargs)
 
     post.side_effect = failing_link
-    paths = images(tmp_path, 2)
 
-    TelegramUploader(bot_token="tok", chat_id="123").upload_all(paths, "https://youtu.be/xyz")
+    with pytest.raises(RuntimeError, match="Could not post the source link"):
+        TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 2), "https://youtu.be/xyz")
 
-    [album_call] = calls_to(post, "sendMediaGroup")
-    assert "reply_to_message_id" not in album_call.kwargs["data"]
+    assert calls_to(post, "sendMediaGroup") == []
     assert "Failed to post the source link" in capsys.readouterr().out
 
 
-def test_a_failed_album_is_logged_and_other_albums_still_sent(post, tmp_path, capsys):
+def test_a_failed_album_raises_and_stops_sending(post, tmp_path):
     calls = {"n": 0}
 
-    def one_album_fails(url, **kwargs):
+    def first_album_fails(url, **kwargs):
         if url.endswith("/sendMediaGroup"):
             calls["n"] += 1
             if calls["n"] == 1:
                 return response(ok=False, description="Bad Request: file too large")
         return default_post(url, **kwargs)
 
-    post.side_effect = one_album_fails
+    post.side_effect = first_album_fails
     paths = images(tmp_path, ALBUM_LIMIT + 3)
 
-    TelegramUploader(bot_token="tok", chat_id="123").upload_all(paths, "https://youtu.be/xyz")
+    with pytest.raises(RuntimeError, match="Upload failed for meme_000.png.*file too large"):
+        TelegramUploader(bot_token="tok", chat_id="123").upload_all(paths, "https://youtu.be/xyz")
 
-    assert len(calls_to(post, "sendMediaGroup")) == 2
-    out = capsys.readouterr().out
-    assert "Upload failed for" in out
-    assert f"{ALBUM_LIMIT} of {len(paths)} uploads failed." in out
+    assert len(calls_to(post, "sendMediaGroup")) == 1
 
 
 def test_image_files_are_closed_after_each_album(post, tmp_path):
@@ -204,7 +201,7 @@ def test_info_without_a_thumbnail_posts_title_and_link_as_text(post, tmp_path):
     assert message_call.kwargs["data"]["text"] == "Best memes\nhttps://youtu.be/xyz"
 
 
-def test_everything_failing_falls_back_to_the_bare_link_then_no_reply(post, tmp_path, capsys):
+def test_failed_thumbnail_and_title_fall_back_to_the_bare_link(post, tmp_path):
     def only_bare_link_works(url, **kwargs):
         if url.endswith("/sendMessage") and kwargs["data"]["text"] == "https://youtu.be/xyz":
             return response(result={"message_id": 222})
@@ -217,6 +214,21 @@ def test_everything_failing_falls_back_to_the_bare_link_then_no_reply(post, tmp_
     TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz", INFO)
 
     assert calls_to(post, "sendMediaGroup")[0].kwargs["data"]["reply_to_message_id"] == 222
+
+
+def test_every_parent_attempt_failing_raises(post, tmp_path):
+    def nothing_works(url, **kwargs):
+        if url.endswith(("/sendPhoto", "/sendMessage")):
+            return response(ok=False, description="nope")
+        return default_post(url, **kwargs)
+
+    post.side_effect = nothing_works
+
+    with pytest.raises(RuntimeError, match="Could not post the source link: .*nope"):
+        TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz", INFO)
+
+    assert len(calls_to(post, "sendPhoto")) + len(calls_to(post, "sendMessage")) == 3
+    assert calls_to(post, "sendMediaGroup") == []
 
 
 CHANNEL = -1001
@@ -279,16 +291,44 @@ def test_unrelated_and_stale_forwards_are_skipped_while_waiting(post, tmp_path):
     assert offsets == [None, 3]
 
 
-def test_missing_forward_falls_back_to_replying_in_the_chat(post, tmp_path, capsys, monkeypatch):
+def test_missing_forward_raises_and_sends_no_albums(post, tmp_path, monkeypatch):
     monkeypatch.setattr("extract_memes.telegram_uploader.DISCUSSION_WAIT_SECONDS", 0)
     post.side_effect = comments_post([[]])
 
-    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+    with pytest.raises(RuntimeError, match="comments thread never appeared"):
+        TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
 
-    [album] = calls_to(post, "sendMediaGroup")
-    assert album.kwargs["data"]["chat_id"] == "123"
-    assert album.kwargs["data"]["reply_to_message_id"] == 111
-    assert "comments thread never appeared" in capsys.readouterr().out
+    assert calls_to(post, "sendMediaGroup") == []
+
+
+def test_failed_chat_lookup_raises_and_sends_no_albums(post, tmp_path):
+    def chat_lookup_fails(url, **kwargs):
+        if url.endswith("/getChat"):
+            return response(ok=False, description="Bad Request: chat not found")
+        return default_post(url, **kwargs)
+
+    post.side_effect = chat_lookup_fails
+
+    with pytest.raises(RuntimeError, match="Could not look up the chat's discussion group"):
+        TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+
+    assert calls_to(post, "sendMediaGroup") == []
+
+
+def test_failed_updates_read_raises_and_sends_no_albums(post, tmp_path):
+    base = comments_post([[]])
+
+    def updates_fail(url, **kwargs):
+        if url.endswith("/getUpdates"):
+            return response(ok=False, description="Conflict: webhook is active")
+        return base(url, **kwargs)
+
+    post.side_effect = updates_fail
+
+    with pytest.raises(RuntimeError, match="Could not read the discussion group's updates"):
+        TelegramUploader(bot_token="tok", chat_id="@chan").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+
+    assert calls_to(post, "sendMediaGroup") == []
 
 
 def test_chat_without_a_discussion_group_never_polls(post, tmp_path):
@@ -306,6 +346,7 @@ def test_no_comments_lookup_when_the_parent_post_failed(post, tmp_path):
 
     post.side_effect = parent_fails
 
-    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+    with pytest.raises(RuntimeError):
+        TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
 
     assert calls_to(post, "getChat") == []

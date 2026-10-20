@@ -28,7 +28,8 @@ class TelegramUploader(Uploader):
     """Posts `source` (with the video's thumbnail and title, when known) as one message, then every image under it, in albums of up to 10.
 
     When the chat is a channel with a linked discussion group, the albums go there as comments on the
-    post; otherwise (or if the comments thread can't be found) they reply to the post in the chat.
+    post; otherwise they reply to the post in the chat. Any failure (the post, the comments thread, an
+    album) raises `RuntimeError`, so the caller can treat the whole upload as failed.
     """
 
     BASE_URL = "https://api.telegram.org/bot{token}"
@@ -52,10 +53,10 @@ class TelegramUploader(Uploader):
             raise RuntimeError(f"Telegram {method} failed: {data.get('description', response.text)}")
         return data
 
-    def _post_parent(self, source: str, info: SourceInfo | None) -> int | None:
+    def _post_parent(self, source: str, info: SourceInfo | None) -> int:
         """Post the parent message, trying thumbnail+title, then title, then the bare link.
 
-        Returns its message id, or `None` if every attempt failed.
+        Returns its message id; raises `RuntimeError` if every attempt failed.
         """
         title = info.title if info else None
         text = f"{title}\n{source}" if title else source
@@ -67,13 +68,15 @@ class TelegramUploader(Uploader):
             attempts.append(("sendMessage", {"text": text}))
         attempts.append(("sendMessage", {"text": source}))
 
+        last_error: Exception | None = None
         for method, fields in attempts:
             try:
                 result = self._call(method, data={"chat_id": self.chat_id, **fields})
                 return result["result"]["message_id"]
             except Exception as exc:
                 print(f"Failed to post the source link: {exc}")
-        return None
+                last_error = exc
+        raise RuntimeError(f"Could not post the source link: {last_error}")
 
     def upload_all(self, image_paths: list[Path], source: str, info: SourceInfo | None = None) -> None:
         if not image_paths:
@@ -81,34 +84,28 @@ class TelegramUploader(Uploader):
 
         reply_to = self._post_parent(source, info)
         target_chat, thread = self.chat_id, reply_to
-        if reply_to is not None:
-            comments = self._comments_thread(reply_to)
-            if comments:
-                target_chat, thread = comments
+        comments = self._comments_thread(reply_to)
+        if comments:
+            target_chat, thread = comments
 
-        failed = 0
         for batch in _chunks(image_paths, ALBUM_LIMIT):
             try:
                 self._send_album(batch, target_chat, thread)
             except Exception as exc:
-                failed += len(batch)
                 names = ", ".join(path.name for path in batch)
-                print(f"Upload failed for {names}: {exc}")
-        if failed:
-            print(f"{failed} of {len(image_paths)} uploads failed.")
+                raise RuntimeError(f"Upload failed for {names}: {exc}") from exc
 
     def _comments_thread(self, post_id: int) -> tuple[int, int] | None:
         """Return `(discussion chat id, forwarded post id)` for the comments of channel post `post_id`.
 
-        `None` when the chat has no linked discussion group (nothing printed) or the forwarded copy
-        never shows up (a line is printed). The bot must be an admin of the discussion group to see
-        the forward in `getUpdates`.
+        `None` when the chat has no linked discussion group. Raises `RuntimeError` if the chat can't be
+        looked up, the updates can't be read, or the forwarded copy never shows up. The bot must be an
+        admin of the discussion group to see the forward in `getUpdates`.
         """
         try:
             chat = self._call("getChat", data={"chat_id": self.chat_id})["result"]
         except Exception as exc:
-            print(f"Could not look up the chat's discussion group: {exc}")
-            return None
+            raise RuntimeError(f"Could not look up the chat's discussion group: {exc}") from exc
         linked = chat.get("linked_chat_id")
         if not linked:
             return None
@@ -122,8 +119,7 @@ class TelegramUploader(Uploader):
             try:
                 updates = self._call("getUpdates", data=params)["result"]
             except Exception as exc:
-                print(f"Could not read the discussion group's updates: {exc}")
-                return None
+                raise RuntimeError(f"Could not read the discussion group's updates: {exc}") from exc
             for update in updates:
                 offset = update["update_id"] + 1
                 message = update.get("message", {})
@@ -136,8 +132,7 @@ class TelegramUploader(Uploader):
                 ):
                     return linked, message["message_id"]
             if time.monotonic() >= deadline:
-                print("The post's comments thread never appeared; replying in the chat instead.")
-                return None
+                raise RuntimeError("The post's comments thread never appeared")
 
     def _send_album(self, batch: list[Path], chat_id: str | int, reply_to: int | None) -> None:
         opened = [open(path, "rb") for path in batch]

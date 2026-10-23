@@ -114,23 +114,30 @@ class TelegramUploader(Uploader):
         raise RuntimeError(f"Could not post the source link: {last_error}")
 
     def upload_all(self, image_paths: list[Path], source: str, info: SourceInfo | None = None) -> str | None:
-        """Post everything and return the link of the source post (`None` for a chat that has no post links)."""
+        """Post everything and return the link of the source post (`None` for a chat that has no post links).
+
+        When the albums went into a comments thread, the link opens that thread at its first comment.
+        """
         if not image_paths:
             return None
 
         reply_to = self._post_parent(source, info)
         target_chat, thread = self.chat_id, reply_to
         comments = self._comments_thread(reply_to)
+        first_comment: int | None = None
         if comments:
             target_chat, thread = comments
 
         for batch in _chunks(image_paths, ALBUM_LIMIT):
             try:
-                self._send_album(batch, target_chat, thread)
+                sent = self._send_album(batch, target_chat, thread)
+                if first_comment is None and comments and sent:
+                    first_comment = sent[0].get("message_id")
             except Exception as exc:
                 names = ", ".join(path.name for path in batch)
                 raise RuntimeError(f"Upload failed for {names}: {exc}") from exc
-        return self._post_link(reply_to)
+        link = self._post_link(reply_to)
+        return f"{link}?comment={first_comment}" if link and first_comment else link
 
     def _post_link(self, post_id: int) -> str | None:
         """The `t.me` link of message `post_id` in the chat, from the configured chat id alone.
@@ -184,11 +191,10 @@ class TelegramUploader(Uploader):
             if time.monotonic() >= deadline:
                 raise RuntimeError("The post's comments thread never appeared")
 
-    def _send_album(self, batch: list[Path], chat_id: str | int, reply_to: int | None) -> None:
+    def _send_album(self, batch: list[Path], chat_id: str | int, reply_to: int | None) -> list[dict]:
         for attempt in range(1, ALBUM_ATTEMPTS + 1):
             try:
-                self._send_album_once(batch, chat_id, reply_to)
-                return
+                return self._send_album_once(batch, chat_id, reply_to)
             except (requests.Timeout, requests.ConnectionError, _RateLimited) as exc:
                 if attempt == ALBUM_ATTEMPTS:
                     raise
@@ -196,7 +202,7 @@ class TelegramUploader(Uploader):
                 print(f"Album upload attempt {attempt} failed ({exc}); retrying in {wait:g}s")
                 time.sleep(wait)
 
-    def _send_album_once(self, batch: list[Path], chat_id: str | int, reply_to: int | None) -> None:
+    def _send_album_once(self, batch: list[Path], chat_id: str | int, reply_to: int | None) -> list[dict]:
         files = {}
         for i, path in enumerate(batch):
             with open(path, "rb") as file:
@@ -205,4 +211,4 @@ class TelegramUploader(Uploader):
         data = {"chat_id": chat_id, "media": json.dumps(media)}
         if reply_to is not None:
             data["reply_to_message_id"] = reply_to
-        self._call("sendMediaGroup", timeout=ALBUM_TIMEOUT, data=data, files=files)
+        return self._call("sendMediaGroup", timeout=ALBUM_TIMEOUT, data=data, files=files)["result"] or []

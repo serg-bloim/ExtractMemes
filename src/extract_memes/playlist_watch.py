@@ -1,4 +1,4 @@
-"""Check a playlist for the oldest video not yet recorded as processed.
+"""Check a playlist for the oldest video that has no recorded status yet.
 
 `find_next_unprocessed` assumes `video_ids` is newest-first, true for a channel's auto-generated
 Uploads playlist — not for an arbitrarily (hand-)ordered playlist.
@@ -9,7 +9,7 @@ import datetime
 import json
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from pathlib import Path
 
 DEFAULT_LOOKBACK_DAYS = 365
@@ -126,22 +126,38 @@ def list_playlist_video_ids(
     return video_ids
 
 
-def read_processed(path: Path) -> set[str]:
-    """Return the set of video ids recorded in `path`, or an empty set if it doesn't exist."""
+STATUS_EXTRACTED = "extracted"
+STATUS_UPLOADED = "uploaded"
+"""A video's progress, recorded one line per video as `<video id> <status>`; a line holding only an id predates statuses and counts as uploaded."""
+
+
+def read_processed(path: Path) -> dict[str, str]:
+    """Return `video id -> status` for every video recorded in `path`, in file order; `{}` if it doesn't exist."""
     if not path.exists():
-        return set()
-    return {line.strip() for line in path.read_text().splitlines() if line.strip()}
+        return {}
+    processed = {}
+    for line in path.read_text().splitlines():
+        parts = line.split()
+        if parts:
+            processed[parts[0]] = parts[1] if len(parts) > 1 else STATUS_UPLOADED
+    return processed
 
 
-def append_processed(path: Path, video_id: str) -> None:
-    """Record `video_id` as processed by appending it to `path`."""
+def set_status(path: Path, video_id: str, status: str) -> None:
+    """Record `video_id` with `status` in `path`, replacing its line or adding one at the end.
+
+    The file is replaced in one step, so a process killed mid-write leaves the old file intact.
+    """
+    processed = read_processed(path)
+    processed[video_id] = status
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as f:
-        f.write(f"{video_id}\n")
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text("".join(f"{vid} {st}\n" for vid, st in processed.items()), encoding="utf-8")
+    os.replace(temp, path)
 
 
-def find_next_unprocessed(video_ids: list[str], processed: set[str]) -> str | None:
-    """Return the oldest id in `video_ids` not in `processed`, or `None` if all are processed."""
+def find_next_unprocessed(video_ids: list[str], processed: Collection[str]) -> str | None:
+    """Return the oldest id in `video_ids` not in `processed` (whatever its status), or `None` if all are recorded."""
     for video_id in reversed(video_ids):
         if video_id not in processed:
             return video_id
@@ -168,8 +184,12 @@ def _cmd_find(args: argparse.Namespace) -> None:
         print(next_id)
 
 
-def _cmd_mark_processed(args: argparse.Namespace) -> None:
-    append_processed(args.processed_file, args.video_id)
+def _cmd_set_status(args: argparse.Namespace) -> None:
+    video_ids = list(args.video_ids)
+    if args.ids_file is not None and args.ids_file.exists():
+        video_ids += args.ids_file.read_text().split()
+    for video_id in video_ids:
+        set_status(args.processed_file, video_id, args.status)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -180,7 +200,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     find_parser = subparsers.add_parser(
-        "find", help="print the oldest unprocessed video's id, or nothing if there is none"
+        "find", help="print the oldest video not yet recorded (with any status), or nothing if there is none"
     )
     find_parser.add_argument("--playlist-url", required=True)
     find_parser.add_argument(
@@ -211,12 +231,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     find_parser.set_defaults(func=_cmd_find)
 
-    mark_parser = subparsers.add_parser("mark-processed", help="record a video id as processed")
-    mark_parser.add_argument("video_id")
-    mark_parser.add_argument(
+    status_parser = subparsers.add_parser("set-status", help="record the status of one or more videos")
+    status_parser.add_argument("status", help=f"e.g. {STATUS_EXTRACTED} or {STATUS_UPLOADED}")
+    status_parser.add_argument("video_ids", nargs="*", metavar="video_id")
+    status_parser.add_argument(
+        "--ids-file",
+        type=Path,
+        default=None,
+        help="also take video ids, whitespace-separated, from this file; a missing file adds none",
+    )
+    status_parser.add_argument(
         "--processed-file", type=Path, default=DEFAULT_PROCESSED_FILE, help="default: %(default)s"
     )
-    mark_parser.set_defaults(func=_cmd_mark_processed)
+    status_parser.set_defaults(func=_cmd_set_status)
 
     return parser
 

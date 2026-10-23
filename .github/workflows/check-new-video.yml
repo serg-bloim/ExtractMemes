@@ -1,4 +1,4 @@
-name: Check for new video
+name: Check for new video and extract its memes
 
 on:
   workflow_dispatch: {}
@@ -62,8 +62,6 @@ jobs:
       - name: Run the pipeline on the new video
         if: steps.find.outputs.video_id != ''
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
           SAVE_LOW_RES: ${{ vars.SAVE_LOW_RES }}
           SAVE_HIGH_RES: ${{ vars.SAVE_HIGH_RES }}
           SAVE_FRAMES: ${{ vars.SAVE_FRAMES }}
@@ -82,33 +80,21 @@ jobs:
           echo "Video URL: $url"
           extract-memes "$url" \
             --classifier heuristic \
-            --upload-to telegram \
             --run-name "${{ steps.find.outputs.video_id }}" \
             --runtime-dir data-branch/runs \
             "${save_args[@]}"
 
-      - name: Drop the clean images from the data branch unless asked to keep them
-        if: steps.find.outputs.video_id != '' && vars.SAVE_CLEAN != 'true'
-        run: rm -rf "data-branch/runs/${{ steps.find.outputs.video_id }}/clean"
-
-      - name: Mark the video as processed
+      - name: Note the video as extracted
         if: steps.find.outputs.video_id != ''
-        run: python -m extract_memes.playlist_watch mark-processed "${{ steps.find.outputs.video_id }}" --processed-file data-branch/processed_vids.txt
+        run: echo "${{ steps.find.outputs.video_id }}" >> "$RUNNER_TEMP/extracted.txt"
 
       - name: Commit and push the updated data branch
         if: always()
-        working-directory: data-branch
         run: |
-          git add -A
-          if ! git diff --cached --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            video_id="${{ steps.find.outputs.video_id }}"
-            if [ -n "$video_id" ]; then
-              message="Update data for $video_id"
-            else
-              message="Update data"
-            fi
-            git commit -m "$message"
-            git push
+          video_id="${{ steps.find.outputs.video_id }}"
+          if [ -n "$video_id" ]; then
+            message="Update data for $video_id"
+          else
+            message="Update data"
           fi
+          .github/scripts/push-data.sh "$message" extracted "$RUNNER_TEMP/extracted.txt"

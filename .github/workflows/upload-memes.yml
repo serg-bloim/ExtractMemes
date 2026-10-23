@@ -1,0 +1,63 @@
+name: Upload extracted memes
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/30 * * * *"
+
+concurrency:
+  group: upload-memes
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    env:
+      EXTRACT_MEMES_PROXY: ${{ secrets.YT_DLP_PROXY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check out the data branch
+        uses: actions/checkout@v4
+        with:
+          ref: data
+          path: data-branch
+
+      - name: Look for extracted videos waiting for upload
+        id: pending
+        run: |
+          if grep -qE ' extracted$' data-branch/processed_vids.txt 2>/dev/null; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.pending.outputs.found == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install what the upload needs
+        if: steps.pending.outputs.found == 'true'
+        run: |
+          pip install yt-dlp tqdm requests
+          pip install --no-deps -e .
+
+      - name: Upload the memes of up to 5 extracted videos to Telegram
+        if: steps.pending.outputs.found == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+        run: |
+          python -m extract_memes.upload_pending \
+            --processed-file data-branch/processed_vids.txt \
+            --runs-dir data-branch/runs \
+            --limit 5 \
+            --done-file "$RUNNER_TEMP/uploaded.txt"
+
+      - name: Mark the uploaded videos in the data branch
+        if: always() && steps.pending.outputs.found == 'true'
+        run: .github/scripts/push-data.sh "Mark videos as uploaded" uploaded "$RUNNER_TEMP/uploaded.txt"

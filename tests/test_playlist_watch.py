@@ -453,3 +453,21 @@ def test_save_upload_dates_leaves_no_temporary_file_and_replaces_the_old_one(tmp
 
     assert load_upload_dates(path) == {"a": "2026-10-01", "b": "2026-10-02"}
     assert [entry.name for entry in tmp_path.iterdir()] == ["dates.json"]
+
+
+def test_pending_ids_are_the_extracted_ones_in_file_order_up_to_the_limit(tmp_path, capsys):
+    processed_file = tmp_path / "processed.txt"
+    processed_file.write_text("a\nb extracted\nc uploaded\nd extracted\ne extracted\n")
+
+    playlist_watch.main(["pending", "--limit", "2", "--processed-file", str(processed_file)])
+
+    assert capsys.readouterr().out == "b\nd\n"
+
+
+def test_pending_prints_nothing_when_all_are_uploaded(tmp_path, capsys):
+    processed_file = tmp_path / "processed.txt"
+    processed_file.write_text("a uploaded\n")
+
+    playlist_watch.main(["pending", "--limit", "5", "--processed-file", str(processed_file)])
+
+    assert capsys.readouterr().out == ""

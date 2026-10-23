@@ -4,7 +4,7 @@ import pytest
 
 from extract_memes import upload_pending
 from extract_memes.downloader import SourceInfo
-from extract_memes.upload_pending import pending_video_ids, upload_pending as run_upload
+from extract_memes.upload_pending import upload_pending as run_upload
 from extract_memes.uploader import Uploader
 
 
@@ -30,20 +30,12 @@ def _info(source: str) -> SourceInfo:
     return SourceInfo(title="title of " + source)
 
 
-def test_pending_video_ids_are_the_extracted_ones_in_file_order_up_to_the_limit():
-    processed = {"a": "uploaded", "b": "extracted", "c": "extracted", "d": "extracted"}
-
-    assert pending_video_ids(processed, limit=2) == ["b", "c"]
-
-
 def test_uploads_each_pending_video_and_reports_it(tmp_path):
-    processed_file = tmp_path / "processed.txt"
-    processed_file.write_text("old\nb extracted\nc extracted\n")
     _clean(tmp_path, "b", 2)
     _clean(tmp_path, "c", 1)
     uploader, done = FakeUploader(), []
 
-    uploaded = run_upload(processed_file, tmp_path, uploader, on_uploaded=done.append, fetch_info=_info)
+    uploaded = run_upload(["b", "c"], tmp_path, uploader, on_uploaded=done.append, fetch_info=_info)
 
     assert uploaded == done == ["b", "c"]
     assert uploader.calls == [
@@ -52,67 +44,46 @@ def test_uploads_each_pending_video_and_reports_it(tmp_path):
     ]
 
 
-def test_at_most_limit_videos_per_run(tmp_path):
-    processed_file = tmp_path / "processed.txt"
-    processed_file.write_text("".join(f"v{n} extracted\n" for n in range(8)))
-    for n in range(8):
-        _clean(tmp_path, f"v{n}", 1)
-
-    uploaded = run_upload(processed_file, tmp_path, FakeUploader(), limit=5, fetch_info=_info)
-
-    assert uploaded == ["v0", "v1", "v2", "v3", "v4"]
-
-
 def test_a_failure_stops_the_run_and_only_earlier_videos_are_reported(tmp_path):
-    processed_file = tmp_path / "processed.txt"
-    processed_file.write_text("a extracted\nb extracted\nc extracted\n")
     for video_id in "abc":
         _clean(tmp_path, video_id, 1)
     done = []
 
     with pytest.raises(RuntimeError, match="upload failed"):
-        run_upload(processed_file, tmp_path, FakeUploader(fail_on="/b"), on_uploaded=done.append, fetch_info=_info)
+        run_upload(["a", "b", "c"], tmp_path, FakeUploader(fail_on="/b"), on_uploaded=done.append, fetch_info=_info)
 
     assert done == ["a"]
 
 
 def test_a_video_without_clean_images_is_reported_without_uploading(tmp_path):
-    processed_file = tmp_path / "processed.txt"
-    processed_file.write_text("a extracted\n")
     uploader, done = FakeUploader(), []
 
-    run_upload(processed_file, tmp_path, uploader, on_uploaded=done.append, fetch_info=_info)
+    run_upload(["a"], tmp_path, uploader, on_uploaded=done.append, fetch_info=_info)
 
     assert uploader.calls == []
     assert done == ["a"]
 
 
 def test_a_failed_info_fetch_still_uploads_without_info(tmp_path):
-    processed_file = tmp_path / "processed.txt"
-    processed_file.write_text("a extracted\n")
     _clean(tmp_path, "a", 1)
     uploader = FakeUploader()
 
     def broken(source: str):
         raise RuntimeError("no network")
 
-    run_upload(processed_file, tmp_path, uploader, fetch_info=broken)
+    run_upload(["a"], tmp_path, uploader, fetch_info=broken)
 
     assert uploader.calls == [(["meme_001.png"], "https://youtu.be/a", None)]
 
 
-def test_nothing_pending_does_nothing(tmp_path):
-    processed_file = tmp_path / "processed.txt"
-    processed_file.write_text("a uploaded\n")
+def test_no_ids_does_nothing(tmp_path):
     uploader = FakeUploader()
 
-    assert run_upload(processed_file, tmp_path, uploader, fetch_info=_info) == []
+    assert run_upload([], tmp_path, uploader, fetch_info=_info) == []
     assert uploader.calls == []
 
 
 def test_main_appends_each_uploaded_id_to_the_done_file(tmp_path, monkeypatch):
-    processed_file = tmp_path / "processed.txt"
-    processed_file.write_text("a extracted\nb extracted\n")
     _clean(tmp_path, "a", 1)
     _clean(tmp_path, "b", 1)
     uploader = FakeUploader()
@@ -120,8 +91,6 @@ def test_main_appends_each_uploaded_id_to_the_done_file(tmp_path, monkeypatch):
     monkeypatch.setattr(upload_pending, "fetch_source_info", lambda source, proxy=None: None)
     done_file = tmp_path / "out" / "done.txt"
 
-    upload_pending.main(
-        ["--processed-file", str(processed_file), "--runs-dir", str(tmp_path), "--done-file", str(done_file)]
-    )
+    upload_pending.main(["a", "b", "--runs-dir", str(tmp_path), "--done-file", str(done_file)])
 
     assert done_file.read_text() == "a\nb\n"

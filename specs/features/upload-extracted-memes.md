@@ -33,16 +33,21 @@ on its own, so that the expensive extraction never repeats.
 - [x] AC2a: After a successful run that extracted a video, and after the data push, the last step starts
       `upload-memes.yml` with `gh workflow run` on the same ref (the job has `actions: write`). The upload
       schedule stays as the retry path.
-- [x] AC3: `python -m extract_memes.upload_pending --processed-file F --runs-dir D --done-file X
-      [--limit 5] [--proxy URL]` uploads `D/<id>/clean/meme_*.png` of up to `--limit` videos with status
-      `extracted`, oldest first, through `TelegramUploader` (source `https://youtu.be/<id>`, title and
-      thumbnail fetched, upload still done if that fetch fails). It appends each id to `X` right after its
-      upload, stops at the first failure (non-zero exit) and never edits the status file. A video with no
-      images counts as done without posting.
-- [x] AC4: `upload-memes.yml` runs every 30 minutes and on demand, checks out `data`, and does nothing
-      more unless the status file has an `extracted` line. Otherwise it installs `yt-dlp tqdm requests`
-      and the package without dependencies, runs AC3 with `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`, and
-      sets the ids in `X` to `uploaded` even when the upload step failed part-way.
+- [x] AC3: `python -m extract_memes.playlist_watch pending --limit N [--processed-file F]` prints the ids of
+      up to `N` videos with status `extracted`, oldest first, one per line. It is the only place the
+      pending videos are chosen.
+      `python -m extract_memes.upload_pending ID... --runs-dir D --done-file X [--proxy URL]` uploads
+      `D/<id>/clean/meme_*.png` of the given videos, in the given order, through `TelegramUploader` (source
+      `https://youtu.be/<id>`, title and thumbnail fetched, upload still done if that fetch fails). It
+      appends each id to `X` right after its upload, stops at the first failure (non-zero exit) and never
+      reads or edits the status file. A video with no images counts as done without posting.
+- [x] AC4: `upload-memes.yml` runs every 30 minutes and on demand. It checks out `data` sparsely
+      (`/processed_vids.txt`), installs `yt-dlp tqdm requests opencv-python-headless numpy` and the package
+      without dependencies, and picks up to 5 ids with the first command of AC3. It adds
+      `/runs/<id>/clean/` to the sparse checkout for exactly those ids, and does nothing more when there are
+      none. Otherwise it passes the same ids to the second command of AC3 with
+      `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`, and sets the ids in `X` to `uploaded` even when the upload
+      step failed part-way.
 - [x] AC5: `.github/scripts/push-data.sh MESSAGE [STATUS IDS_FILE]` commits the run's changes in
       `data-branch`, then (up to 5 attempts) re-applies them on the latest `data`, sets the statuses and
       pushes, so the two workflows' pushes don't conflict.
@@ -69,3 +74,11 @@ on its own, so that the expensive extraction never repeats.
   folder, tested against a local sparse clone with a push race. Not run on GitHub.
 - 2026-10-23: The user asked to start the upload workflow right after a successful extraction (AC2a),
   by dispatching it as the last step. Not run on GitHub.
+- 2026-10-23: The upload workflow now checks out the `data` branch sparsely: the status file first, then
+  `runs/<id>/clean/` for each of the first 5 `extracted` videos (matching `--limit 5`). It also installs
+  `opencv-python-headless` and `numpy`, which `telegram_uploader` needs since the JPEG re-encoding
+  ([meme-upload](meme-upload.md) AC27). Checkout steps tested on a local clone. Not run on GitHub.
+- 2026-10-23: The user pointed out that the pending videos were chosen twice, in bash and in Python.
+  Added `playlist_watch pending` (the one place that picks them); the workflow runs it once, fetches
+  those folders, and passes the ids to `upload_pending`, which no longer reads the status file or takes
+  `--limit`/`--processed-file`. Amended AC3 and AC4. Tests moved/added; not run on GitHub.

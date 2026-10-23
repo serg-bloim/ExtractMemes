@@ -1,8 +1,9 @@
-"""Upload the memes of videos whose extraction finished but whose upload hasn't, then report which went out.
+"""Upload the memes of the given videos, then report which went out.
 
-Videos with status `extracted` (see `playlist_watch`) are uploaded oldest first, up to a limit, and the
-first failure stops the run. The status file is not touched here: each uploaded id is appended to a
-"done" file, which the workflow turns into `uploaded` statuses after syncing with the data branch.
+The workflow picks the videos (`playlist_watch pending`, those with status `extracted`) and passes their
+ids here; they are uploaded in the order given and the first failure stops the run. The status file is
+not touched here: each uploaded id is appended to a "done" file, which the workflow turns into
+`uploaded` statuses after syncing with the data branch.
 """
 
 import argparse
@@ -11,35 +12,27 @@ from collections.abc import Callable
 from pathlib import Path
 
 from extract_memes.downloader import SourceInfo, fetch_source_info
-from extract_memes.playlist_watch import DEFAULT_PROCESSED_FILE, STATUS_EXTRACTED, read_processed
 from extract_memes.telegram_uploader import TelegramUploader
 from extract_memes.uploader import Uploader
 
-DEFAULT_LIMIT = 5
 DEFAULT_RUNS_DIR = Path("data/runs")
 
 
-def pending_video_ids(processed: dict[str, str], limit: int) -> list[str]:
-    """Return up to `limit` ids with status `extracted`, in file order (oldest first)."""
-    return [vid for vid, status in processed.items() if status == STATUS_EXTRACTED][:limit]
-
-
 def upload_pending(
-    processed_file: Path,
+    video_ids: list[str],
     runs_dir: Path,
     uploader: Uploader,
-    limit: int = DEFAULT_LIMIT,
     on_uploaded: Callable[[str], None] = lambda video_id: None,
     fetch_info: Callable[[str], SourceInfo | None] = fetch_source_info,
 ) -> list[str]:
-    """Upload the clean memes of each pending video and call `on_uploaded(video_id)` right after each.
+    """Upload the clean memes of each video in `video_ids` and call `on_uploaded(video_id)` right after each.
 
     A video whose `clean/` folder holds no images (no memes were found; git doesn't keep empty
     folders) counts as uploaded with nothing to post. A failure propagates, leaving that video and
     the ones after it pending.
     """
     uploaded = []
-    for video_id in pending_video_ids(read_processed(processed_file), limit):
+    for video_id in video_ids:
         source = f"https://youtu.be/{video_id}"
         images = sorted((runs_dir / video_id / "clean").glob("meme_*.png"))
         if images:
@@ -62,9 +55,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m extract_memes.upload_pending",
         description="Upload the memes of extracted videos to Telegram.",
     )
-    parser.add_argument("--processed-file", type=Path, default=DEFAULT_PROCESSED_FILE, help="default: %(default)s")
+    parser.add_argument("video_ids", nargs="+", metavar="video_id", help="videos to upload, in this order")
     parser.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR, help="default: %(default)s")
-    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="most videos per run (default: %(default)s)")
     parser.add_argument(
         "--done-file",
         type=Path,
@@ -89,10 +81,9 @@ def main(argv: list[str] | None = None) -> None:
             f.write(f"{video_id}\n")
 
     upload_pending(
-        args.processed_file,
+        args.video_ids,
         args.runs_dir,
         TelegramUploader(),
-        limit=args.limit,
         on_uploaded=record,
         fetch_info=lambda source: fetch_source_info(source, proxy=proxy),
     )

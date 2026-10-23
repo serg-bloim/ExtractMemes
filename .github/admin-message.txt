@@ -1,2 +1,5 @@
-New memes uploaded for https://youtu.be/{video_id}
+```
+Меми з випуску тут:
 {post_link}
+```
+https://youtu.be/{video_id}

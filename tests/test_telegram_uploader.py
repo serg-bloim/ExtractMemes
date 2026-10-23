@@ -1,7 +1,10 @@
 import json
 from unittest import mock
 
+import cv2
+import numpy as np
 import pytest
+import requests
 
 from extract_memes.downloader import SourceInfo
 from extract_memes.telegram_uploader import ALBUM_LIMIT, CAPTION_LIMIT, TelegramUploader
@@ -350,3 +353,89 @@ def test_no_comments_lookup_when_the_parent_post_failed(post, tmp_path):
         TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
 
     assert calls_to(post, "getChat") == []
+
+
+def real_png(path):
+    cv2.imwrite(str(path), np.random.randint(0, 255, (40, 60, 3), dtype=np.uint8))
+    return path
+
+
+def test_albums_use_a_long_timeout_and_other_calls_the_short_one(post, tmp_path):
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+
+    assert calls_to(post, "sendMessage")[0].kwargs["timeout"] == 5.0
+    assert calls_to(post, "sendMediaGroup")[0].kwargs["timeout"] == (10.0, 120.0)
+
+
+def test_pngs_are_sent_as_jpegs(post, tmp_path):
+    path = real_png(tmp_path / "meme_000.png")
+
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all([path], "https://youtu.be/xyz")
+
+    [album_call] = calls_to(post, "sendMediaGroup")
+    name, content = album_call.kwargs["files"]["photo0"]
+    assert name == "meme_000.jpg"
+    assert content[:2] == b"\xff\xd8"
+
+
+def test_undecodable_images_are_sent_unchanged(post, tmp_path):
+    [path] = images(tmp_path, 1)
+
+    TelegramUploader(bot_token="tok", chat_id="123").upload_all([path], "https://youtu.be/xyz")
+
+    [album_call] = calls_to(post, "sendMediaGroup")
+    assert album_call.kwargs["files"]["photo0"] == (path.name, b"not really an image")
+
+
+def test_a_timed_out_album_is_retried(post, tmp_path):
+    attempts = []
+
+    def flaky(url, **kwargs):
+        if url.endswith("/sendMediaGroup") and not attempts:
+            attempts.append(1)
+            raise requests.ReadTimeout("slow")
+        return default_post(url, **kwargs)
+
+    post.side_effect = flaky
+
+    with mock.patch("extract_memes.telegram_uploader.time.sleep") as sleep:
+        TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+
+    assert len(calls_to(post, "sendMediaGroup")) == 2
+    sleep.assert_called_once_with(5.0)
+
+
+def test_a_rate_limited_album_waits_retry_after(post, tmp_path):
+    limited = []
+
+    def rate_limited(url, **kwargs):
+        if url.endswith("/sendMediaGroup") and not limited:
+            limited.append(1)
+            resp = response(ok=False, description="Too Many Requests")
+            resp.json.return_value = {
+                "ok": False, "error_code": 429, "description": "Too Many Requests", "parameters": {"retry_after": 7},
+            }
+            return resp
+        return default_post(url, **kwargs)
+
+    post.side_effect = rate_limited
+
+    with mock.patch("extract_memes.telegram_uploader.time.sleep") as sleep:
+        TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+
+    sleep.assert_called_once_with(7.0)
+
+
+def test_an_album_that_keeps_timing_out_fails_after_three_attempts(post, tmp_path):
+    def always_slow(url, **kwargs):
+        if url.endswith("/sendMediaGroup"):
+            raise requests.ReadTimeout("slow")
+        return default_post(url, **kwargs)
+
+    post.side_effect = always_slow
+
+    with mock.patch("extract_memes.telegram_uploader.time.sleep"):
+        with pytest.raises(RuntimeError, match="Upload failed for meme_000.png"):
+            TelegramUploader(bot_token="tok", chat_id="123").upload_all(images(tmp_path, 1), "https://youtu.be/xyz")
+
+    assert len(calls_to(post, "sendMediaGroup")) == 3

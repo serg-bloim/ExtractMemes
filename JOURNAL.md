@@ -181,3 +181,4 @@ linked spec's Changelog or ADR — see CLAUDE.md's "Project Journal" section.
 - 2026-10-23: Split the watch workflow into extraction and upload, with an `extracted`/`uploaded` status per video — [specs/features/upload-extracted-memes.md](specs/features/upload-extracted-memes.md), [ADR 022](decisions/022-split-extraction-and-upload-workflows.md).
 - 2026-10-23: The extraction workflow checks out the `data` branch sparsely — [specs/features/upload-extracted-memes.md](specs/features/upload-extracted-memes.md).
 - 2026-10-23: A successful extraction now starts the upload workflow — [specs/features/upload-extracted-memes.md](specs/features/upload-extracted-memes.md).
+- 2026-10-23: Telegram albums get a long timeout, retries and JPEG re-encoding so large videos upload — [specs/features/meme-upload.md](specs/features/meme-upload.md)

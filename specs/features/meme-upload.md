@@ -178,6 +178,19 @@ Amends AC1, AC6, AC6b and AC20 above.
 - [x] AC24: Tests: `tests/test_telegram_uploader.py` covers each raise in AC22 and that no album is
       sent after it; `tests/test_pipeline.py` covers AC6b.
 
+### Iteration: large albums time out (2026-10-23)
+
+Amends AC6 and AC22 above. Video `5HKLVabLHck` (122 PNGs of ~2 MB) failed every upload: a 10-image
+album is ~22 MB and did not finish within the 5 s read timeout.
+
+- [x] AC25: `sendMediaGroup` uses a `(10 s connect, 120 s read)` timeout; every other call keeps 5 s.
+- [x] AC26: An album that times out, drops the connection, or gets a 429 is retried up to 3 attempts
+      in total, waiting 5 s then 10 s (or the response's `retry_after` on a 429). After the last
+      attempt it fails per AC22.
+- [x] AC27: Each image is sent as a JPEG (quality 90, `.jpg` name) re-encoded in memory; an image
+      OpenCV cannot decode is sent unchanged. Files on disk are untouched.
+- [x] AC28: Tests in `tests/test_telegram_uploader.py` cover AC25–AC27.
+
 ## Out of Scope
 
 - **Discord, Slack, or any messenger besides Telegram.** The `Uploader` ABC is designed for this,
@@ -325,3 +338,6 @@ Resolved by the user (2026-09-18):
   fallbacks (thumbnail → title → bare link) are kept. A chat without a discussion group still gets
   replies in the chat. Tests updated; `pytest -m "not slow"` passes except two `test_cli.py` cases
   that need the `extract-memes` console script on `PATH`.
+- 2026-10-23: Uploads of video `5HKLVabLHck` failed with a read timeout on `sendMediaGroup` (10 PNGs
+  ~22 MB per album vs a 5 s timeout). Added AC25–AC28: a long album timeout, retry with backoff, and
+  JPEG re-encoding before upload. No new dependency (OpenCV and numpy were already required).

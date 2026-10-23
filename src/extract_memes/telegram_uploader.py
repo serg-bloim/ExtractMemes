@@ -5,6 +5,8 @@ import os
 import time
 from pathlib import Path
 
+import cv2
+import numpy as np
 import requests
 
 from extract_memes.downloader import SourceInfo
@@ -18,6 +20,32 @@ DISCUSSION_WAIT_SECONDS = 30.0
 """How long to wait for Telegram to auto-forward the channel post into its discussion group."""
 POLL_SECONDS = 3
 """Long-poll timeout of each `getUpdates` call while waiting for that forward."""
+CALL_TIMEOUT = 5.0
+"""Timeout of an ordinary Bot API call."""
+ALBUM_TIMEOUT = (10.0, 120.0)
+"""(connect, read) timeout of `sendMediaGroup`, which uploads the images themselves."""
+ALBUM_ATTEMPTS = 3
+"""How many times an album is tried when the request times out, drops, or is rate limited."""
+RETRY_BACKOFF_SECONDS = 5.0
+"""Base wait before retrying an album; doubles each attempt."""
+JPEG_QUALITY = 90
+"""Quality of the JPEG copy sent in place of each PNG."""
+
+
+class _RateLimited(RuntimeError):
+    def __init__(self, message: str, retry_after: float) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _as_jpeg_bytes(name: str, raw: bytes) -> tuple[str, bytes]:
+    """The image as `(file name, bytes)`, re-encoded to JPEG; the original when it can't be decoded."""
+    image = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if image is not None:
+        ok, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+        if ok:
+            return Path(name).with_suffix(".jpg").name, encoded.tobytes()
+    return name, raw
 
 
 def _chunks(items: list[Path], size: int) -> list[list[Path]]:
@@ -45,11 +73,14 @@ class TelegramUploader(Uploader):
         self.bot_token = bot_token
         self.chat_id = chat_id
 
-    def _call(self, method: str, **kwargs) -> dict:
+    def _call(self, method: str, timeout: float | tuple[float, float] = CALL_TIMEOUT, **kwargs) -> dict:
         url = f"{self.BASE_URL.format(token=self.bot_token)}/{method}"
-        response = requests.post(url, timeout=5.0, **kwargs)
+        response = requests.post(url, timeout=timeout, **kwargs)
         data = response.json()
         if not data.get("ok"):
+            retry_after = (data.get("parameters") or {}).get("retry_after")
+            if data.get("error_code") == 429 and retry_after is not None:
+                raise _RateLimited(f"Telegram {method} failed: {data.get('description')}", float(retry_after))
             raise RuntimeError(f"Telegram {method} failed: {data.get('description', response.text)}")
         return data
 
@@ -135,14 +166,24 @@ class TelegramUploader(Uploader):
                 raise RuntimeError("The post's comments thread never appeared")
 
     def _send_album(self, batch: list[Path], chat_id: str | int, reply_to: int | None) -> None:
-        opened = [open(path, "rb") for path in batch]
-        try:
-            files = {f"photo{i}": (path.name, file) for i, (path, file) in enumerate(zip(batch, opened))}
-            media = [{"type": "photo", "media": f"attach://photo{i}"} for i in range(len(batch))]
-            data = {"chat_id": chat_id, "media": json.dumps(media)}
-            if reply_to is not None:
-                data["reply_to_message_id"] = reply_to
-            self._call("sendMediaGroup", data=data, files=files)
-        finally:
-            for file in opened:
-                file.close()
+        for attempt in range(1, ALBUM_ATTEMPTS + 1):
+            try:
+                self._send_album_once(batch, chat_id, reply_to)
+                return
+            except (requests.Timeout, requests.ConnectionError, _RateLimited) as exc:
+                if attempt == ALBUM_ATTEMPTS:
+                    raise
+                wait = exc.retry_after if isinstance(exc, _RateLimited) else RETRY_BACKOFF_SECONDS * 2 ** (attempt - 1)
+                print(f"Album upload attempt {attempt} failed ({exc}); retrying in {wait:g}s")
+                time.sleep(wait)
+
+    def _send_album_once(self, batch: list[Path], chat_id: str | int, reply_to: int | None) -> None:
+        files = {}
+        for i, path in enumerate(batch):
+            with open(path, "rb") as file:
+                files[f"photo{i}"] = _as_jpeg_bytes(path.name, file.read())
+        media = [{"type": "photo", "media": f"attach://photo{i}"} for i in range(len(batch))]
+        data = {"chat_id": chat_id, "media": json.dumps(media)}
+        if reply_to is not None:
+            data["reply_to_message_id"] = reply_to
+        self._call("sendMediaGroup", timeout=ALBUM_TIMEOUT, data=data, files=files)

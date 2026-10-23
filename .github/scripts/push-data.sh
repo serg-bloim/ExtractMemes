@@ -18,7 +18,7 @@ git -C data-branch config user.name "github-actions[bot]"
 git -C data-branch config user.email "github-actions[bot]@users.noreply.github.com"
 
 base=$(git -C data-branch rev-parse HEAD)
-git -C data-branch add -A
+git -C data-branch add --sparse -A
 if ! git -C data-branch diff --cached --quiet; then
   git -C data-branch commit -q -m "$message"
 fi
@@ -32,7 +32,7 @@ for attempt in 1 2 3 4 5; do
   fi
   if [ -n "$status" ]; then
     python -m extract_memes.playlist_watch set-status "$status" --ids-file "$ids_file" --processed-file "$processed_file"
-    git -C data-branch add -A
+    git -C data-branch add --sparse -A
     if ! git -C data-branch diff --cached --quiet; then
       git -C data-branch commit -q -m "Mark videos as $status"
     fi

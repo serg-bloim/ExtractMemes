@@ -26,38 +26,40 @@ jobs:
         with:
           ref: data
           path: data-branch
-
-      - name: Look for extracted videos waiting for upload
-        id: pending
-        run: |
-          if grep -qE ' extracted$' data-branch/processed_vids.txt 2>/dev/null; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          fi
+          sparse-checkout: |
+            /processed_vids.txt
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
-        if: steps.pending.outputs.found == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.14"
 
       - name: Install what the upload needs
-        if: steps.pending.outputs.found == 'true'
         run: |
-          pip install yt-dlp tqdm requests
+          pip install yt-dlp tqdm requests opencv-python-headless numpy
           pip install --no-deps -e .
 
+      - name: Pick up to 5 extracted videos to upload and fetch their images
+        id: pending
+        run: |
+          ids=$(python -m extract_memes.playlist_watch pending --limit 5 --processed-file data-branch/processed_vids.txt)
+          echo "ids=$(echo $ids)" >> "$GITHUB_OUTPUT"
+          for id in $ids; do
+            git -C data-branch sparse-checkout add "/runs/$id/clean/"
+          done
+
       - name: Upload the memes of up to 5 extracted videos to Telegram
-        if: steps.pending.outputs.found == 'true'
+        if: steps.pending.outputs.ids != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+          VIDEO_IDS: ${{ steps.pending.outputs.ids }}
         run: |
-          python -m extract_memes.upload_pending \
-            --processed-file data-branch/processed_vids.txt \
+          python -m extract_memes.upload_pending $VIDEO_IDS \
             --runs-dir data-branch/runs \
-            --limit 5 \
             --done-file "$RUNNER_TEMP/uploaded.txt"
 
       - name: Mark the uploaded videos in the data branch
-        if: always() && steps.pending.outputs.found == 'true'
+        if: always() && steps.pending.outputs.ids != ''
         run: .github/scripts/push-data.sh "Mark videos as uploaded" uploaded "$RUNNER_TEMP/uploaded.txt"

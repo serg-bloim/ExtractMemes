@@ -143,6 +143,11 @@ def read_processed(path: Path) -> dict[str, str]:
     return processed
 
 
+def pending_video_ids(processed: dict[str, str], limit: int) -> list[str]:
+    """Return up to `limit` ids with status `extracted`, in file order (oldest first)."""
+    return [vid for vid, status in processed.items() if status == STATUS_EXTRACTED][:limit]
+
+
 def set_status(path: Path, video_id: str, status: str) -> None:
     """Record `video_id` with `status` in `path`, replacing its line or adding one at the end.
 
@@ -182,6 +187,11 @@ def _cmd_find(args: argparse.Namespace) -> None:
     next_id = find_next_unprocessed(video_ids, processed)
     if next_id is not None:
         print(next_id)
+
+
+def _cmd_pending(args: argparse.Namespace) -> None:
+    for video_id in pending_video_ids(read_processed(args.processed_file), args.limit):
+        print(video_id)
 
 
 def _cmd_set_status(args: argparse.Namespace) -> None:
@@ -230,6 +240,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     find_parser.set_defaults(func=_cmd_find)
+
+    pending_parser = subparsers.add_parser(
+        "pending", help="print the ids of videos extracted but not uploaded, oldest first, one per line"
+    )
+    pending_parser.add_argument("--limit", type=int, required=True, help="most ids to print")
+    pending_parser.add_argument(
+        "--processed-file", type=Path, default=DEFAULT_PROCESSED_FILE, help="default: %(default)s"
+    )
+    pending_parser.set_defaults(func=_cmd_pending)
 
     status_parser = subparsers.add_parser("set-status", help="record the status of one or more videos")
     status_parser.add_argument("status", help=f"e.g. {STATUS_EXTRACTED} or {STATUS_UPLOADED}")

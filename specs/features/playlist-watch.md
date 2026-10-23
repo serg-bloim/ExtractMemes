@@ -2,12 +2,16 @@
 title: "Watch a Playlist and Run the Pipeline on the Oldest New Video"
 status: implemented
 created: 2026-09-18
-updated: 2026-10-05
+updated: 2026-10-23
 author: ""
 depends-on: ["extraction-pipeline", "meme-upload"]
 ---
 
 # Watch a Playlist and Run the Pipeline on the Oldest New Video
+
+> **2026-10-23:** the processed file now records a status per video, `mark-processed`/`append_processed`
+> became `set-status`/`set_status`, and the upload moved to its own workflow. Where AC2, AC3, AC6, AC7 and
+> AC8 below disagree, [upload-extracted-memes.md](upload-extracted-memes.md) wins.
 
 ## Problem Statement
 
@@ -370,3 +374,4 @@ Resolved by the user (2026-09-18):
   lost the first copy of this fix.) The `find` step runs before `setup-node`, so it depends on
   Node.js being preinstalled on `ubuntu-latest`; not run on GitHub.
   - **Verified:** `pytest -m "not slow"`: 279 passed (274 before; 5 new tests in `tests/test_playlist_watch.py`).
+- 2026-10-23: Extraction and upload split into two workflows with a status per video — [upload-extracted-memes](upload-extracted-memes.md), [ADR 022](../../decisions/022-split-extraction-and-upload-workflows.md).

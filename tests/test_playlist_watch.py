@@ -6,12 +6,12 @@ import pytest
 
 from extract_memes import playlist_watch
 from extract_memes.playlist_watch import (
-    append_processed,
     find_next_unprocessed,
     list_playlist_video_ids,
     load_upload_dates,
     read_processed,
     save_upload_dates,
+    set_status,
 )
 
 PLAYLIST_URL = "https://www.youtube.com/playlist?list=PLfake"
@@ -80,38 +80,55 @@ def test_importing_module_does_not_touch_yt_dlp():
     youtube_dl.assert_not_called()
 
 
-def test_read_processed_missing_file_returns_empty_set(tmp_path):
-    assert read_processed(tmp_path / "processed.txt") == set()
+def test_read_processed_missing_file_returns_empty_dict(tmp_path):
+    assert read_processed(tmp_path / "processed.txt") == {}
 
 
-def test_read_processed_ignores_blank_lines(tmp_path):
+def test_read_processed_ignores_blank_lines_and_reads_statuses(tmp_path):
     path = tmp_path / "processed.txt"
-    path.write_text("abc\n\ndef\n")
+    path.write_text("abc extracted\n\ndef uploaded\n")
 
-    assert read_processed(path) == {"abc", "def"}
+    assert read_processed(path) == {"abc": "extracted", "def": "uploaded"}
 
 
-def test_append_processed_creates_file_and_parents(tmp_path):
+def test_read_processed_treats_a_bare_id_as_uploaded(tmp_path):
+    path = tmp_path / "processed.txt"
+    path.write_text("old\nnew extracted\n")
+
+    assert read_processed(path) == {"old": "uploaded", "new": "extracted"}
+
+
+def test_set_status_creates_file_and_parents(tmp_path):
     path = tmp_path / "nested" / "processed.txt"
 
-    append_processed(path, "abc")
-    append_processed(path, "def")
+    set_status(path, "abc", "extracted")
+    set_status(path, "def", "extracted")
 
-    assert path.read_text() == "abc\ndef\n"
+    assert path.read_text() == "abc extracted\ndef extracted\n"
+
+
+def test_set_status_replaces_a_line_in_place_and_converts_a_bare_id(tmp_path):
+    path = tmp_path / "processed.txt"
+    path.write_text("old\nabc extracted\ndef extracted\n")
+
+    set_status(path, "abc", "uploaded")
+
+    assert path.read_text() == "old uploaded\nabc uploaded\ndef extracted\n"
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_find_next_unprocessed_returns_oldest_not_processed():
     video_ids = ["newest", "middle", "oldest"]
 
-    assert find_next_unprocessed(video_ids, processed=set()) == "oldest"
-    assert find_next_unprocessed(video_ids, processed={"oldest"}) == "middle"
-    assert find_next_unprocessed(video_ids, processed={"oldest", "middle"}) == "newest"
+    assert find_next_unprocessed(video_ids, processed={}) == "oldest"
+    assert find_next_unprocessed(video_ids, processed={"oldest": "extracted"}) == "middle"
+    assert find_next_unprocessed(video_ids, processed={"oldest": "uploaded", "middle": "extracted"}) == "newest"
 
 
 def test_find_next_unprocessed_returns_none_when_all_processed():
     video_ids = ["newest", "middle", "oldest"]
 
-    assert find_next_unprocessed(video_ids, processed=set(video_ids)) is None
+    assert find_next_unprocessed(video_ids, processed=dict.fromkeys(video_ids, "extracted")) is None
 
 
 def test_cli_find_prints_next_unprocessed_id(tmp_path, capsys, fake_ytdl):
@@ -184,12 +201,27 @@ def test_cli_find_proxy_falls_back_to_env_var(tmp_path, monkeypatch, fake_ytdl):
     assert options["proxy"] == "socks5h://127.0.0.1:1080"
 
 
-def test_cli_mark_processed_appends_id(tmp_path):
+def test_cli_set_status_records_ids_from_arguments_and_file(tmp_path):
+    processed_file = tmp_path / "processed.txt"
+    processed_file.write_text("a extracted\nb extracted\n")
+    ids_file = tmp_path / "ids.txt"
+    ids_file.write_text("b\nc\n")
+
+    playlist_watch.main(
+        ["set-status", "uploaded", "a", "--ids-file", str(ids_file), "--processed-file", str(processed_file)]
+    )
+
+    assert processed_file.read_text() == "a uploaded\nb uploaded\nc uploaded\n"
+
+
+def test_cli_set_status_with_a_missing_ids_file_changes_nothing(tmp_path):
     processed_file = tmp_path / "processed.txt"
 
-    playlist_watch.main(["mark-processed", "abc123", "--processed-file", str(processed_file)])
+    playlist_watch.main(
+        ["set-status", "uploaded", "--ids-file", str(tmp_path / "none.txt"), "--processed-file", str(processed_file)]
+    )
 
-    assert processed_file.read_text() == "abc123\n"
+    assert not processed_file.exists()
 
 
 def flatless_ytdl(fake_ytdl, dates: dict[str, str]):

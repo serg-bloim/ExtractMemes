@@ -89,3 +89,4 @@ Links to related specs, external resources, or prior discussions.
 | 019 | [Download Only the Meme Windows, Cut by ffmpeg, Through a Loopback SOCKS Bridge](019-partial-section-downloads.md) | Superseded by 020 | 2026-09-19 |
 | 020 | [Keep Downloading the Whole Video; Partial Fetching Is Not Viable](020-whole-video-download-stands.md) | Accepted | 2026-09-19 |
 | 021 | [One Shared Video Download Cache, Keyed by Video ID and Format ID](021-shared-video-download-cache.md) | Accepted | 2026-10-08 |
+| 022 | [Split the Watch Workflow into Extraction and Upload, with a Status per Video](022-split-extraction-and-upload-workflows.md) | Accepted | 2026-10-23 |

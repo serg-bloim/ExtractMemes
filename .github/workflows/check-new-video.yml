@@ -11,6 +11,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   check-and-run:
@@ -26,6 +27,10 @@ jobs:
         with:
           ref: data
           path: data-branch
+          sparse-checkout: |
+            /processed_vids.txt
+            /upload_dates.json
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -98,3 +103,9 @@ jobs:
             message="Update data"
           fi
           .github/scripts/push-data.sh "$message" extracted "$RUNNER_TEMP/extracted.txt"
+
+      - name: Start the upload workflow
+        if: success() && steps.find.outputs.video_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run upload-memes.yml --ref "${{ github.ref_name }}"

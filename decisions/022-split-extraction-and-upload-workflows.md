@@ -26,7 +26,13 @@ discarded it: the next run extracted the same video again.
    next to it. The Python steps therefore only write the ids they finished to a file in
    `$RUNNER_TEMP`; the script re-applies the run's other changes onto the latest `data`, sets the
    statuses on that fresh copy and pushes, retrying if the push is rejected.
-5. **`SAVE_CLEAN` is gone**: the clean images are the hand-off between the two workflows.
+5. **The extraction workflow checks out `data` sparsely**: only `processed_vids.txt` and
+   `upload_dates.json`, since the branch keeps growing with images. `push-data.sh` stages with
+   `git add --sparse`. The upload workflow still checks out the whole branch (a sparse checkout there
+   would need the status file first, then the image folders of the pending videos).
+6. **A successful extraction dispatches the upload workflow** (`gh workflow run`, last step), so a video
+   is posted without waiting for the next scheduled upload run.
+7. **`SAVE_CLEAN` is gone**: the clean images are the hand-off between the two workflows.
 
 ## Consequences
 

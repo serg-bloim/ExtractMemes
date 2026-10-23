@@ -28,6 +28,7 @@ jobs:
           path: data-branch
           sparse-checkout: |
             /processed_vids.txt
+            /telegram_links.txt
           sparse-checkout-cone-mode: false
 
       - name: Set up Python
@@ -54,11 +55,14 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          ADMIN_MESSAGE_TEMPLATE: ${{ vars.ADMIN_MESSAGE_TEMPLATE }}
           VIDEO_IDS: ${{ steps.pending.outputs.ids }}
         run: |
           python -m extract_memes.upload_pending $VIDEO_IDS \
             --runs-dir data-branch/runs \
-            --done-file "$RUNNER_TEMP/uploaded.txt"
+            --done-file "$RUNNER_TEMP/uploaded.txt" \
+            --links-file data-branch/telegram_links.txt
 
       - name: Mark the uploaded videos in the data branch
         if: always() && steps.pending.outputs.ids != ''

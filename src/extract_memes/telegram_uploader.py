@@ -84,6 +84,10 @@ class TelegramUploader(Uploader):
             raise RuntimeError(f"Telegram {method} failed: {data.get('description', response.text)}")
         return data
 
+    def send_message(self, chat_id: str, text: str) -> None:
+        """Send a plain text message to another chat; raises `RuntimeError` if Telegram refuses it."""
+        self._call("sendMessage", data={"chat_id": chat_id, "text": text})
+
     def _post_parent(self, source: str, info: SourceInfo | None) -> int:
         """Post the parent message, trying thumbnail+title, then title, then the bare link.
 
@@ -109,9 +113,10 @@ class TelegramUploader(Uploader):
                 last_error = exc
         raise RuntimeError(f"Could not post the source link: {last_error}")
 
-    def upload_all(self, image_paths: list[Path], source: str, info: SourceInfo | None = None) -> None:
+    def upload_all(self, image_paths: list[Path], source: str, info: SourceInfo | None = None) -> str | None:
+        """Post everything and return the link of the source post (`None` for a chat that has no post links)."""
         if not image_paths:
-            return
+            return None
 
         reply_to = self._post_parent(source, info)
         target_chat, thread = self.chat_id, reply_to
@@ -125,6 +130,20 @@ class TelegramUploader(Uploader):
             except Exception as exc:
                 names = ", ".join(path.name for path in batch)
                 raise RuntimeError(f"Upload failed for {names}: {exc}") from exc
+        return self._post_link(reply_to)
+
+    def _post_link(self, post_id: int) -> str | None:
+        """The `t.me` link of message `post_id` in the chat, from the configured chat id alone.
+
+        A `@username` chat links by name, a channel or supergroup id (`-100…`) by its internal id;
+        a private chat or basic group has no link.
+        """
+        chat_id = str(self.chat_id)
+        if chat_id.startswith("@"):
+            return f"https://t.me/{chat_id[1:]}/{post_id}"
+        if chat_id.startswith("-100"):
+            return f"https://t.me/c/{chat_id[4:]}/{post_id}"
+        return None
 
     def _comments_thread(self, post_id: int) -> tuple[int, int] | None:
         """Return `(discussion chat id, forwarded post id)` for the comments of channel post `post_id`.

@@ -9,6 +9,7 @@ appended to a links file (`<video id> <link>` per line) that lives in the data b
 
 import argparse
 import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -20,9 +21,26 @@ DEFAULT_RUNS_DIR = Path("data/runs")
 DEFAULT_TEMPLATE_FILE = Path(".github/admin-message.txt")
 
 
+_MARKDOWN_SPECIAL = re.compile(r"([_*\[\]()~`>#+\-=|{}.!\\])")
+_CODE = re.compile(r"(```.*?```|`[^`\n]+`)", re.DOTALL)
+
+
 def render_admin_message(template: str, video_id: str, post_link: str) -> str:
-    """Fill `{video_id}` and `{post_link}` in `template`; any other braces are left as written."""
-    return template.replace("{video_id}", video_id).replace("{post_link}", post_link)
+    """Fill `{video_id}` and `{post_link}` in `template` and return it as Telegram MarkdownV2 (send with `parse_mode="MarkdownV2"`).
+
+    Any other braces are left as written. A ```fenced``` block and `inline code` keep their formatting;
+    everything else is escaped, so the template needs no escaping of its own.
+    """
+    text = template.replace("{video_id}", video_id).replace("{post_link}", post_link)
+    parts = _CODE.split(text)
+    for i, part in enumerate(parts):
+        if i % 2:
+            fence = "```" if part.startswith("```") else "`"
+            inner = part[len(fence) : -len(fence)]
+            parts[i] = fence + re.sub(r"([`\\])", r"\\\1", inner) + fence
+        else:
+            parts[i] = _MARKDOWN_SPECIAL.sub(r"\\\1", part)
+    return "".join(parts)
 
 
 def upload_pending(
@@ -109,7 +127,7 @@ def main(argv: list[str] | None = None) -> None:
     def notify_admin(video_id: str, link: str) -> None:
         # A failed notification must not fail the run: the video is already uploaded.
         try:
-            uploader.send_message(admin_chat, render_admin_message(template, video_id, link))
+            uploader.send_message(admin_chat, render_admin_message(template, video_id, link), parse_mode="MarkdownV2")
         except Exception as exc:
             print(f"Could not notify the admin chat about {video_id}: {exc}")
 

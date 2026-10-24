@@ -84,9 +84,15 @@ class TelegramUploader(Uploader):
             raise RuntimeError(f"Telegram {method} failed: {data.get('description', response.text)}")
         return data
 
-    def send_message(self, chat_id: str, text: str) -> None:
-        """Send a plain text message to another chat; raises `RuntimeError` if Telegram refuses it."""
-        self._call("sendMessage", data={"chat_id": chat_id, "text": text})
+    def send_message(self, chat_id: str, text: str, parse_mode: str | None = None) -> None:
+        """Send a text message to another chat; raises `RuntimeError` if Telegram refuses it.
+
+        `parse_mode` (e.g. `"HTML"`) makes Telegram format the text; plain text when `None`.
+        """
+        data = {"chat_id": chat_id, "text": text}
+        if parse_mode:
+            data["parse_mode"] = parse_mode
+        self._call("sendMessage", data=data)
 
     def _post_parent(self, source: str, info: SourceInfo | None) -> int:
         """Post the parent message, trying thumbnail+title, then title, then the bare link.
@@ -116,7 +122,7 @@ class TelegramUploader(Uploader):
     def upload_all(self, image_paths: list[Path], source: str, info: SourceInfo | None = None) -> str | None:
         """Post everything and return the link of the source post (`None` for a chat that has no post links).
 
-        When the albums went into a comments thread, the link opens that thread at its first comment.
+        When the albums went into a comments thread, the link opens that thread (`?thread=<id of the forwarded post in the discussion group>`).
         """
         if not image_paths:
             return None
@@ -124,20 +130,17 @@ class TelegramUploader(Uploader):
         reply_to = self._post_parent(source, info)
         target_chat, thread = self.chat_id, reply_to
         comments = self._comments_thread(reply_to)
-        first_comment: int | None = None
         if comments:
             target_chat, thread = comments
 
         for batch in _chunks(image_paths, ALBUM_LIMIT):
             try:
-                sent = self._send_album(batch, target_chat, thread)
-                if first_comment is None and comments and sent:
-                    first_comment = sent[0].get("message_id")
+                self._send_album(batch, target_chat, thread)
             except Exception as exc:
                 names = ", ".join(path.name for path in batch)
                 raise RuntimeError(f"Upload failed for {names}: {exc}") from exc
         link = self._post_link(reply_to)
-        return f"{link}?comment={first_comment}" if link and first_comment else link
+        return f"{link}?thread={thread}" if link and comments else link
 
     def _post_link(self, post_id: int) -> str | None:
         """The `t.me` link of message `post_id` in the chat, from the configured chat id alone.
